@@ -5,7 +5,7 @@ carry no takes, no approval and no renders, and a preset must not show up in
 /status or consume a project id.
 """
 import contextlib
-import fcntl
+from .portalock import lock_ex, unlock
 import json
 import os
 import tempfile
@@ -34,11 +34,11 @@ class Presets:
     @contextlib.contextmanager
     def _locked(self):
         with (self.root / '.presets.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            lock_ex(lock)
             try:
                 yield
             finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                unlock(lock)
 
     def _load(self):
         """Read the file, treating a truncated/hand-edited one as empty.

@@ -1,7 +1,7 @@
 """Local JSON store. Caller supplies the plugin's private data directory."""
 import contextlib
 import copy
-import fcntl
+from .portalock import lock_ex, unlock
 import json
 import math
 import os
@@ -233,6 +233,28 @@ def validate_ready(project):
     validate_sections(draft['sections'], draft['duration_seconds'])
 
 
+REPLACE_ATTEMPTS = 60
+REPLACE_DELAY_SECONDS = 0.005
+REPLACE_MAX_DELAY_SECONDS = 0.1
+
+
+def replace_with_retry(source, target, attempts=REPLACE_ATTEMPTS, delay=REPLACE_DELAY_SECONDS):
+    """``os.replace``, waiting out a Windows reader that holds the target open."""
+    if os.name != 'nt':
+        os.replace(source, target)
+        return
+    wait = delay
+    for remaining in range(attempts, 0, -1):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if remaining == 1:
+                raise
+            time.sleep(wait)
+            wait = min(wait * 2, REPLACE_MAX_DELAY_SECONDS)
+
+
 def sections_for(project):
     """Stored sections, or the structure implied by the lyrics when there are none."""
     stored = project.get('sections') or []
@@ -243,6 +265,8 @@ def sections_for(project):
 
 def fsync_dir(path):
     """Persist a directory entry after os.replace, so a rename survives power loss."""
+    if os.name == 'nt':  # Windows cannot open a directory for fsync; NTFS journals the rename.
+        return
     fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
     try:
         os.fsync(fd)
@@ -261,7 +285,7 @@ class Store:
         """Acquire the process-shared worker lease, or return None if busy."""
         lock = (self.root / '.worker.lock').open('a')
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_ex(lock, blocking=False)
         except BlockingIOError:
             lock.close()
             return None
@@ -273,11 +297,11 @@ class Store:
     @contextlib.contextmanager
     def locked(self):
         with (self.root / '.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            lock_ex(lock)
             try:
                 yield
             finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                unlock(lock)
 
     def _require_target(self, target_id):
         """Refuse a draft that names a ComfyUI target this profile does not have."""
@@ -503,7 +527,7 @@ class Store:
                 json.dump(project, out)
                 out.flush()
                 os.fsync(out.fileno())
-            os.replace(name, target)
+            replace_with_retry(name, target)
             fsync_dir(self.root)
         finally:
             if os.path.exists(name):

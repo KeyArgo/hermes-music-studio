@@ -337,20 +337,20 @@ class ResidencyTests(FakeComfyCase):
 
     def test_a_held_ace_gpu_lock_makes_a_local_comfy_render_busy(self):
         import ace_engine
-        import fcntl
+        from music_studio import portalock
         Path(ace_engine.LOCK).parent.mkdir(parents=True, exist_ok=True)
         held = Path(ace_engine.LOCK).open('a')
         self.addCleanup(held.close)
-        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        portalock.lock_ex(held, blocking=False)
         try:
             self.assertEqual(self.engine().health().state, 'busy')
         finally:
-            fcntl.flock(held, fcntl.LOCK_UN)
+            portalock.unlock(held)
 
     def test_the_studio_worker_lease_does_not_block_a_local_comfy_render(self):
         # The worker holds .worker.lock for its whole life; consulting it here
         # would report busy forever even while the GPU is idle.
-        import fcntl
+        from music_studio import portalock
         import os
         from music_studio import service as studio_service
         # The studio's own resolver, not the host's: a clone has no `plugins` package, and this
@@ -360,11 +360,11 @@ class ResidencyTests(FakeComfyCase):
                      / '.worker.lock')
             held = lease.open('a')
             self.addCleanup(held.close)
-            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            portalock.lock_ex(held, blocking=False)
             try:
                 self.assertIsNone(self.engine()._gpu_lease_conflict())
             finally:
-                fcntl.flock(held, fcntl.LOCK_UN)
+                portalock.unlock(held)
 
     def test_same_host_ace_lease_makes_the_engine_busy(self):
         lease = Path(self.tmp.name) / '.worker.lock'
@@ -372,8 +372,8 @@ class ResidencyTests(FakeComfyCase):
         self.assertEqual(engine.health().state, 'ready')
         held = lease.open('a')
         self.addCleanup(held.close)
-        import fcntl
-        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        from music_studio import portalock
+        portalock.lock_ex(held, blocking=False)
         status = engine.health()
         self.assertEqual(status.state, 'busy')
         self.assertTrue(status.available)
@@ -385,8 +385,8 @@ class ResidencyTests(FakeComfyCase):
         lease = Path(self.tmp.name) / '.worker.lock'
         held = lease.open('a')
         self.addCleanup(held.close)
-        import fcntl
-        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        from music_studio import portalock
+        portalock.lock_ex(held, blocking=False)
         remote = MiniMaxM3ComfyEngine(base_url='http://10.255.255.1:8188',
                                       gpu_lease_path=lease)
         self.assertFalse(remote._host_is_local())

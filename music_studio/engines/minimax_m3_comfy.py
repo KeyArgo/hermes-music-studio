@@ -24,7 +24,7 @@ the identifier 'MiniMax-Music3' travels with the audio.
 """
 from __future__ import annotations
 
-import fcntl
+from ..portalock import lock_ex, unlock
 import json
 import os
 import shutil
@@ -437,12 +437,12 @@ class MiniMaxM3ComfyEngine(Engine):
             return None
         try:
             try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                lock_ex(handle, blocking=False)
             except BlockingIOError:
                 return str(path)
             except OSError:
                 return None
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            unlock(handle)
             return None
         finally:
             handle.close()

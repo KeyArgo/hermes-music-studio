@@ -1,5 +1,5 @@
 """Bounded subprocess adapter for the locally installed ACE-Step runtime."""
-import fcntl
+from music_studio.portalock import lock_ex
 import io
 import json
 import os
@@ -254,7 +254,7 @@ def _render(*, job_input, output_dir, timeout_seconds, expected_seconds,
     LOCK.parent.mkdir(parents=True, exist_ok=True)
     with LOCK.open('a') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_ex(lock, blocking=False)
         except BlockingIOError as exc:
             raise RuntimeError('ACE GPU worker busy') from exc
         with tempfile.TemporaryDirectory(prefix='ace-job-', dir=out) as job:

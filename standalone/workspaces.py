@@ -1,7 +1,7 @@
 """Standalone workspace groupings and uploaded cover art."""
 import base64
 import binascii
-import fcntl
+from music_studio.portalock import lock_ex, unlock
 import json
 import os
 import tempfile
@@ -26,9 +26,9 @@ class WorkspaceStore:
     @contextmanager
     def lock(self):
         with (self.root / '.studio-workspaces.lock').open('a') as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            lock_ex(handle)
             try: yield
-            finally: fcntl.flock(handle, fcntl.LOCK_UN)
+            finally: unlock(handle)
 
     def _read(self):
         if not self.path.exists():

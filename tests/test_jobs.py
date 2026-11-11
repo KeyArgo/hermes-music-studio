@@ -197,7 +197,7 @@ class EditSafetyTests(unittest.TestCase):
     def test_the_edit_file_is_written_while_the_store_lock_is_held(self):
         # A concurrent delete takes the same lock; writing under it is what
         # stops a live edit from becoming an orphan.
-        import fcntl
+        from music_studio import portalock
         observed = {}
         real_replace = os.replace
         take_name = f"{self.take['take_id']}.wav"
@@ -207,11 +207,11 @@ class EditSafetyTests(unittest.TestCase):
             if str(dst).endswith('.wav') and Path(dst).name != take_name:
                 with open(Path(self.store.root) / '.lock', 'a') as probe:
                     try:
-                        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        portalock.lock_ex(probe, blocking=False)
                     except BlockingIOError:
                         observed['locked'] = True
                     else:
-                        fcntl.flock(probe, fcntl.LOCK_UN)
+                        portalock.unlock(probe)
                         observed['locked'] = False
 
         with patch('music_studio.jobs.os.replace', side_effect=replace):

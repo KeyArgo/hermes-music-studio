@@ -793,7 +793,7 @@ class Jobs:
         except ValueError:
             raise ValueError('audio unavailable') from None
         try:
-            fd = os.open(self.store.root / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            fd = os.open(self.store.root / name, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
         except OSError as exc:
             raise ValueError('audio unavailable') from exc
         if not stat.S_ISREG(os.fstat(fd).st_mode):

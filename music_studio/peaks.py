@@ -89,7 +89,7 @@ def _sidecar_path(root, take_id):
 def _read_cache(path, size, mtime_ns):
     """Return the cached payload, or None; never follows a symlink."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
     except OSError:
         return None
     try:
