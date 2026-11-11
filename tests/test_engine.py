@@ -1,4 +1,5 @@
 import sys
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +41,10 @@ class EngineTests(unittest.TestCase):
         env = seen['env']
         self.assertEqual(env['ACESTEP_CHECKPOINTS_DIR'], str(ace_engine.RUNTIME / 'checkpoints'))
         self.assertEqual(env['HF_HUB_OFFLINE'], '1')
-        self.assertEqual(seen['start_new_session'], True)
+        if os.name == 'nt':
+            self.assertIn('creationflags', seen)  # its own process group
+        else:
+            self.assertEqual(seen['start_new_session'], True)
 
     def test_worker_passes_inputs_to_ace_and_copies_returned_audio(self):
         import json

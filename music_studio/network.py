@@ -142,11 +142,12 @@ class TargetStore:
                 out.flush()
                 os.fsync(out.fileno())
             os.replace(name, self.path)
-            fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            if os.name != 'nt':  # Windows cannot open a directory to fsync it
+                fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         finally:
             if os.path.exists(name):
                 os.unlink(name)

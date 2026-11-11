@@ -12,6 +12,8 @@ import json
 import os
 import socket
 import subprocess
+
+from .procs import detach_kwargs
 import sys
 import threading
 import time
@@ -182,7 +184,7 @@ def ensure_host(port: int | None = None) -> dict:
             proc = subprocess.Popen([_python(), '-m', 'music_studio.host'],
                                     cwd=str(Path(__file__).resolve().parents[1]),
                                     env=env, stdin=subprocess.DEVNULL,
-                                    stdout=log, stderr=log, start_new_session=True)
+                                    stdout=log, stderr=log, **detach_kwargs())
         finally:
             log.close()
         _spawned.append(proc)

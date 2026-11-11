@@ -220,4 +220,4 @@ def test_a_folder_outside_every_library_folder_is_added(fake):
     posted = [c for c in fake.calls if c[1] == '/api/library/folders' and c[0] == 'POST']
     assert posted, 'an outside folder has to be added so REVamp can index it'
     kept = {row['path'] for row in fake.folders}
-    assert '/srv/music/studio' in kept and '/home/alex/Music' in kept
+    assert str(Path('/srv/music/studio')) in {str(Path(p)) for p in kept} and '/home/alex/Music' in kept

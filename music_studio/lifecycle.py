@@ -49,13 +49,8 @@ def parent_pid():
 def parent_alive(pid):
     if pid is None:
         return True          # a manual `python -m music_studio.host` stays until Ctrl-C
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    from .procs import pid_exists
+    return pid_exists(pid)  # never signal 0: on Windows that terminates the parent
 
 
 def should_exit(*, now, last_activity, limit, parent_up, busy):

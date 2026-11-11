@@ -5,6 +5,8 @@ import os
 import copy
 import random
 import subprocess
+
+from .procs import detach_kwargs
 import sys
 import uuid
 import time
@@ -445,7 +447,7 @@ def _spawn_worker(s, project_id, take_id):
         proc = subprocess.Popen(
             args, cwd=str(_ROOT), env=env, stdin=subprocess.DEVNULL,
             stdout=log, stderr=subprocess.STDOUT,
-            start_new_session=True, close_fds=True)
+            close_fds=True, **detach_kwargs())
     _workers.append(proc)
     return proc
 

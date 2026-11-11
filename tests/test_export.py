@@ -68,6 +68,7 @@ def test_a_name_with_a_slash_cannot_escape_the_folder(tmp_path):
 
 def test_the_default_folder_is_under_home_music(monkeypatch, tmp_path):
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))  # Windows reads this, not HOME
     assert export.target_folder('') == tmp_path / 'Music' / 'Hermes Music Studio'
 
 

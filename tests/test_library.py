@@ -126,7 +126,7 @@ def test_relocate_copy_leaves_the_original_and_moves_the_pointer(library, tmp_pa
 
     result = service.relocate_library(str(target), 'copy')
 
-    assert result['library']['active'] == str(target)
+    assert Path(result['library']['active']).resolve() == target.resolve()
     assert result['library']['moved'] is True
     assert (target / f"{project['project_id']}.json").is_file()
     assert (library / f"{project['project_id']}.json").is_file()  # nothing destroyed

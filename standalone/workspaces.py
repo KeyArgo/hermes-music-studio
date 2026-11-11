@@ -44,9 +44,10 @@ class WorkspaceStore:
                 json.dump(data, handle, ensure_ascii=False)
                 handle.flush(); os.fsync(handle.fileno())
             os.replace(path, self.path)
-            dfd = os.open(str(self.root), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
-            try: os.fsync(dfd)
-            finally: os.close(dfd)
+            if os.name != 'nt':  # Windows cannot open a directory to fsync it
+                dfd = os.open(str(self.root), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+                try: os.fsync(dfd)
+                finally: os.close(dfd)
         finally:
             if os.path.exists(path): os.unlink(path)
 

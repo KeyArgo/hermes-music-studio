@@ -3,6 +3,7 @@ from music_studio.portalock import lock_ex
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import signal
@@ -21,6 +22,23 @@ _SOURCE = os.environ.get('ACE_SOURCE_DIR') or ''
 RUNTIME = Path(_RUNTIME) if _RUNTIME else Path('/nonexistent/ace-runtime')
 SOURCE = Path(_SOURCE) if _SOURCE else Path('/nonexistent/ace-source')
 PYTHON = RUNTIME / 'venv/bin/python'
+
+
+def _interpreter():
+    """The runtime's Python: venv/bin/python on POSIX, venv/Scripts/python.exe on Windows."""
+    if os.name == 'nt':
+        exe = RUNTIME / 'venv/Scripts/python.exe'
+        if exe.is_file():
+            return exe
+    return PYTHON
+
+
+def _interpreter_cmd():
+    """argv prefix to run the runtime's Python; a script stand-in is run through this Python on Windows."""
+    exe = _interpreter()
+    if os.name == 'nt' and exe.suffix.lower() != '.exe':
+        return [sys.executable, str(exe)]
+    return [str(exe)]
 WORKER = Path(__file__).with_name('ace_worker.py')
 LOCK = RUNTIME / 'ace-studio-gpu.lock'
 
@@ -64,7 +82,7 @@ def render_timeout_seconds(duration_seconds):
 
 
 def available():
-    return PYTHON.is_file() and (RUNTIME / 'checkpoints').is_dir() and (SOURCE / 'acestep').is_dir()
+    return _interpreter().is_file() and (RUNTIME / 'checkpoints').is_dir() and (SOURCE / 'acestep').is_dir()
 
 
 def unavailable_reason():
@@ -72,8 +90,8 @@ def unavailable_reason():
     if not _RUNTIME or not _SOURCE:
         return ('ACE-Step is not configured on this machine: set the runtime and source folders in '
                 'Settings -> Compute, or export ACE_RUNTIME_DIR and ACE_SOURCE_DIR')
-    if not PYTHON.is_file():
-        return f'ACE-Step runtime has no interpreter at {PYTHON}'
+    if not _interpreter().is_file():
+        return f'ACE-Step runtime has no interpreter at {_interpreter()}'
     if not (RUNTIME / 'checkpoints').is_dir():
         return f'ACE-Step checkpoints are missing from {RUNTIME}'
     return f'ACE-Step source is missing from {SOURCE}'
@@ -89,19 +107,21 @@ def _emit(on_progress, percent):
         pass
 
 
+def _detach():
+    from music_studio.procs import detach_kwargs
+    return detach_kwargs()
+
+
 def _kill_process_group(proc):
     """Kill the render and every descendant it started (ACE spawns helpers)."""
+    from music_studio.procs import kill_tree
     try:
-        pgid = os.getpgid(proc.pid)
+        kill_tree(proc.pid)
     except OSError:
-        pgid = None
-    try:
-        if pgid is not None:
-            os.killpg(pgid, signal.SIGKILL)
-        else:
+        try:
             proc.kill()
-    except OSError:
-        pass
+        except OSError:
+            pass
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
@@ -268,9 +288,9 @@ def _render(*, job_input, output_dir, timeout_seconds, expected_seconds,
             env.update(ACESTEP_CHECKPOINTS_DIR=str(RUNTIME / 'checkpoints'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_DATASETS_OFFLINE='1', PYTHONPATH=str(SOURCE), ACE_SOURCE_DIR=str(SOURCE), HF_HOME=str(RUNTIME / 'hfmodules'), TRITON_CACHE_DIR=str(RUNTIME / 'triton'))
             _emit(on_progress, 3)
             with (job / 'worker.log').open('wb') as log:
-                proc = subprocess.Popen([str(PYTHON), str(WORKER), str(job)],
+                proc = subprocess.Popen([*_interpreter_cmd(), str(WORKER), str(job)],
                                         stdout=log, stderr=subprocess.STDOUT,
-                                        env=env, start_new_session=True)
+                                        env=env, **_detach())
                 if on_process is not None:
                     try:
                         on_process(proc.pid)

@@ -62,13 +62,8 @@ def process_alive(pid, start_time=None):
     """
     if type(pid) is not int or pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass  # exists, owned by another user
-    except OSError:
+    from .procs import pid_exists
+    if not pid_exists(pid):
         return False
     state = _stat_state(pid)
     if state is not None and state in (b'Z', b'X', b'x'):
@@ -98,15 +93,8 @@ def terminate_render(pid, start_time=None):
     if not process_alive(pid, start_time):
         return False
     try:
-        pgid = os.getpgid(pid)
-    except OSError:
-        pgid = None
-    try:
-        if pgid == pid:
-            os.killpg(pid, signal.SIGKILL)  # session leader: kill descendants too
-        else:
-            os.kill(pid, signal.SIGKILL)  # never kill an unrelated process group
-        return True
+        from .procs import kill_tree
+        return kill_tree(pid)
     except OSError:
         return False
 
