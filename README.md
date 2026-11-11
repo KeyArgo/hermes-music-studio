@@ -1,5 +1,7 @@
 # Hermes Music Studio
 
+[![release](https://img.shields.io/github/v/release/KeyArgo/hermes-music-studio)](https://github.com/KeyArgo/hermes-music-studio/releases/latest) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Hermes Agent](https://img.shields.io/badge/Hermes%20Agent-plugin-0b6e99)](https://github.com/NousResearch/hermes-agent) [![tests](https://img.shields.io/badge/tests-482%20passing-brightgreen)](VERIFY.md) [![platforms](https://img.shields.io/badge/Linux%20%C2%B7%20macOS-supported-informational)](#install) [![stars](https://img.shields.io/github/stars/KeyArgo/hermes-music-studio?style=social)](https://github.com/KeyArgo/hermes-music-studio/stargazers)
+
 **Status: 1.0.0, first public release.** Nothing in this file is aspirational — every number below
 was measured on the release commit, and `GET /api/verify` re-measures it in front of you.
 
