@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hermes Music Studio</title>
+<script>
+(function () {
+  var hit = /^(.*?)\/studio\/(?:ui|assets\/(?:index\.html|app\.js|style\.css))\/?$/.exec(location.pathname);
+  var safe = /^\/[A-Za-z0-9\-._~%!$&'()*+,;=:@]+(?:\/[A-Za-z0-9\-._~%!$&'()*+,;=:@]+)*$/;
+  var base = hit && safe.test(hit[1]) && !/(^|\/)\.\.?(\/|$)/.test(hit[1]) ? hit[1] : null;
+  window.MUSIC_STUDIO = base === null
+    ? { api: '/api', assets: '/static' }
+    : { api: base, assets: base + '/studio/assets' };
+  var css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = window.MUSIC_STUDIO.assets + '/style.css';
+  document.head.appendChild(css);
+})();
+</script>
+</head>
+<body>
+<div class="shell">
+<aside class="rail">
+<a class="brand" href="/" aria-label="Hermes Music Studio home">
+<span class="brandmark">H</span>
+<span>HERMES<small>MUSIC STUDIO</small></span>
+</a>
+<p class="nav-label">YOUR STUDIO</p>
+<nav aria-label="Studio navigation">
+<button id="nav-create" class="nav active" type="button">＋ <span>Create</span></button>
+<button id="nav-library" class="nav" type="button">▦ <span>Library</span></button>
+<button id="nav-workspaces" class="nav" type="button">◫ <span>Workspaces</span></button>
+<button id="nav-compute" class="nav" type="button">▤ <span>Compute</span></button>
+<button id="nav-listen" class="nav" type="button">♫ <span>REVamp</span></button>
+</nav>
+<div class="rail-bottom">
+<span class="dot"></span>
+<span id="engine-status">Checking engines…</span>
+<small>Sound made with intention.</small>
+</div>
+</aside>
+<main>
+<header class="topbar">
+<span>YOUR SPACE FOR SOUND</span>
+<span id="app-version" class="version-chip" title="The version of Hermes Music Studio running right now">v…</span>
+<button id="play-sample" class="sample" type="button">▶ &nbsp; Try the instrumental sample</button>
+<button id="close-studio" class="sample ghost" type="button" title="Stop the studio and close this window">Close studio</button>
+</header>
+<section id="create-view" class="page">
+<div class="eyebrow">01 / CREATE</div>
+<h1>Make something<br><em>worth hearing.</em></h1>
+<p class="intro">Start with a feeling. Shape it into a song, then render when you're ready.</p>
+<div class="mode-bar" role="group" aria-label="Creation mode">
+<button type="button" class="mode active" id="simple-mode">Simple</button>
+<button type="button" class="mode" id="custom-mode">Custom</button>
+<span id="mode-help">A little direction is enough to begin.</span>
+</div>
+<div class="layout">
+<form id="draft-form" class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">THE SONG</span>
+<h2>Your draft</h2>
+</div>
+<div>
+<button id="new-song" class="sample" type="button">＋ New song</button> <span id="draft-state" class="pill">New idea</span>
+</div>
+</div>
+<label>Song title <input name="title" maxlength="120" placeholder="Give it a name"></label>
+<label>Sound &amp; style <textarea name="caption" maxlength="512" required placeholder="Warm acoustic folk, close vocals, a little tape hiss…"></textarea><small>Describe the mood, instruments, and energy.</small></label>
+<label>Lyrics <textarea name="lyrics" maxlength="4096" class="lyrics" placeholder="Write a verse, a chorus, or a story…"></textarea></label>
+<label class="check"><input name="instrumental" type="checkbox"> Instrumental only</label>
+<div id="custom-fields" hidden>
+<button type="button" id="metadata-toggle" class="metadata-toggle" aria-expanded="false">＋ Musical metadata <span>Tempo, key &amp; language</span></button>
+<div id="metadata-fields" class="metadata-fields" hidden>
+<label>Tempo (BPM)<input name="bpm" type="number" min="40" max="220" placeholder="Automatic"></label>
+<label>Key / scale<input name="keyscale" maxlength="24" placeholder="Automatic"></label>
+<label>Vocal language<select name="vocal_language">
+<option value="en">English</option>
+<option value="auto">Automatic</option>
+<option value="es">Spanish</option>
+<option value="fr">French</option>
+<option value="de">German</option>
+<option value="it">Italian</option>
+<option value="pt">Portuguese</option>
+<option value="ja">Japanese</option>
+<option value="ko">Korean</option>
+<option value="zh">Chinese</option>
+</select></label>
+</div>
+<div id="minimax-guidance-row" hidden>
+<label><span>MiniMax music guidance <output id="minimax-guidance-value">1.5</output></span><input type="range" name="minimax_guidance" min="0.5" max="3" step="0.1" value="1.5"></label>
+<p class="hint">Adjusts MiniMax text guidance. ACE-Step turbo does not support adjustable guidance.</p>
+</div>
+</div>
+<div class="row">
+<label>Music engine <select name="engine" id="engine-select">
+<option value="ace_local">ACE-Step 1.5</option>
+<option value="minimax_m3_comfy">MiniMax Music 3</option>
+</select></label>
+<label>Length (seconds) <input name="duration_seconds" type="number" min="10" max="180" value="30" required></label>
+</div>
+<div id="target-row" hidden>
+<label>MiniMax ComfyUI target<select name="comfy_target_id" id="target-select">
+<option value="">Default endpoint (engine-configured)</option>
+</select><small>Pick a saved ComfyUI endpoint, or keep the engine default.</small></label>
+<p class="hint">The remote ComfyUI server must already be running. <button id="manage-targets" class="link-button" type="button">Manage compute targets</button></p>
+</div>
+<label>Workspace<select id="workspace-select">
+<option value="default">My workspace</option>
+</select></label>
+<p id="engine-hint" class="hint">Checking engine availability…</p>
+<div id="active-take" class="render-status" hidden>
+<div class="render-head"><strong id="active-title">Active render</strong><span id="active-state" class="pill">Queued</span></div>
+<div class="progress-track" role="progressbar" aria-label="Render progress" aria-valuemin="0" aria-valuemax="100"><div id="active-progress-bar" class="progress-bar"></div></div>
+<p id="active-progress" class="hint">Waiting…</p>
+<p id="active-detail" class="hint"></p>
+<p id="active-gpu" class="hint" hidden></p>
+</div>
+<div class="actions">
+<button class="button secondary" type="submit">Save draft</button>
+<button class="button secondary" id="approve" type="button" disabled>Approve draft</button>
+<button class="button secondary" id="preview-chorus" type="button" disabled>▶ &nbsp; Hear the chorus</button>
+<button class="button primary" id="render" type="button" disabled>✦ &nbsp; Build the full song</button>
+</div>
+<p id="form-message" class="message" role="status" aria-live="polite"></p>
+</form>
+<aside class="side">
+<div class="card ideas-card">
+<span class="kicker">YOUR CREATIVE PARTNER</span>
+<h3>Find the feeling.</h3>
+<p class="muted">Talk through an idea, then turn the conversation into a draft. Nothing renders without your approval.</p>
+<div class="model-row">
+<label>Provider<select id="idea-provider">
+<option value="">Connect Hermes</option>
+</select></label>
+<label>Model<select id="idea-model">
+<option value="">No model available</option>
+</select></label>
+</div>
+<details class="manual-model">
+<summary>Enter a provider or model ID</summary>
+<label>Provider ID<input id="idea-provider-manual" placeholder="Use selected provider"></label>
+<label>Model ID<input id="idea-model-manual" placeholder="Use selected model"></label>
+</details>
+<p id="idea-connection" class="hint" role="status">Checking Hermes model catalog…</p>
+<div id="idea-messages" class="idea-messages" aria-live="polite">
+<p>Tell me what you have in mind. A mood, a memory, a sound—anything is a good start.</p>
+</div>
+<label for="idea-input">Your idea</label>
+<textarea id="idea-input" maxlength="4000" placeholder="A late-night drive, warm synths and a hopeful chorus…"></textarea>
+<div class="idea-controls">
+<label>Tone<select id="idea-tone">
+<option>Balanced</option>
+<option>Warm</option>
+<option>Energetic</option>
+<option>Melancholic</option>
+<option>Dreamy</option>
+<option>Dark</option>
+</select></label>
+<label><span>Style influence <output id="idea-style-value">50</output>%</span><input id="idea-style" type="range" min="0" max="100" value="50"></label>
+</div>
+<small class="hint">Tone and style shape the AI-written draft, not the audio model settings.</small>
+<div class="actions">
+<button id="idea-send" class="button secondary" type="button">Discuss idea</button>
+<button id="idea-apply" class="button primary" type="button">Fill my draft ✦</button>
+</div>
+</div>
+<div class="card art-card">
+<span class="kicker">THE VISUAL</span>
+<h3>Cover art.</h3>
+<div class="cover-frame">
+<img id="cover-preview" alt="Current cover art" hidden>
+<span id="cover-placeholder">♫<small>YOUR ARTWORK</small></span>
+</div>
+<p class="hint">Generate with your configured Hermes image provider or upload your own image. Generation may use a paid provider.</p>
+<label>Art direction<textarea id="cover-prompt" maxlength="2000" placeholder="A moody night sky in warm colors…"></textarea></label>
+<button id="cover-generate" class="button primary" type="button">✦ Generate cover</button>
+<label>Or choose an image<input id="cover-input" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<button id="cover-save" class="button secondary" type="button">Save cover</button>
+<p id="cover-message" class="hint" role="status"></p>
+</div>
+</aside>
+</div>
+</section>
+<section id="library-view" class="page" hidden>
+<div class="eyebrow">02 / LIBRARY</div>
+<h1>Your <em>sound archive.</em></h1>
+<p class="intro">Every idea and take has a home here.</p>
+<div id="library" class="library" aria-live="polite"></div>
+<p id="library-status" class="message" role="status"></p>
+</section>
+<section id="workspaces-view" class="page" hidden>
+<div class="eyebrow">03 / WORKSPACES</div>
+<h1>Make room<br><em>for every idea.</em></h1>
+<p class="intro">Keep songs together for an album, artist, or experiment.</p>
+<form id="workspace-form" class="workspace-form">
+<label>New workspace<input id="workspace-name" maxlength="80" required placeholder="e.g. Late-night sessions"></label>
+<button class="button primary" type="submit">Create workspace</button>
+</form>
+<div id="workspace-list" class="library"></div>
+</section>
+<section id="compute-view" class="page" hidden>
+<div class="eyebrow">04 / COMPUTE</div>
+<h1>Point at a<br><em>renderer.</em></h1>
+<p class="intro">Save named ComfyUI endpoints and check the local GPU inventory. Hermes connects to these servers; it does not launch them.</p>
+<div class="compute-grid">
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">RENDER SETTINGS</span>
+<h2>MiniMax Music 3</h2>
+</div>
+</div>
+<form id="settings-form" class="studio-settings-form">
+<label>ComfyUI endpoint<input id="settings-comfy-url" maxlength="500" placeholder="http://192.168.1.20:8188"></label>
+<label>Other machines to scan<input id="settings-scan-hosts" maxlength="300" placeholder="studio-pc, 192.168.1.20"></label>
+<label>Export folder<input id="settings-export-dir" maxlength="500" placeholder="~/Music/Hermes Music Studio"></label>
+<label>Steps<input id="settings-steps" type="number" min="1" max="100" step="1"></label>
+<label>CFG<input id="settings-cfg" type="number" min="0" max="20" step="0.1"></label>
+<label>Guidance (cfg_scale)<input id="settings-cfg-scale" type="number" min="0" max="10" step="0.05"></label>
+<label>Top K<input id="settings-top-k" type="number" min="1" max="200" step="1"></label>
+<label>Sampler<select id="settings-sampler"></select></label>
+<label>Scheduler<select id="settings-scheduler"></select></label>
+<div class="settings-actions">
+<button class="button secondary" id="settings-test" type="button">Test endpoint</button>
+<button class="button secondary" id="discover-renderers" type="button">Find a renderer</button>
+<button class="button primary" type="submit">Save settings</button>
+</div>
+</form>
+<p class="hint">These are the values sent to the ComfyUI workflow. Leave the endpoint blank to use the engine default. Test probes the server and reports each check; it never starts ComfyUI or renders audio.</p>
+<div id="settings-checks" class="library" aria-live="polite"></div>
+<div id="discover-results" class="library" aria-live="polite"></div>
+<p id="settings-message" class="message" role="status"></p>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">STORAGE</span>
+<h2>Library folder</h2>
+</div>
+</div>
+<p class="hint" id="library-path">Loading…</p>
+<form id="library-form" class="studio-settings-form">
+<label>New folder<input id="library-target" maxlength="500" placeholder="/home/you/Music/Hermes Studio"></label>
+<div class="settings-actions">
+<button class="button secondary" id="library-copy" type="button">Copy there</button>
+<button class="button secondary" id="library-move" type="button">Move there</button>
+<button class="button secondary" id="library-reset" type="button">Use default</button>
+</div>
+</form>
+<p class="hint">Copy leaves the old files in place and points the studio at the new folder. Move deletes the old copies after the switch. Existing audio is never deleted by a copy.</p>
+<p id="library-message" class="message" role="status"></p>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">REMOTE RENDERERS</span>
+<h2>ComfyUI targets</h2>
+</div>
+</div>
+<form id="target-form" class="workspace-form target-form">
+<label>Name<input id="target-name" maxlength="80" required placeholder="e.g. Studio MiniMax box"></label>
+<label>ComfyUI URL<input id="target-url" maxlength="500" required placeholder="http://192.168.1.20:8188"></label>
+<button class="button primary" type="submit">Save target</button>
+</form>
+<p class="hint">The remote MiniMax ComfyUI server must already be running at this URL before you save or render. Test probes the endpoint on demand; it does not start ComfyUI.</p>
+<div id="target-list" class="library" aria-live="polite"></div>
+<p id="target-message" class="message" role="status"></p>
+</div>
+<div class="card">
+<span class="kicker">LOCAL HARDWARE</span>
+<h3>GPU attribution.</h3>
+<p class="hint">Read-only nvidia-smi inventory. A GPU is shown for an active take only when nvidia-smi reports that take's exact PID on a device; nothing is inferred.</p>
+<button id="hardware-refresh" class="button secondary" type="button">Refresh hardware</button>
+<div id="hardware-list" class="library"></div>
+<p id="hardware-message" class="hint" role="status"></p>
+</div>
+</div>
+<div class="panel" id="setup-panel">
+<div class="panel-title">
+<div>
+<span class="kicker">SET UP AN ENGINE</span>
+<h2>Three ways to get one</h2>
+</div>
+</div>
+<p class="hint">A server you already run, a model from Hugging Face, or a hosted API with a key. Each button tests before it saves, and says which check failed.</p>
+<div class="setup-paths" role="group" aria-label="Setup path">
+<button class="button secondary setup-tab" data-path="server" type="button">A server I run</button>
+<button class="button secondary setup-tab" data-path="hf" type="button">A Hugging Face model</button>
+<button class="button secondary setup-tab" data-path="cloud" type="button">A hosted API</button>
+</div>
+<div id="setup-server" class="setup-body">
+<label>ComfyUI or ACE-Step address<input id="setup-server-url" maxlength="500" placeholder="http://192.168.1.20:8188"></label>
+<div class="settings-actions">
+<button class="button primary" id="setup-server-test" type="button">Test and save</button>
+</div>
+<p class="hint">Test asks the server for its node list. For ComfyUI it also checks the MiniMax Music 3 nodes, so "saved" means it can render, not just that something answered.</p>
+</div>
+<div id="setup-hf" class="setup-body" hidden>
+<label>Model id on Hugging Face<input id="setup-hf-id" maxlength="200" placeholder="MiniMaxAI/MiniMax-Music3"></label>
+<div class="settings-actions">
+<button class="button secondary" id="setup-hf-plan" type="button">Where would it go?</button>
+<button class="button primary" id="setup-hf-start" type="button">Download it</button>
+</div>
+<p class="hint">Weights land in this library's models folder, and the panel names the exact folder a ComfyUI needs them in. A remote ComfyUI has to fetch them itself; this machine cannot write to it.</p>
+<div id="setup-hf-status" class="library" aria-live="polite"></div>
+</div>
+<div id="setup-cloud" class="setup-body" hidden>
+<label>Name<input id="setup-cloud-name" maxlength="60" placeholder="default"></label>
+<label>Endpoint<input id="setup-cloud-url" maxlength="500" placeholder="https://api.example.com/v1"></label>
+<label>API key<input id="setup-cloud-key" type="password" maxlength="200" autocomplete="off"></label>
+<div class="settings-actions">
+<button class="button secondary" id="setup-cloud-test" type="button">Save and test</button>
+</div>
+<p class="hint">The key is written to its own file with 0600 permissions and never sent back to this page. Test makes one small authenticated request.</p>
+<div id="setup-cloud-list" class="library"></div>
+</div>
+<p id="setup-message" class="message" role="status"></p>
+</div>
+<div class="panel" id="version-panel">
+<div class="panel-title">
+<div>
+<span class="kicker">VERSION</span>
+<h2>This build, and the next one</h2>
+</div>
+</div>
+<p class="hint" id="version-line">Reading the installed build…</p>
+<p class="hint">Format matches the rest of the suite: <code>v1.0.0-dev.235 · 2026-11-10 · 4cbe561e</code>.</p>
+<div class="settings-actions">
+<button class="button secondary" id="version-check" type="button">Check for a newer build</button>
+<button class="button primary" id="version-update" type="button" disabled>Update and reload</button>
+<button class="button secondary" id="version-undo" type="button" disabled>Undo last update</button>
+</div>
+<p id="version-message" class="message" role="status"></p>
+<pre class="about-code" id="version-log" hidden><code></code></pre>
+</div>
+<div class="compute-grid" id="about-grid">
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">COMPANION</span>
+<h2>REVamp</h2>
+</div>
+</div>
+<p id="revamp-tagline" class="hint">The listening side of the studio.</p>
+<p class="hint" id="revamp-state">Checking…</p>
+<pre class="about-code"><code id="revamp-install">hermes plugins install revamp</code></pre>
+<div class="settings-actions">
+<button class="button secondary" id="copy-revamp-install" type="button">Copy install command</button>
+<button class="button secondary" id="open-revamp-repo" type="button">Open the repo ↗</button>
+</div>
+<p class="hint" id="revamp-requires"></p>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">IMPROVE IT</span>
+<h2>Contribute</h2>
+</div>
+</div>
+<p class="hint">The studio is a small, test-heavy codebase: every claim has a command behind it. Read the guide, run the suite, send a pull request.</p>
+<pre class="about-code"><code id="tests-command">python3.13 -m pytest tests -q</code></pre>
+<div class="settings-actions">
+<button class="button secondary" id="copy-tests" type="button">Copy test command</button>
+<button class="button secondary" id="open-contribute" type="button">Contribution guide ↗</button>
+</div>
+<p class="hint" id="contribute-note"></p>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">TELL ME WHAT BREAKS</span>
+<h2>Report a problem</h2>
+</div>
+</div>
+<p class="hint">Copy a bug report that already contains this machine's facts, then paste it into an issue, a chat, or an email.</p>
+<div class="settings-actions">
+<button class="button secondary" id="copy-diagnostics" type="button">Copy diagnostics</button>
+<button class="button secondary" id="open-issue" type="button">Open an issue ↗</button>
+</div>
+<pre class="about-code" id="diagnostics-out" hidden><code></code></pre>
+<p id="about-message" class="message" role="status"></p>
+</div>
+</div>
+</section>
+<section id="listen-view" class="page" hidden>
+<div class="eyebrow">05 / REVAMP</div>
+<h1>Your takes,<br><em>in REVamp.</em></h1>
+<p class="intro">Only what you add here appears in this list. REVamp's own library — audiobooks, albums, everything — stays in REVamp.</p>
+<div class="revamp-grid">
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">ADDED FROM MUSIC STUDIO</span>
+<h2>Takes handed over</h2>
+</div>
+</div>
+<p id="revamp-status" class="hint" role="status">Open REVamp in Hermes to hear playback.</p>
+<div class="workspace-form">
+<label>Add to playlist<select id="revamp-playlist"><option value="">Music Studio</option></select></label>
+<label>New playlist<input id="revamp-new-name" maxlength="80" placeholder="Drive mix"></label>
+<button id="revamp-create" class="button secondary" type="button">Create</button>
+</div>
+<div id="revamp-added" class="library"></div>
+</div>
+<aside class="card">
+<span class="kicker">HOW IT WORKS</span>
+<h3>One list, yours.</h3>
+<p class="hint">Music Studio keeps a single playlist in REVamp called <b>Music Studio</b>. A take you add lands there and nowhere else, so this screen shows exactly what you added — never your audiobooks or the rest of your collection.</p>
+<p class="hint">A take plays from this app while it is running; press Play to hear it here, or open REVamp to hear it there.</p>
+<button id="open-revamp" class="button secondary" type="button">Open REVamp</button>
+</aside>
+</div>
+</section>
+</main>
+</div>
+<footer class="player">
+<div class="art">♫</div>
+<div class="player-meta">
+<strong id="player-title">Nothing playing yet</strong>
+<span id="player-subtitle">Choose a take from your library</span>
+</div>
+<button id="player-play" class="transport" type="button" aria-label="Play">▶</button>
+<button id="player-back" class="transport" type="button" aria-label="Back 10 seconds">↺ 10</button>
+<button id="player-forward" class="transport" type="button" aria-label="Forward 10 seconds">10 ↻</button>
+<div class="player-scrub">
+<span id="player-elapsed" class="player-time">0:00</span>
+<input id="player-seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Playback position">
+<span id="player-total" class="player-time">0:00</span>
+</div>
+<label class="player-volume" for="player-volume"><span>Volume</span>
+<input id="player-volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+</label>
+<audio id="player" preload="none" aria-label="Music player"></audio>
+<span class="player-brand">HERMES / LISTEN</span>
+</footer>
+<script>
+(function () {
+  var app = document.createElement('script');
+  app.src = window.MUSIC_STUDIO.assets + '/app.js';
+  document.head.appendChild(app);
+})();
+</script>
+</body>
+</html>

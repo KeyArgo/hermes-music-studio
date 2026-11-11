@@ -1,0 +1,1 @@
+"""Standalone Hermes Music Studio."""

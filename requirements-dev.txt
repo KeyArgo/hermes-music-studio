@@ -1,0 +1,12 @@
+# Runtime and test dependencies for running the studio outside Hermes.
+# (Inside Hermes these come from the host; a clone needs them declared.)
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pytest>=8.0
+# TestClient (every HTTP test) needs httpx; without it collection dies with a RuntimeError
+# that names a package nobody installed by hand.
+httpx>=0.27
+# Peak/spectrogram tests
+numpy>=1.26
+

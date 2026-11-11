@@ -1,0 +1,66 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: ${{ matrix.os }} / py3.13
+    runs-on: ${{ matrix.os }}
+    # Linux only for now, and the README says so. Five modules still take a POSIX file lock
+    # (`import fcntl`); until the portable lock from the portability branch lands here, a Windows
+    # or macOS runner would go red on an import, and a matrix that cannot pass is worse than a
+    # matrix that states its scope.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install system tools
+        shell: bash
+        # The fake ComfyUI builds a FLAC fixture with ffmpeg; without it three tests fail. apt on this
+        # runner is not dependable (update exceeded 2 minutes, an earlier attempt hung for 63), so the
+        # binary comes from a wheel that ships a static build and lands in ~/.local/bin, no sudo.
+        timeout-minutes: 6
+        run: |
+          if command -v ffmpeg >/dev/null; then
+            echo "ffmpeg already present: $(command -v ffmpeg)"
+            exit 0
+          fi
+          python -m pip install --quiet --disable-pip-version-check imageio-ffmpeg
+          python -c "import os, shutil, imageio_ffmpeg, pathlib; d = pathlib.Path(os.environ['HOME']) / '.local/bin'; d.mkdir(parents=True, exist_ok=True); t = d / 'ffmpeg'; shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), t); os.chmod(t, 0o755); print('installed', t)"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/ffmpeg" -version | head -1
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      # PYTHONPATH must stay unset: a Hermes checkout on the path ships its own `tests`
+      # package, which wins over this repo's folder and breaks collection.
+      - name: Test
+        shell: bash
+        run: python -m pytest --rootdir=tests tests -q -p no:cacheprovider
+
+  browser:
+    name: ${{ matrix.os }} / browser-side
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dev dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test
+        shell: bash
+        run: node --test tests/*.mjs

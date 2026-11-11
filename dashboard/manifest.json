@@ -1,0 +1,12 @@
+{
+  "name": "hermes-music-studio",
+  "label": "Music Studio",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/music-studio",
+    "position": "end",
+    "hidden": false
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

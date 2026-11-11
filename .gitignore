@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.cache/
+.pytest_cache/
+BUILD_INFO.json
+
+# Internal work notes: never published
+NIGHT-SHIFT.md
+NIGHTLOG.md
+node_modules/

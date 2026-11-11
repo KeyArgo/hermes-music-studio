@@ -1,0 +1,16 @@
+{
+  "engine": "minimax_m3_comfy",
+  "model": "MiniMax-Music3",
+  "seed": 4242,
+  "caption": "warm acoustic folk, fingerpicked guitar, brushed drums, upright bass, intimate close-mic female vocal, 92 bpm, A minor, sparse arrangement, light analog tape hiss",
+  "lyrics": "the lathe still turns without the wood\nshe measures twice and cuts the air\na room of shavings, no chair",
+  "duration_seconds": 13.119,
+  "sample_rate": 44100,
+  "channels": 2,
+  "word_recovery": "3/3",
+  "word_recovery_method": "faster-whisper medium.en (int8, CPU) on the full mix, 2026-11-07; transcript: 'The land still turns without the wood She measures twice and cuts the air A room of shavings, no chair' (all 3 lines recovered; 'lathe' heard as 'land')",
+  "rendered_on": "author's DGX Spark via ComfyUI, ComfyUI output minimax-music3_00007.flac, 30 sampler steps, cfg 4.0",
+  "licence": "MiniMax-Music3",
+  "licence_url": "https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/main/LICENSE",
+  "licence_notice": "MiniMax-Music3. Generated with the MiniMax Music 3 model. The weights and this output are governed by the MiniMax-Music3 Community License (Copyright (c) 2026 MiniMax; https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/main/LICENSE). Include this copyright and permission notice with copies, and display \"MiniMax-Music3\" in the interface of any commercial product or service that uses it."
+}

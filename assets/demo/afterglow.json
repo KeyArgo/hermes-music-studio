@@ -1,0 +1,14 @@
+{
+  "title": "Afterglow",
+  "caption": "instrumental warm electronic downtempo, luminous analog synthesizers, soft electric piano, gentle pulsing bass, restrained crisp percussion, spacious and hopeful, slowly evolving melody, no vocals",
+  "engine": "ace_local",
+  "model": "ACE-Step 1.5 turbo",
+  "seed": 424242,
+  "requested_seconds": 20,
+  "instrumental": true,
+  "duration_seconds": 17.0,
+  "sample_rate": 48000,
+  "channels": 2,
+  "note": "Generated locally with ACE-Step 1.5 turbo, then trimmed to 17 seconds to remove the quiet tail; no vocals.",
+  "musical_end_seconds_before_trim": 16.555
+}

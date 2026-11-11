@@ -1,0 +1,2 @@
+demo-take.wav was generated with the MiniMax Music 3 model.
+MiniMax-Music3. Generated with the MiniMax Music 3 model. The weights and this output are governed by the MiniMax-Music3 Community License (Copyright (c) 2026 MiniMax; https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/main/LICENSE). Include this copyright and permission notice with copies, and display "MiniMax-Music3" in the interface of any commercial product or service that uses it.
