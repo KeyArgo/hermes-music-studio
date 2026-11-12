@@ -4,7 +4,13 @@ All notable changes to Music Studio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] — 2026-11-09
+## Unreleased
+
+- **The version chip tells a release from a development build.** A catalog install of the pinned commit, or a checkout at the release tag, reads `X.Y.Z`; any other build reads `X.Y.Z-dev`. `tools/release_check.py` and the release workflow keep the version, the changelog, the tag and the GitHub release in step.
+- **Documentation:** a rebuilt README with a recorded demo and current Hermes Desktop screenshots, and a full docs set (usage, reference, architecture, configuration, troubleshooting, FAQ, development and testing).
+- **Project files:** contributing guide, code of conduct, security policy, issue and pull request templates, and CODEOWNERS.
+
+## [1.0.0] — 2026-11-11
 
 - **The build states its own identity.** `music_studio/version_stamp.py` (vendored from the suite
   template) resolves `BUILD_INFO.json` → live `git` → `plugin.yaml`, and `GET /api/v1/version`
