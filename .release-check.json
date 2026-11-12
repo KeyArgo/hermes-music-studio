@@ -1,3 +1,5 @@
 {
-  "mirrors": []
+  "mirrors": [
+    "dashboard/manifest.json"
+  ]
 }
