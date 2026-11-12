@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a capability or a change in behaviour.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a local-first studio with a written limits page. A request that adds a capability
+        also needs a way to test it and an honest statement of what it does not do.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that the studio does not support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: The smallest change that solves the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other engines or tools, and why they are not enough.
+    validations:
+      required: false
+  - type: input
+    id: engine
+    attributes:
+      label: Engine or area
+      description: ACE-Step, MiniMax, UI, chat, export, docs, or something else.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked LIMITS.md and the docs to see whether this is deliberately unsupported.
+          required: true

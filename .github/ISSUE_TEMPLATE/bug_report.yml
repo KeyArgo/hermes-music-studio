@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in Hermes Music Studio does not do what it says.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not paste personal audio, full file paths containing your
+        username, or credentials. For a security problem use the private process in SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what the studio did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Compute
+        2. Set the ComfyUI endpoint to ...
+        3. Press Build the full song
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Studio → Compute → Report a problem → Copy diagnostics, pasted here.
+      render: text
+    validations:
+      required: false
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - ACE-Step 1.5 (local)
+        - MiniMax Music 3 (ComfyUI)
+        - ACE-Step remote
+        - No engine installed
+        - Not engine-specific
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and commit
+      description: From the header chip, for example v1.0.0 · 2026-11-11 · ba18a43.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS and version, Python version, and whether this is Hermes or the standalone app.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I read docs/TROUBLESHOOTING.md.
+          required: true
