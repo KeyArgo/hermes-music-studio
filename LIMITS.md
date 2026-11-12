@@ -4,7 +4,7 @@ This page names what Music Studio does not do, what it does unreliably, and what
 it needs. Every item here was found by reading the shipped code, by a test, or
 by a real render — none are hedges added after a bug report.
 
-Version 0.2.0. Measurements are from the machines named in each row.
+Version 1.0.0. Measurements are from the machines named in each row.
 
 ## Take length
 
@@ -86,7 +86,7 @@ Caveats that belong with those numbers:
 
 | Requirement | Detail |
 |---|---|
-| OS | Linux; the plugin uses `fcntl` locks and `/proc` |
+| OS | Linux (tested); macOS untested; Windows unsupported. The plugin uses `fcntl` locks and `/proc` |
 | For `ace_local` | CUDA GPU with ~12 GB free, ACE-Step 1.5 runtime venv + checkpoints, ACE source tree |
 | For `minimax_m3_comfy` | reachable ComfyUI with MiniMax Music 3 nodes and weights; `ffmpeg` on the Hermes host |
 | Users | one OS user, one Hermes profile |

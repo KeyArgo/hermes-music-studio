@@ -1,29 +1,26 @@
 # Verification
 
 This page records what was measured, the exact command that checks it, the
-expected output, and the status. Nothing here was re-run while this file was
-written; the statuses below are the recorded results from the run named in each
-section. Commands use the repository root as the working directory.
+expected output, and the status. The statuses below are the recorded results
+from the run named in each section. Commands use the repository root as the
+working directory.
 
-Environment for every command:
+Applies to 1.0.0 · revised 2026-11-11 · the suite breakdown is in
+[TESTING.md](TESTING.md).
 
-```
-env -u PYTHONHOME \
-  PYTHONPATH=$HOME/.hermes/hermes-agent \
-  PYTHONDONTWRITEBYTECODE=1 \
-  /usr/bin/python3.13
-```
-
-`PYTHONPATH` is needed because the plugin imports Hermes' `plugin_storage`.
-`env -u PYTHONHOME` avoids a stale `PYTHONHOME` pointing at another interpreter.
-`PYTHONDONTWRITEBYTECODE=1` keeps the checkout clean.
+Environment: Python 3.13 with `requirements-dev.txt`. The full-suite command
+below uses `env -u PYTHONPATH` because a Hermes checkout on the path ships its
+own `tests` package and shadows this repository's folder. Some one-off commands
+on this page were recorded with `PYTHONPATH=$HOME/.hermes/hermes-agent`, where
+the plugin imports Hermes' `plugin_storage`. `PYTHONHOME` is unset so a stale
+value cannot select another interpreter.
 
 ## Fast checks
 
 | Check | Measured time | Scope |
 |---|---|---|
 | Demo-card verifier (`tests/test_verify_take.py`) | ~0.11 s | card vs shipped WAV, licence field presence |
-| Full Python suite | 209.45 s | 252 passed, 1 skipped, 130 subtests |
+| Full Python suite | 176.87 s | 482 passed, 1 skipped, 130 subtests |
 
 The verifier is the quick pre-flight for the shipped demo; the full suite is the
 complete test run. Times are recorded measurements, not live runs for this page.
@@ -35,14 +32,15 @@ complete test run. Times are recorded measurements, not live runs for this page.
 **Command:**
 
 ```bash
-env -u PYTHONHOME PYTHONPATH=$HOME/.hermes/hermes-agent PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3.13 -m pytest --rootdir=tests tests -q -p no:cacheprovider
+env -u PYTHONPATH TMPDIR=/tmp /usr/bin/python3.13 -m pytest --rootdir=tests tests -q
 ```
 
-**Expected output:** `252 passed, 1 skipped, 130 subtests` and exit status 0.
+**Expected output:** `482 passed, 1 skipped, 130 subtests passed` and exit status 0.
 
-**Status:** PASS — measured 2026-11-08, 209.45 s. One test is skipped; that is
+**Status:** PASS — measured 2026-11-11, 176.87 s. One test is skipped; that is
 the recorded result, not a failure. The suite fakes the engines and does not
-render real audio.
+render real audio. The browser-side suite is a separate run: `node --test
+tests/*.mjs`, 42 passed. See [TESTING.md](TESTING.md).
 
 ## Approval is required
 

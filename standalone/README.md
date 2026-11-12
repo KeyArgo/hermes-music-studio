@@ -2,10 +2,10 @@
 
 The local standalone app uses the Music Studio draft, approval, take, and music
 engine code. It listens on `127.0.0.1:8765` for one local user; it is not an
-authenticated multi-user or internet-facing service. It is a separate web app;
-it is not yet embedded as a Hermes Desktop tab.
+authenticated multi-user or internet-facing service. The Hermes desktop pane
+frames the same app through a loopback host (`music_studio/host.py`).
 
-Use Python 3.10+ with FastAPI and Uvicorn installed. From the repository root:
+Use Python 3.13 (the tested target) with FastAPI and Uvicorn installed. From the repository root:
 
 ```sh
 python3 -m standalone.app

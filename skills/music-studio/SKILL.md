@@ -1,10 +1,10 @@
 ---
 name: music-studio
 description: "Interview a song idea, draft lyrics and style, then render."
-version: 0.2.0
+version: 1.0.0
 author: Music Studio
 license: MIT
-platforms: [linux, macos, windows]
+platforms: [linux, macos]
 metadata:
   hermes:
     tags: [Music, Songwriting, ACE-Step, Local-Generation, Human-Approval]
@@ -32,7 +32,7 @@ input, and then stop at the approval gate.
 - The user asks what the studio is doing, or why a take failed.
 
 Don't use it for audio editing, mixing, stem separation, or sample libraries —
-none of that exists in 0.2.0.
+none of that exists in 1.0.0.
 
 ## The pipeline: from a sentence in chat to a file they can play
 

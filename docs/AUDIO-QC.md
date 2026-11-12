@@ -1,5 +1,9 @@
 # Audio QC gate
 
+What the measurement gate records, what it may edit, and what it refuses to claim about sound.
+
+Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+
 Every take is measured once, from the exact bytes the engine returned, before
 it is committed. QC is metadata: if the gate fails, the take still succeeds and
 simply carries no measurements. It never rewrites or replaces the audio a
@@ -112,3 +116,5 @@ a vocal performance, and one 3-line take per engine is not a benchmark.
   recorded, and refuses anything that is not one.
 * QC measures the raw render. The edited file has its own peak, duration and
   clipped-frame count in the `edits[]` entry; those do not overwrite `take.qc`.
+
+Back to [docs/README.md](README.md).

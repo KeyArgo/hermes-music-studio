@@ -19,8 +19,8 @@ continues. Worker stdout/stderr goes to
 `ace_local` delegates to `ace_engine` and the runtime at `ACE_RUNTIME_DIR`
 (default `~/ace15-runtime`), source at `ACE_SOURCE_DIR`
 (default `~/ACE-Step-1.5`). `minimax_m3_comfy` talks to
-ComfyUI at `COMFYUI_URL` (default `http://192.0.2.52:8188`) and needs `ffmpeg`
-for FLAC → WAV. `ace_remote` is registered but undeployed. The engine, its
+the ComfyUI endpoint saved in Compute or `COMFYUI_URL` (no baked-in address) and
+needs `ffmpeg` for FLAC → WAV. `ace_remote` is registered but undeployed. The engine, its
 limits and its failure reason are exposed in `GET /status.engines[]`; nothing
 substitutes an unavailable engine silently.
 
