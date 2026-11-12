@@ -4,13 +4,7 @@ All notable changes to Music Studio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-
-- **The version chip tells a release from a development build.** A catalog install of the pinned commit, or a checkout at the release tag, reads `X.Y.Z`; any other build reads `X.Y.Z-dev`. `tools/release_check.py` and the release workflow keep the version, the changelog, the tag and the GitHub release in step.
-- **Documentation:** a rebuilt README with a recorded demo and current Hermes Desktop screenshots, and a full docs set (usage, reference, architecture, configuration, troubleshooting, FAQ, development and testing).
-- **Project files:** contributing guide, code of conduct, security policy, issue and pull request templates, and CODEOWNERS.
-
-## [1.0.0] — 2026-11-11
+## 1.0.0 — in catalog review
 
 - **The build states its own identity.** `music_studio/version_stamp.py` (vendored from the suite
   template) resolves `BUILD_INFO.json` → live `git` → `plugin.yaml`, and `GET /api/v1/version`
@@ -36,6 +30,16 @@ All notable changes to Music Studio are recorded here. The format follows
   same data for a script or a bug report.
 - Release target is `1.0.0` per `VERSIONING-STANDARD.md`; until `v1.0.0` is tagged, builds read
   `1.0.0-dev.N`.
+
+### After the hackathon submission
+
+The hackathon entry pins commit `ba18a43` ([NousResearch/hermes-agent#154029](https://github.com/NousResearch/hermes-agent/pull/154029), tag `hackathon-submission`). 1.0.0 is the commit the catalog accepts; these changes came after the submission:
+
+- **Windows support.** Portable file locks, no POSIX-only open flags, process checks without signal 0, `taskkill` for process trees, the Windows venv interpreter, and no directory fsync on Windows.
+- **The create response shows the sections the lyrics imply.** It returned an empty list until the next status poll; storage still keeps only what the writer supplied.
+- **The version chip tells a release from a development build.** A catalog install of the pinned commit, or a checkout at the release tag, reads `X.Y.Z`; any other build reads `X.Y.Z-dev`. `tools/release_check.py` and the release workflow keep the version, the changelog, the tag and the GitHub release in step.
+- **Documentation:** a rebuilt README with a recorded demo and current Hermes Desktop screenshots, and a full docs set (usage, reference, architecture, configuration, troubleshooting, FAQ, development and testing).
+- **Project files:** contributing guide, code of conduct, security policy, issue and pull request templates, and CODEOWNERS.
 
 ## [0.3.7] — 2026-11-09
 

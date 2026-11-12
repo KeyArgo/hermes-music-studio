@@ -319,12 +319,18 @@ class Store:
         self._require_target(draft.get('comfy_target_id'))
         project = {'project_id': str(uuid.uuid4()), **copy.deepcopy(FIELDS),
                    **copy.deepcopy(draft), 'approved': False, 'takes': []}
+        # The create response must show sections when the lyrics carry [verse]/[chorus]
+        # headers, or a client that uses that response renders an empty section list.
+        # Storage keeps only what the writer supplied: derived sections are a read-time
+        # view (sections_for), so /status can report them as coming from the lyrics.
+        shown = project['sections'] or derive_sections(project.get('lyrics', ''),
+                                                       project.get('duration_seconds'))
         # A partial draft may not have named its duration; the default is what
         # the sections must cover.
-        validate_sections(project['sections'], project['duration_seconds'])
+        validate_sections(shown, project['duration_seconds'])
         with self.locked():
             self._save(project)
-        return project
+        return {**project, 'sections': shown}
 
     def approve(self, project_id, *, base_updated_at=None):
         """Approve a draft, optionally bound to the version the user reviewed.

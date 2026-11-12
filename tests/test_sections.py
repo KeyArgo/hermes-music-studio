@@ -167,6 +167,17 @@ class SectionSnapshotAndStatusTests(unittest.TestCase):
         self.assertEqual([s['tag'] for s in exposed['sections']], ['verse', 'chorus'])
         self.assertEqual(exposed['sections'][-1]['end_s'], 40)
 
+    def test_create_response_shows_the_sections_the_lyrics_imply(self):
+        project = self.store.create(caption='music', duration_seconds=40,
+                                    lyrics='[verse]\none\n[chorus]\ntwo')
+        # A client that renders the create response must not see an empty section list...
+        self.assertEqual([s['tag'] for s in project['sections']], ['verse', 'chorus'])
+        # ...while storage keeps only what the writer supplied, so /status still says 'lyrics'.
+        self.assertEqual(self.store.get(project['project_id'])['sections'], [])
+        body = self.client.get('/status').json()
+        exposed = next(p for p in body['projects'] if p['project_id'] == project['project_id'])
+        self.assertEqual(exposed['sections_source'], 'lyrics')
+
     def test_api_update_rejects_sections_that_no_longer_fit(self):
         project = self.store.create(caption='music', lyrics='words', duration_seconds=30,
                                     sections=two_sections(30))
