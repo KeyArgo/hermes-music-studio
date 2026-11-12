@@ -1,0 +1,6 @@
+docs/screenshots/create-form.png
+docs/screenshots/library.png
+docs/screenshots/player.png
+docs/screenshots/compute.png
+docs/screenshots/workspaces.png
+docs/screenshots/verify.png

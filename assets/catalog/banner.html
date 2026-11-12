@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;width:1200px;height:600px;overflow:hidden;background:#0a0c11}
+  *{box-sizing:border-box}
+  .banner{position:relative;width:1200px;height:600px;background:#0a0c11;color:#f2f2f2;
+    font-family:"Inter","DejaVu Sans",system-ui,sans-serif;overflow:hidden}
+  .rule{position:absolute;left:0;top:0;width:100%;height:5px;background:#0053fd}
+  .grid{position:absolute;inset:0;background-image:
+    linear-gradient(#121720 1px,transparent 1px),linear-gradient(90deg,#121720 1px,transparent 1px);
+    background-size:40px 40px;opacity:.55}
+  .copy{position:absolute;left:64px;top:92px;width:410px}
+  .mark{width:74px;height:74px;margin-bottom:30px}
+  .name{font-size:46px;line-height:.98;letter-spacing:.02em;font-weight:800;word-spacing:.12em}
+  .tag{margin-top:20px;font-size:20px;line-height:1.45;color:#9fb0c6;font-weight:500}
+  .claims{margin-top:26px;font-family:"DejaVu Sans Mono",ui-monospace,monospace;
+    font-size:13px;line-height:2.1;letter-spacing:.05em;color:#c8d3e1;text-transform:uppercase}
+  .claims b{color:#7aa2ff;font-weight:600}
+  .foot{position:absolute;left:64px;bottom:44px;font-size:12px;letter-spacing:.26em;
+    color:#7d8ca1;text-transform:uppercase}
+  .foot b{color:#0053fd}
+  .shot{position:absolute;left:492px;top:88px;width:760px;height:424px;border:1px solid #24303f;
+    border-radius:10px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55);background:#10141b}
+  .shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left}
+  .shot .bar{height:26px;background:#10141b;border-bottom:1px solid #24303f;display:flex;align-items:center;gap:6px;padding:0 11px}
+  .shot .bar i{width:7px;height:7px;border-radius:50%;background:#2c3a4e;display:block}
+  .shot .bar span{margin-left:8px;font:11px "DejaVu Sans Mono",monospace;color:#6f8299;letter-spacing:.04em}
+  .frame{position:absolute;left:492px;top:88px;width:760px;height:424px}
+  .shotwrap{position:absolute;left:492px;top:88px;width:760px;height:424px;border-radius:10px;overflow:hidden;border:1px solid #24303f;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+  .shotwrap .bar{height:26px;background:#10141b;border-bottom:1px solid #24303f;display:flex;align-items:center;gap:6px;padding:0 11px}
+  .shotwrap .bar i{width:7px;height:7px;border-radius:50%;background:#2c3a4e;display:block}
+  .shotwrap .bar span{margin-left:8px;font:11px "DejaVu Sans Mono",monospace;color:#6f8299;letter-spacing:.04em}
+  .shotwrap img{display:block;width:100%;height:calc(100% - 26px);object-fit:cover;object-position:top left}
+</style></head><body>
+<div class="banner">
+  <div class="rule"></div><div class="grid"></div>
+  <div class="copy">
+    <svg class="mark" viewBox="0 0 120 120" fill="none">
+      <circle cx="60" cy="60" r="54" stroke="#1d2734" stroke-width="6"/>
+      <circle cx="60" cy="60" r="44" stroke="#243040" stroke-width="5"/>
+      <circle cx="60" cy="60" r="34" stroke="#2b3a4d" stroke-width="4"/>
+      <path d="M60 18 A42 42 0 0 1 102 60" stroke="#0053fd" stroke-width="10"/>
+      <path d="M60 30 A30 30 0 0 1 90 60" stroke="#0053fd" stroke-width="5" opacity=".55"/>
+      <circle cx="60" cy="60" r="7" fill="#0053fd"/>
+    </svg>
+    <div class="name">HERMES<br>MUSIC STUDIO</div>
+    <div class="tag">Describe a song. Approve the draft.<br>Render it on your own machine.</div>
+    <div class="claims">
+      <div><b>524</b> tests · <b>2</b> engines</div>
+      <div><b>10–180 s</b> takes · seeds kept</div>
+      <div>local-first · <b>MIT</b></div>
+    </div>
+  </div>
+  <div class="shotwrap">
+    <div class="bar"><i></i><i></i><i></i><span>127.0.0.1 · Hermes Music Studio</span></div>
+    <img src="../../docs/screenshots/create-form.png" alt="the create screen with a draft loaded">
+  </div>
+  <div class="foot">a <b>hermes</b> plugin · <b>inovinlabs</b></div>
+</div></body></html>
