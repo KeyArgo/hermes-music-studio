@@ -20,6 +20,10 @@
 
 <p align="center"><sub>The draft is the gate: nothing renders until a person approves this exact version.</sub></p>
 
+<p align="center"><img src="docs/media/music-studio-demo.gif" alt="Music Studio in Hermes: a song idea becomes a draft, the draft is approved, and the take plays" width="100%"/></p>
+
+<p align="center"><sub><b>Describe a song, approve the draft, hear it.</b> <a href="https://x.com/MHArgonaut/status/2120635407113339039">Watch the full demo ▶</a></sub></p>
+
 <p align="center"><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#documentation">Documentation</a> · <a href="#testing">Testing</a> · <a href="#contributing">Contributing</a></p>
 
 ## What it is
