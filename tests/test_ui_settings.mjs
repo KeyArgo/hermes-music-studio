@@ -691,3 +691,75 @@ test('a plain browser tab is told where drafting does work', async t => {
   await new Promise(resolve => setTimeout(resolve, 40));
   assert.match(text(doc.getElementById('idea-connection')), /pane in Hermes Desktop|music_studio tool/);
 });
+
+// ---------------------------------------------------------------- library: search, sort, folding
+const LIB = { ...STATUS, projects: [
+  { project_id: 'a', title: 'Alpha', caption: 'warm folk', lyrics: 'river song', updated_at: 10, takes: [] },
+  { project_id: 'b', title: 'Bravo', caption: 'dark metal', lyrics: '', updated_at: 30,
+    takes: [{ take_id: 'bt', state: 'succeeded', engine_id: 'ace_local', requested_seed: 1 }] },
+  { project_id: 'c', title: 'Handover', caption: '', lyrics: '', updated_at: 20, takes: [] },
+] };
+const titles = doc => [...doc.querySelectorAll('#library .project h2')].map(h => text(h));
+
+async function openLibrary() {
+  const booted = await boot({ '/api/status': LIB });
+  const doc = booted.window.document;
+  await new Promise(resolve => setTimeout(resolve, 40));
+  doc.getElementById('nav-library').click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  return { ...booted, doc };
+}
+
+test('the library folds empty drafts away and counts the rest', async t => {
+  const { window, doc } = await openLibrary();
+  t.after(() => window.close());
+  assert.deepEqual(titles(doc), ['Bravo', 'Alpha'], 'newest first, the empty Handover folded');
+  assert.equal(text(doc.getElementById('library-count')), '2 of 3 songs');
+  const toggle = doc.querySelector('.library-empties');
+  assert.equal(text(toggle), 'Show 1 empty drafts');
+  toggle.click();
+  assert.deepEqual(titles(doc), ['Bravo', 'Alpha', 'Handover']);
+});
+
+test('search narrows by title, style or lyrics, and sort reorders', async t => {
+  const { window, doc } = await openLibrary();
+  t.after(() => window.close());
+  const search = doc.getElementById('library-search');
+  search.value = 'RIVER';
+  search.dispatchEvent(new window.Event('input'));
+  assert.deepEqual(titles(doc), ['Alpha'], 'lyrics match, case-insensitive');
+  search.value = 'zzz';
+  search.dispatchEvent(new window.Event('input'));
+  assert.match(text(doc.getElementById('library')), /No songs match/);
+  search.value = '';
+  search.dispatchEvent(new window.Event('input'));
+  const sort = doc.getElementById('library-sort');
+  sort.value = 'oldest';
+  sort.dispatchEvent(new window.Event('change'));
+  assert.deepEqual(titles(doc), ['Alpha', 'Bravo']);
+});
+
+test('a take row keeps Play and Export, the rest sit under More', async t => {
+  const { window, doc } = await openLibrary();
+  t.after(() => window.close());
+  const row = doc.querySelector('#library .take');
+  const visible = [...row.children].filter(n => n.tagName === 'BUTTON').map(b => text(b));
+  assert.ok(visible.some(v => /Play$/.test(v)) && visible.includes('Export'));
+  const more = row.querySelector('details.take-more');
+  assert.ok(more, 'a More menu exists');
+  const inside = [...more.querySelectorAll('button')].map(b => text(b));
+  assert.ok(inside.includes('Delete take') && inside.includes('Check this take'), inside.join(','));
+});
+
+test('clicking a song title opens its draft; the change box opens on demand', async t => {
+  const { window, doc } = await openLibrary();
+  t.after(() => window.close());
+  const card = doc.querySelector('#library .project');
+  const change = card.querySelector('.project-change');
+  assert.ok(change.hidden, 'the change box starts folded');
+  [...card.querySelectorAll('button')].find(b => text(b) === 'Change with words…').click();
+  assert.ok(!change.hidden);
+  card.querySelector('h2').click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(!doc.getElementById('create-view').hidden, 'the draft opens on the Create page');
+});

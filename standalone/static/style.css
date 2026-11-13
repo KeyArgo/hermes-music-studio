@@ -103,3 +103,16 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 
 /* One icon set for the rail: same size, same stroke, colour follows the text. */
 .nav-icon{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* Library: search + sort, folded take actions, the change box on demand. */
+.library-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 16px}
+.library-tools label{margin:0}.library-search{flex:1 1 280px}.library-sort{flex:0 0 170px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.project-title{cursor:pointer}.project-title:hover{text-decoration:underline;text-underline-offset:4px}
+.project-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.take{flex-wrap:wrap}.take>span{flex:1 1 260px;min-width:0}
+.take-more{position:relative}.take-more summary{list-style:none;cursor:pointer;border:1px solid #4a4e42;border-radius:99px;padding:7px 12px;font-size:12px}
+.take-more summary::-webkit-details-marker{display:none}
+.take-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:grid;gap:4px;min-width:190px;padding:8px;background:#211d23;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 40px #0006}
+.take-menu button{text-align:left;border-radius:7px!important}
+.library-empties{justify-self:start}

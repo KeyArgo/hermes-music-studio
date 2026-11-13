@@ -356,8 +356,21 @@ async function follow(p, panel) {
 function library() {
   const container = $('library'); container.replaceChildren();
   if (!projects.length) { container.append(el('p','No drafts yet. Create a song to see it here.')); return; }
-  projects.filter(p => !libraryFilter || belongsTo(p,libraryFilter)).forEach(p => {
+  const inScope = projects.filter(p => !libraryFilter || belongsTo(p,libraryFilter));
+  const query = (($('library-search') || {}).value || '').trim().toLowerCase();
+  const order = (($('library-sort') || {}).value) || 'newest';
+  const matches = inScope.filter(p => !query ||
+    [p.title, p.caption, p.lyrics, p.idea].some(v => String(v || '').toLowerCase().includes(query)));
+  const empty = matches.filter(isEmptyDraft), shown = matches.filter(p => !isEmptyDraft(p));
+  shown.sort(LIBRARY_ORDERS[order] || LIBRARY_ORDERS.newest);
+  const count = $('library-count');
+  if (count) count.textContent = `${shown.length} of ${inScope.length} songs`;
+  if (!shown.length) container.append(el('p', query ? 'No songs match.' : 'No songs with words or takes yet.', 'hint'));
+  shown.concat(showEmptyDrafts ? empty : []).forEach(p => {
     const card = el('article', '', 'project'), head = el('div','','project-head'), title = el('h2',p.title || 'Untitled');
+    title.classList.add('project-title'); title.tabIndex = 0; title.title = 'Open this draft';
+    title.addEventListener('click', () => loadProject(p));
+    title.addEventListener('keydown', e => { if (e.key === 'Enter') loadProject(p); });
     card.dataset.project = p.project_id;   // so a panel can find this card after a refresh
     const edit = el('button','Open draft','button secondary'); edit.type='button'; edit.addEventListener('click', () => loadProject(p));
     const ver = el('button','3 versions','button secondary'); ver.type='button'; ver.addEventListener('click', async () => {
@@ -395,7 +408,12 @@ function library() {
       } catch (err) { libMessage(err.message, true); } finally { changeIt.disabled = false; }
     });
     const identity=el('div','','project-identity'); if (p.has_cover !== false) { const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover); } identity.append(title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
-    const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); card.append(changeRow);
+    const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); changeRow.hidden = true; card.append(changeRow);
+    const changeToggle = el('button','Change with words…','button secondary'); changeToggle.type='button';
+    changeToggle.setAttribute('aria-expanded','false');
+    changeToggle.addEventListener('click', () => { changeRow.hidden = !changeRow.hidden;
+      changeToggle.setAttribute('aria-expanded', String(!changeRow.hidden)); if (!changeRow.hidden) words.focus(); });
+    actions.append(changeToggle);
     const memory = p.memory || {}; const memNotes = (memory.events || []).length;
     if (memNotes || memory.kept_take_id) {
       const lastNote = (memory.events || [])[memNotes - 1] || {};
@@ -476,8 +494,37 @@ function library() {
       exp.addEventListener('click', async()=>{try{const folder=(($('settings-export-dir')||{}).value||'').trim();const d=await api('/export',{project_id:p.project_id,take_id:t.take_id,title:p.title||'Music Studio take',folder:folder||undefined});libMessage(`Exported to ${d.path}`);}catch(err){libMessage(err.message,true);}});
       row.append(exp);
       const add=el('button','Add to REVamp');add.type='button';add.onclick=async()=>{try{add.disabled=true;const chosen=(($('revamp-playlist')||{}).value||'').trim();await api('/studio/revamp/add-take',{project_id:p.project_id,take_id:t.take_id,...(chosen?{playlist_id:chosen}:{})});add.textContent='Added ✓';$('revamp-status').textContent=`${p.title || 'Untitled'} · take ${i+1} is in REVamp.`;show('listen');loadRevamp();}catch(err){add.disabled=false;$('revamp-status').textContent=err.message;show('listen');}};row.append(add); }
-      card.append(row); }); container.append(card);
+      tidyTakeRow(row); card.append(row); }); container.append(card);
   });
+  if (empty.length) {
+    const toggle = el('button', showEmptyDrafts ? `Hide ${empty.length} empty drafts` : `Show ${empty.length} empty drafts`,
+                      'button secondary library-empties');
+    toggle.type = 'button';
+    toggle.addEventListener('click', () => { showEmptyDrafts = !showEmptyDrafts; library(); });
+    container.append(toggle);
+  }
+}
+
+// A draft with nothing in it yet: no words, no style, no takes. Kept, but folded away.
+function isEmptyDraft(p) {
+  return !String(p.caption || '').trim() && !String(p.lyrics || '').trim() && !String(p.idea || '').trim()
+    && !(p.takes || []).length;
+}
+let showEmptyDrafts = false;
+const LIBRARY_ORDERS = {
+  newest: (a, b) => (b.updated_at || 0) - (a.updated_at || 0),
+  oldest: (a, b) => (a.updated_at || 0) - (b.updated_at || 0),
+  title: (a, b) => String(a.title || 'Untitled').localeCompare(String(b.title || 'Untitled')),
+  takes: (a, b) => (b.takes || []).length - (a.takes || []).length,
+};
+// Play and Export stay on the row; every other take action moves into a "More" menu. The buttons
+// are moved, not rebuilt, so each keeps exactly the handler it was made with.
+function tidyTakeRow(row) {
+  const keep = b => /Play$/.test(b.textContent.trim()) || b.textContent.trim() === 'Export';
+  const extra = [...row.children].filter(n => n.tagName === 'BUTTON' && !keep(n));
+  if (extra.length < 2) return;
+  const more = el('details', '', 'take-more'), summary = el('summary', 'More ▾'), menu = el('div', '', 'take-menu');
+  menu.append(...extra); more.append(summary, menu); row.append(more);
 }
 function formatEta(seconds) {
   if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'estimating';
@@ -620,6 +667,12 @@ $('preview-chorus').addEventListener('click', async () => {
 
 $('render').addEventListener('click', async () => { if(busy || !current || dirty || !current.approved) return; busy=true; buttons(); try { const seed = crypto.getRandomValues(new Uint32Array(1))[0]; await api('/generate',{project_id:current.project_id,engine_id:form.elements.engine.value,seed}); message('Take queued. Follow its progress in your library.'); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
 $('new-song').addEventListener('click', () => { if (dirty && !window.confirm('Discard unsaved changes?')) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); message('New draft.'); show('create'); });
+for (const [id, event] of [['library-search','input'], ['library-sort','change']]) {
+  const node = $(id); if (node) node.addEventListener(event, () => {
+    if (id === 'library-sort') { try { localStorage.setItem('studio.librarySort', node.value); } catch (e) {} }
+    library(); });
+}
+try { const saved = localStorage.getItem('studio.librarySort'); if (saved && $('library-sort')) $('library-sort').value = saved; } catch (e) {}
 $('nav-create').addEventListener('click',() => show('create')); $('nav-library').addEventListener('click',() => {libraryFilter=null;library();show('library');});
 $('nav-workspaces').addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
 $('nav-compute').addEventListener('click',async()=>{show('compute');await refreshTargets();await loadHardware(true);});
@@ -1467,3 +1520,7 @@ if ($('version-panel')) {
     }
   });
 }
+// An open "More" menu closes when you click anywhere else, like any menu.
+document.addEventListener('click', e => {
+  document.querySelectorAll('details.take-more[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
+});

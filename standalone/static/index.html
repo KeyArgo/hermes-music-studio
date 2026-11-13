@@ -186,6 +186,11 @@
 <div class="eyebrow">02 / LIBRARY</div>
 <h1>Your <em>sound archive.</em></h1>
 <p class="intro">Every idea and take has a home here.</p>
+<div class="library-tools">
+<label class="library-search"><span class="sr-only">Search songs</span><input id="library-search" type="search" placeholder="Search titles, styles and lyrics" autocomplete="off"></label>
+<label class="library-sort"><span class="sr-only">Sort</span><select id="library-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="takes">Most takes</option></select></label>
+<span id="library-count" class="hint" aria-live="polite"></span>
+</div>
 <div id="library" class="library" aria-live="polite"></div>
 <p id="library-status" class="message" role="status"></p>
 </section>
