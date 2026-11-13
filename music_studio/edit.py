@@ -53,6 +53,9 @@ def _mix(dst: array, dst_frame: int, src: array, src_frame: int, frames: int,
             dst[base_dst + channel] = max(-32768, min(32767, int(round(mixed))))
 
 
+SHORTFALL_TOLERANCE_S = 0.1
+
+
 def splice(parent: bytes, candidate: bytes, start_s: float, end_s: float,
            fade_ms: int = 40) -> bytes:
     """Return the parent WAV with [start_s, end_s) taken from ``candidate``.
@@ -69,9 +72,16 @@ def splice(parent: bytes, candidate: bytes, start_s: float, end_s: float,
     start = max(0, min(total_frames - 1, int(round(float(start_s) * rate))))
     end = max(start + 1, min(total_frames, int(round(float(end_s) * rate))))
     length = end - start
+    # Engines hand back a hair less than they were asked for (MiniMax via ComfyUI: 9.996 s for 10 s).
+    # A shortfall that small ends the replacement where its audio ends, inside the crossfade, where
+    # nobody can hear it; anything clearly short is still refused rather than leaving a gap.
+    have = len(cand_pcm) // cand_channels
+    if have < length:
+        if length - have > int(SHORTFALL_TOLERANCE_S * rate):
+            raise ValueError('the replacement is shorter than the section it must fill')
+        length = have
+        end = start + length
     need = length * channels
-    if len(cand_pcm) < need:
-        raise ValueError('the replacement is shorter than the section it must fill')
     cand_pcm = array('h', cand_pcm[:need])
     fade = max(0, min(int(round(fade_ms / 1000.0 * rate)), length // 2))
 
@@ -80,13 +90,19 @@ def splice(parent: bytes, candidate: bytes, start_s: float, end_s: float,
         # Candidate body, then ramps: parent fades out into it, it fades out into the tail.
         out[(start + fade) * channels:(end - fade) * channels] = \
             cand_pcm[fade * channels:(length - fade) * channels]
+        # Leading seam: the parent hands over to the candidate.
         _mix(out, start, cand_pcm, 0, fade, channels, rising=True)
         if end < total_frames:
-            _mix(out, end - fade, parent_pcm, (end - fade) * channels, fade, channels,
-                 rising=False)
+            # Trailing seam: the candidate hands back to the parent. ``out`` still holds the parent
+            # here, so the candidate's last ``fade`` frames are mixed in falling. (This used to mix
+            # the parent with itself, which cut the candidate off at end - fade with a click, and
+            # passed a sample offset where a frame index belongs, overrunning on stereo.)
+            _mix(out, end - fade, cand_pcm, length - fade, fade, channels, rising=False)
         else:
+            # The section runs to the end of the song: the candidate fades to silence.
+            out[(end - fade) * channels:end * channels] = cand_pcm[(length - fade) * channels:length * channels]
             _mix(out, end - fade, array('h', b'\x00\x00' * (fade * channels)), 0, fade,
-                 channels, rising=False)
+                 channels, rising=True)
     else:
         out[start * channels:end * channels] = cand_pcm
     return write_pcm(out, rate, channels)

@@ -84,7 +84,9 @@ def _render_request(store, jobs, project_id, snap, take):
     from music_studio.engines import RenderRequest
     from music_studio.store import render_timeout_seconds
     kind = take.get('kind') or 'generate'
-    mode = {'extension': 'extend'}.get(kind, kind)
+    # A section asks nothing special of the engine: it is a short generate of the section's own
+    # length (enqueue_section stored it as the snapshot duration), auditioned before any splice.
+    mode = {'extension': 'extend', 'section': 'generate'}.get(kind, kind)
     source = None
     if mode == 'generate':
         duration = snap['duration_seconds']

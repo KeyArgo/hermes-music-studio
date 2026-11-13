@@ -81,6 +81,44 @@ def test_splice_refuses_a_short_replacement(library):
         edit.splice(_tone(12.0), _tone(0.5), 1.0, 2.0)
 
 
+def test_splice_accepts_an_engine_that_came_back_a_hair_short(library):
+    """Live 2026-11-13: MiniMax via ComfyUI returned 9.996 s for a 10 s section and the splice refused."""
+    parent = _tone(12.0, frequency=440)
+    _, rate, _ = edit.read_pcm(parent)
+    candidate = _tone(1.0 - 168 / rate, frequency=880)
+    merged = edit.splice(parent, candidate, 1.0, 2.0, fade_ms=10)
+    merged_pcm, _, _ = edit.read_pcm(merged)
+    parent_pcm, _, _ = edit.read_pcm(parent)
+    assert len(merged_pcm) == len(parent_pcm), 'the song keeps its length'
+    assert merged_pcm[int(2.0 * rate) + 600:] == parent_pcm[int(2.0 * rate) + 600:]
+
+
+def test_a_stereo_splice_near_the_end_does_not_overrun(library):
+    """Live 2026-11-13 on a stereo MiniMax take: IndexError at the trailing seam (a sample offset was
+    passed where a frame index belongs)."""
+    parent = _tone(4.0, frequency=440, channels=2)
+    candidate = _tone(1.0, frequency=660, channels=2)
+    merged = edit.splice(parent, candidate, 2.5, 3.5, fade_ms=20)
+    merged_pcm, rate, channels = edit.read_pcm(merged)
+    parent_pcm, _, _ = edit.read_pcm(parent)
+    assert channels == 2 and len(merged_pcm) == len(parent_pcm)
+    end = int(3.5 * rate)
+    assert merged_pcm[end * channels:] == parent_pcm[end * channels:]
+
+
+def test_the_candidate_fades_out_across_the_trailing_seam(library):
+    """The trailing seam used to mix the parent with itself: the candidate stopped dead at end - fade."""
+    parent = _tone(4.0, frequency=440, amplitude=0)          # silence, so any sound is the candidate
+    candidate = _tone(1.0, frequency=660, amplitude=8000)
+    merged = edit.splice(parent, candidate, 1.0, 2.0, fade_ms=50)
+    merged_pcm, rate, _ = edit.read_pcm(merged)
+    fade = int(0.05 * rate)
+    end = int(2.0 * rate)
+    seam = merged_pcm[end - fade:end - fade // 4]
+    assert max(abs(v) for v in seam) > 1000, 'the candidate is still audible inside the trailing seam'
+    assert max(abs(v) for v in merged_pcm[end:]) == 0, 'and gone after it'
+
+
 def test_fade_out_ends_at_silence(library):
     faded = edit.fade_out(_tone(2.0), seconds=0.5)
     samples, rate, _ = edit.read_pcm(faded)
