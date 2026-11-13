@@ -429,6 +429,16 @@ function library() {
       if (t.state === 'running') detail += ` · estimated ${Number(t.progress) || 0}% · estimated ETA ${formatEta(t.eta_seconds)}`;
       else if (t.state === 'queued') detail += ` · queued${t.queue_position ? ` (#${t.queue_position})` : ''}`;
       const label = el('span', detail); row.append(label);
+      const takeCaps = takeCapabilities(t.engine_id || p.engine);
+      const engineName = takeCaps ? (takeCaps.engine.label || takeCaps.engine.id)
+        : (t.engine_id || p.engine || 'this engine');
+      // Section render is a plain generate of the range, so it works on an engine without
+      // repaint; only an engine that opts out of generate loses the control.
+      const canRepaint = !takeCaps || takeCaps.capabilities.repaint !== false;
+      const canExtend = !takeCaps || takeCaps.capabilities.continuation !== false;
+      const canSection = !takeCaps || takeCaps.engine.supports_generate !== false;
+      const missing = [!canRepaint && 'repaint a range', !canExtend && 'extend this take']
+        .filter(Boolean).join(' or ');
       if (t.state === 'succeeded') {
         // Save your spot at any moment — and get back to the last one with one press.
         const saveSpot = el('button','Save spot','button secondary'); saveSpot.type='button';
@@ -477,8 +487,14 @@ function library() {
           } catch (err) { libMessage(err.message, true); } finally { fix.disabled = false; }
         });
         row.append(check, fix);
-        const redo = el('button','Change this part','button secondary'); redo.type='button';
-        redo.addEventListener('click', () => snippetRow(p, t, row)); row.append(redo);
+        if (canRepaint || canSection) {
+          const redo = el('button','Change this part','button secondary'); redo.type='button';
+          redo.title = !missing
+            ? 'Re-render this range as a new take, then splice it back'
+            : `${engineName} cannot ${missing}; this part is rendered on its own and spliced back instead.`;
+          redo.addEventListener('click', () => snippetRow(p, t, row,
+            {repaint: canRepaint, engine: engineName, missing})); row.append(redo);
+        }
         const fade = el('button','Fade out','button secondary'); fade.type='button';
         fade.addEventListener('click', async () => { try { await api('/fade',{project_id:p.project_id,take_id:t.take_id,seconds:1.5}); libMessage('Added a faded copy as a new take.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } });
         row.append(fade);
@@ -546,6 +562,18 @@ function takeTargetLabel(take) {
   if (id) return `target ${targetName(id)}`;
   if ((take.engine_id || '') === 'minimax_m3_comfy') return 'target default endpoint';
   return '';
+}
+function normalizeEngineId(id) { return id === 'ace' ? 'ace_local' : id; }
+function engineFor(id) {
+  const want = normalizeEngineId(id);
+  return want ? engines.find(e => normalizeEngineId(e.id) === want) : null;
+}
+// An engine that does not declare an operation must not be offered it: the server refuses the
+// render anyway, so a visible control would be a button that can only fail. Old take records with
+// no engine id keep the previous behaviour (unknown capabilities are not a reason to hide a control).
+function takeCapabilities(engineId) {
+  const engine = engineFor(engineId);
+  return engine ? {engine, capabilities: engine.capabilities || {}} : null;
 }
 function findActiveTake() {
   const live = take => take && (take.state === 'running' || take.state === 'queued');
@@ -1102,10 +1130,16 @@ loadSettings().catch(err => { const node = $('settings-message'); if (node) node
 // Change eight seconds without touching the rest of the song. Every control is on the row: three
 // typed dialogs (`window.prompt`) used to stand between the person and the edit, which is why "it is
 // hard to make changes to any field". When the replacement finishes it is spliced back automatically,
-// so the audio outside the range is the parent's own bytes rather than a re-render.
-function snippetRow(project, take, row) {
+// so the audio outside the range is the parent's own bytes rather than a re-render. An engine without
+// repaint renders the range as a plain generate of that section; the splice is the same.
+function snippetRow(project, take, row, options = {}) {
   if (row.querySelector('.snippet-form')) return;      // one form per take, not a stack of them
+  const canRepaint = options.repaint !== false;
   const form = el('div', '', 'snippet-form');
+  if (!canRepaint) {
+    form.append(el('p', `${options.engine || 'This engine'} cannot ${options.missing || 'repaint a range'}; it renders the part on its own and the rest of the song is copied back.`,
+      'hint snippet-note'));
+  }
   const start = el('input'); start.type = 'number'; start.min = '0'; start.step = '0.5';
   start.value = '0'; start.className = 'snippet-start'; start.placeholder = 'from (s)';
   const end = el('input'); end.type = 'number'; end.min = '1'; end.step = '0.5';
@@ -1142,16 +1176,21 @@ function snippetRow(project, take, row) {
     const from = Number(start.value), to = Number(end.value);
     const instruction = (words.value || '').trim();
     if (!(from >= 0 && to > from)) { libMessage('Give a range: from 0, to 8, for example.', true); return; }
-    if (to - from < 3) { libMessage('The engine repaints at least 3 seconds at a time.', true); return; }
+    if (canRepaint && to - from < 3) { libMessage('The engine repaints at least 3 seconds at a time.', true); return; }
     if (!instruction) { libMessage('Say what this part should become.', true); return; }
     go.disabled = true;
     try {
-      const queued = await api('/snippet', { project_id: project.project_id, take_id: take.take_id,
-        start_s: from, end_s: to, instruction });
+      const queued = canRepaint
+        ? await api('/snippet', { project_id: project.project_id, take_id: take.take_id,
+          start_s: from, end_s: to, instruction })
+        : await api('/section/render', { project_id: project.project_id, take_id: take.take_id,
+          start_s: from, end_s: to, caption: instruction });
       const childId = (queued.take || {}).take_id;
-      libMessage(`Repainting ${from}–${to}s. The rest of the song is copied back when it finishes.`);
+      libMessage(canRepaint
+        ? `Repainting ${from}–${to}s. The rest of the song is copied back when it finishes.`
+        : `Rendering ${from}–${to}s on its own. The rest of the song is copied back when it finishes.`);
       await refresh(); library();
-      snippetWait(project, childId, 0);
+      snippetWait(project, childId, 0, canRepaint);
     } catch (err) { libMessage(err.message, true); } finally { go.disabled = false; }
   });
 
@@ -1161,9 +1200,9 @@ function snippetRow(project, take, row) {
 
 // Poll the child take, then splice it back. A person who asked for eight seconds should not have to
 // find a second button afterwards, and a splice that never happens leaves a take nobody asked for.
-async function snippetWait(project, childId, tries) {
+async function snippetWait(project, childId, tries, canRepaint = true) {
   if (!childId) return;
-  if (tries > 60) { libMessage('That repaint is taking longer than usual — check the takes above.', true); return; }
+  if (tries > 60) { libMessage('That render is taking longer than usual — check the takes above.', true); return; }
   await new Promise(done => setTimeout(done, 6000));
   let take = null;
   try {
@@ -1171,13 +1210,14 @@ async function snippetWait(project, childId, tries) {
     const fresh = (status.projects || []).find(x => x.project_id === project.project_id);
     take = fresh && (fresh.takes || []).find(x => x.take_id === childId);
   } catch (err) { /* keep polling; a transient status failure is not a failed render */ }
-  if (!take) return snippetWait(project, childId, tries + 1);
+  if (!take) return snippetWait(project, childId, tries + 1, canRepaint);
   if (take.state === 'failed') {
-    libMessage('The repaint failed: ' + (take.error || 'no reason recorded'), true);
+    libMessage(`${canRepaint ? 'The repaint' : 'The section render'} failed: ` +
+      (take.error || 'no reason recorded'), true);
     await refresh(); library();
     return;
   }
-  if (take.state !== 'succeeded') return snippetWait(project, childId, tries + 1);
+  if (take.state !== 'succeeded') return snippetWait(project, childId, tries + 1, canRepaint);
   try {
     await api('/snippet/splice', { project_id: project.project_id, take_id: childId });
     libMessage('Done — only that part changed; the rest of the song was copied back untouched.');

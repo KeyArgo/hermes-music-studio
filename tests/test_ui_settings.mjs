@@ -778,3 +778,97 @@ test('clicking a song title opens its draft; the change box opens on demand', as
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(!doc.getElementById('create-view').hidden, 'the draft opens on the Create page');
 });
+
+// Engine capabilities decide which take actions exist. The pane reads the same engines block it
+// already fetches from /status; no new request and no hardcoded engine name.
+
+const CAPS = {
+  ace: { instrumental: true, vocal_language: true, repaint: true, continuation: true, batch: false },
+  mini: { instrumental: true, vocal_language: true, repaint: false, continuation: false, batch: false },
+  frozen: { instrumental: true, vocal_language: true, repaint: false, continuation: false, batch: false },
+};
+
+function capabilityStatus(takes, engineIds = ['ace_local', 'minimax_m3_comfy', 'stub_frozen']) {
+  const labels = { ace_local: 'ACE-Step 1.5 (local GPU)', minimax_m3_comfy: 'MiniMax Music 3 (ComfyUI)',
+    stub_frozen: 'Frozen engine' };
+  const caps = { ace_local: CAPS.ace, minimax_m3_comfy: CAPS.mini, stub_frozen: CAPS.frozen };
+  return {
+    success: true, engine_available: true,
+    engines: engineIds.map(id => ({ id, label: labels[id],
+      supports_generate: id !== 'stub_frozen', capabilities: caps[id] })),
+    projects: [{ project_id: 'p1', title: 'Capability song', caption: 'quiet', engine: 'ace',
+      approved: true, takes }],
+  };
+}
+
+const takeRow = (doc, engineId) => [...doc.querySelectorAll('#library .take')]
+  .find(row => text(row).includes(engineId));
+
+test('a take whose engine cannot repaint renders the part as a section instead', async t => {
+  const { window, calls } = await boot({
+    '/api/status': capabilityStatus([
+      { take_id: 't1', state: 'succeeded', engine_id: 'minimax_m3_comfy', requested_seed: 7,
+        audio_seconds: 20 }]),
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const row = takeRow(doc, 'minimax_m3_comfy');
+  const redo = [...row.querySelectorAll('button')].find(b => text(b) === 'Change this part');
+  assert.ok(redo, 'section render is a generate, so the control stays');
+  assert.match(redo.title, /cannot repaint/i, 'the tooltip names what the engine cannot do');
+
+  redo.click();
+  const form = row.querySelector('.snippet-form');
+  assert.ok(form, 'the inline form opens');
+  assert.match(text(form), /cannot repaint/i);
+
+  form.querySelector('.snippet-start').value = '2';
+  form.querySelector('.snippet-end').value = '6';
+  form.querySelector('.snippet-words').value = 'dreamier strings';
+  [...form.querySelectorAll('button')].find(b => text(b) === 'Render the new part').click();
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  const posted = calls.filter(c => c.path === '/api/section/render').pop();
+  assert.ok(posted, 'the section render route is used, not repaint');
+  assert.deepEqual(posted.body,
+    { project_id: 'p1', take_id: 't1', start_s: 2, end_s: 6, caption: 'dreamier strings' });
+  assert.ok(!calls.some(c => c.path === '/api/snippet'), 'repaint is never requested on this engine');
+});
+
+test('a take whose engine repaints keeps the repaint form', async t => {
+  const { window, calls } = await boot({
+    '/api/status': capabilityStatus([
+      { take_id: 't1', state: 'succeeded', engine_id: 'ace_local', requested_seed: 7,
+        audio_seconds: 20 }]),
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const row = takeRow(doc, 'ace_local');
+  const redo = [...row.querySelectorAll('button')].find(b => text(b) === 'Change this part');
+  assert.ok(redo);
+  assert.doesNotMatch(redo.title, /cannot repaint/i);
+
+  redo.click();
+  const form = row.querySelector('.snippet-form');
+  form.querySelector('.snippet-start').value = '2';
+  form.querySelector('.snippet-end').value = '6';
+  form.querySelector('.snippet-words').value = 'dreamier strings';
+  [...form.querySelectorAll('button')].find(b => text(b) === 'Render the new part').click();
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.ok(calls.some(c => c.path === '/api/snippet'), 'a capable engine still repaints');
+  assert.ok(!calls.some(c => c.path === '/api/section/render'), 'and is not silently downgraded');
+});
+
+test('an engine that cannot generate has no Change this part control', async t => {
+  const { window } = await boot({
+    '/api/status': capabilityStatus([
+      { take_id: 't1', state: 'succeeded', engine_id: 'stub_frozen', requested_seed: 7,
+        audio_seconds: 20 }]),
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const row = takeRow(doc, 'stub_frozen');
+  assert.equal([...row.querySelectorAll('button')].some(b => text(b) === 'Change this part'), false,
+    'neither repaint nor section render can run on that engine');
+});

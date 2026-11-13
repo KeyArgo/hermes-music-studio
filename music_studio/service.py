@@ -1127,6 +1127,7 @@ def splice_section(project_id, take_id, candidate_take_id, fade_ms=40):
         take = jobs._new_take(project, seed=int(parent.get('seed') or 0),
                               requested_seed=int(parent.get('requested_seed') or 0),
                               seed_locked=False, kind='splice', parent=parent,
+                              engine_id=parent.get('engine_id') or engine_id_for(project),
                               extra={'section_of': dict(span),
                                      'candidate_take_id': candidate_take_id,
                                      'range_start_s': span['start_s'],
