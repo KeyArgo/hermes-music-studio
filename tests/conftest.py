@@ -14,6 +14,36 @@ import pytest
 TEST_TOKEN = 'test-token-abc123'
 
 
+_REAL_LIBRARY = os.path.join(os.path.expanduser('~'), '.hermes', 'plugin-data', 'hermes-music-studio')
+
+
+def _listing(path):
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
+@pytest.fixture(autouse=True, scope='session')
+def _the_real_library_is_never_touched():
+    """No test may write into the person's own library.
+
+    A test once created a project titled "Handover" in ~/.hermes/plugin-data on every run, so the
+    owner's library filled with empty songs. Every test now gets its own HERMES_HOME (below); this
+    fails the run if a file still appears in the real one.
+    """
+    before = _listing(_REAL_LIBRARY)
+    yield
+    added = sorted(set(_listing(_REAL_LIBRARY)) - set(before))
+    assert not added, f'tests wrote into the real library {_REAL_LIBRARY}: {added[:5]}'
+
+
+@pytest.fixture(autouse=True)
+def _a_private_hermes_home_for_every_test(monkeypatch, tmp_path_factory):
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path_factory.mktemp('hermes-home')))
+    monkeypatch.delenv('HEWN_STUDIO_DATA_DIR', raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _studio_token_in_the_environment(monkeypatch):
     monkeypatch.setenv('HEWN_STUDIO_TOKEN', TEST_TOKEN)
