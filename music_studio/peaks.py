@@ -15,6 +15,7 @@ import wave
 from pathlib import Path
 
 from .store import fsync_dir, valid_id
+from .safeopen import open_nofollow
 
 PEAKS_MIN_BUCKETS = 64
 PEAKS_MAX_BUCKETS = 2048
@@ -89,7 +90,7 @@ def _sidecar_path(root, take_id):
 def _read_cache(path, size, mtime_ns):
     """Return the cached payload, or None; never follows a symlink."""
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+        fd = open_nofollow(path)
     except OSError:
         return None
     try:
