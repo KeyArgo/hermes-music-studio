@@ -92,3 +92,32 @@ def test_the_key_store_never_returns_the_key_to_the_page():
     assert all("key" not in entry or entry.get("key") is None for entry in entries)
     text = (ROOT / "music_studio" / "setup.py").read_text(encoding="utf-8")
     assert "'key': entry.get('key')" not in text, "the listing must not echo the stored key"
+
+
+def test_a_scoped_miss_never_falls_back_to_the_process_environment(monkeypatch):
+    """The reason the scope exists: a refusal must not be answered with somebody else's key.
+
+    Under profile multiplexing `get_secret` raises `UnscopedSecretError` rather than guessing. The old
+    code caught every exception and returned `os.environ[...]`, so a key exported by another profile (or
+    by a parent process) was sent to the remote server. Only a *missing Hermes module* is a fallback now.
+    """
+    class UnscopedSecretError(RuntimeError):
+        pass
+
+    module = types.ModuleType("agent.secret_scope")
+
+    def get_secret(name, default=None):
+        raise UnscopedSecretError("no secret scope in this process")
+
+    module.get_secret = get_secret
+    module.UnscopedSecretError = UnscopedSecretError
+    package = types.ModuleType("agent")
+    package.secret_scope = module
+    monkeypatch.setitem(sys.modules, "agent", package)
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", module)
+    monkeypatch.setenv("ACE_REMOTE_API_KEY", "another-profile-key")
+
+    from music_studio.engines import ace_remote
+
+    with pytest.raises(UnscopedSecretError):
+        ace_remote._remote_key()

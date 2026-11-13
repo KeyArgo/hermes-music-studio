@@ -47,13 +47,12 @@ def _remote_key() -> str | None:
     """
     try:
         from agent.secret_scope import get_secret
-
-        value = get_secret('ACE_REMOTE_API_KEY')
-        if value:
-            return value
-    except Exception:
-        pass
-    return os.environ.get('ACE_REMOTE_API_KEY') or None
+    except ImportError:
+        # A standalone install has no Hermes at all: the plain environment is the only store there is.
+        return os.environ.get('ACE_REMOTE_API_KEY') or None
+    # Anything the scope raises — UnscopedSecretError under multiplexing, a profile with no key — must
+    # NOT fall back to the process environment: that is exactly the profile bleed the scope prevents.
+    return get_secret('ACE_REMOTE_API_KEY') or None
 
 
 class AceRemoteEngine(Engine):
