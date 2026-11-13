@@ -25,6 +25,45 @@ ROOT = Path(__file__).parent
 HEALTH_PATH = '/api/health'
 app = FastAPI(title='Hermes Music Studio', docs_url=None, redoc_url=None)
 
+
+# A framed page in Hermes Desktop lives in a sandboxed frame: its origin is opaque ("null"), so every
+# fetch it makes is cross-origin and every write arrives with Origin: null and Sec-Fetch-Site:
+# cross-site. The old middleware refused both, which made the pane's own API unreachable. The rule now
+# is: a request that carries the per-launch token is trusted regardless of which document sent it —
+# the token is the credential, the origin is not — and the response gets the CORS headers the browser
+# needs to hand it back to that document.
+CORS_ALLOW_HEADERS = 'Content-Type, X-Studio-Token'
+CORS_ALLOW_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+LOOPBACK_NAMES = ('127.0.0.1', 'localhost', '::1')
+
+
+def _cors_origin(request: Request) -> str | None:
+    """The origin to echo back, or None. Only an opaque frame or a loopback page is allowed."""
+    origin = request.headers.get('origin')
+    if not origin:
+        return None
+    if origin == 'null':
+        return 'null'
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return None
+    if parsed.scheme in ('http', 'https') and parsed.hostname in LOOPBACK_NAMES:
+        return origin
+    return None
+
+
+def _with_cors(response, request: Request):
+    allowed = _cors_origin(request)
+    if allowed:
+        response.headers['Access-Control-Allow-Origin'] = allowed
+        response.headers['Access-Control-Allow-Headers'] = CORS_ALLOW_HEADERS
+        response.headers['Access-Control-Allow-Methods'] = CORS_ALLOW_METHODS
+        response.headers['Access-Control-Max-Age'] = '600'
+        response.headers['Vary'] = 'Origin'
+    return response
+
+
 @app.middleware('http')
 async def same_origin(request: Request, call_next):
     # Limit browser access to loopback names as well as binding to loopback;
@@ -35,8 +74,20 @@ async def same_origin(request: Request, call_next):
     except ValueError:
         hostname = None
     if hostname not in ('127.0.0.1', 'localhost', '::1'):
-        return JSONResponse({'detail': 'loopback host required'}, status_code=400)
-    if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        return _with_cors(JSONResponse({'detail': 'loopback host required'}, status_code=400), request)
+    expected = os.environ.get('HEWN_STUDIO_TOKEN', '').strip()
+    path = request.url.path
+    supplied = request.headers.get('x-studio-token') or request.query_params.get('token') or ''
+    authorized = bool(expected) and hmac.compare_digest(supplied, expected)
+
+    # A preflight carries no token header (the browser asks before it may send one), so it is answered
+    # from the origin alone and carries no data.
+    if path.startswith('/api/') and request.method == 'OPTIONS':
+        from starlette.responses import Response as PlainResponse
+
+        return _with_cors(PlainResponse(status_code=204), request)
+
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and not authorized:
         if request.method in ('POST', 'PUT', 'PATCH'):
             content_type = request.headers.get('content-type', '').split(';', 1)[0].strip().lower()
             length = request.headers.get('content-length')
@@ -48,31 +99,29 @@ async def same_origin(request: Request, call_next):
             body_optional = (request.method == 'POST'
                              and request.url.path.endswith('/probe'))
             if not body_optional and has_body and content_type != 'application/json':
-                return JSONResponse({'detail': 'application/json required'}, status_code=415)
+                return _with_cors(JSONResponse({'detail': 'application/json required'}, status_code=415), request)
         origin = request.headers.get('origin')
         if request.headers.get('sec-fetch-site', '').lower() == 'cross-site':
-            return JSONResponse({'detail': 'cross-site request rejected'}, status_code=403)
+            return _with_cors(JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
         if origin:
             parsed = urlsplit(origin)
             expected = request.headers.get('host', '').lower()
             if parsed.scheme != request.url.scheme or parsed.netloc.lower() != expected:
-                return JSONResponse({'detail': 'cross-site request rejected'}, status_code=403)
+                return _with_cors(JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
     # Review item 3: the token gate, closed by default. Every /api/* route except the liveness probe
     # needs it — a local process could otherwise change the ACE runtime dir (which picks the Python that
     # runs), move the library, copy folders and spend model credits. A host started without a token
     # refuses /api rather than serving everything: fail-open is how this gate was defeated before.
-    expected = os.environ.get('HEWN_STUDIO_TOKEN', '').strip()
-    path = request.url.path
     if path.startswith('/api/') and path != HEALTH_PATH:
         if not expected:
-            return JSONResponse(
+            return _with_cors(JSONResponse(
                 {'detail': 'this host has no token, so it refuses every /api route; '
                            'start the studio through the plugin, or set HEWN_STUDIO_TOKEN '
                            'before starting it by hand'},
-                status_code=503)
-        supplied = request.headers.get('x-studio-token') or request.query_params.get('token') or ''
-        if not hmac.compare_digest(supplied, expected):
-            return JSONResponse({'detail': 'studio token required'}, status_code=401)
+                status_code=503), request)
+        if not authorized:
+            return _with_cors(
+                JSONResponse({'detail': 'studio token required'}, status_code=401), request)
     response = await call_next(request)
     # REVamp's local player may stream an explicitly selected studio take.
     port = os.environ.get('REVAMP_PORT', '8114')
@@ -82,7 +131,8 @@ async def same_origin(request: Request, call_next):
             and request.url.path.endswith('/audio') and origin in allowed):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Vary'] = 'Origin'
-    return response
+    # The framed page has an opaque origin, so its own reads need these headers too.
+    return _with_cors(response, request)
 
 app.include_router(router, prefix='/api')
 app.include_router(ideas_router, prefix='/api')
