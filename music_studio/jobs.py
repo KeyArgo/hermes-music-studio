@@ -34,7 +34,7 @@ def _pinned_target(snapshot):
             'name': snapshot.get('comfy_target_name')}
 
 
-def _stat_start_time(pid):
+def _linux_start_time(pid):
     """Kernel process start time (clock ticks since boot) or None."""
     try:
         with open(f'/proc/{pid}/stat', 'rb') as fh:
@@ -43,6 +43,62 @@ def _stat_start_time(pid):
         return int(raw.rsplit(b')', 1)[1].split()[19])
     except (OSError, IndexError, ValueError):
         return None
+
+
+def _windows_start_time(pid):
+    """Process creation time as a 100 ns FILETIME integer, or None.
+
+    Windows has no /proc. PROCESS_QUERY_LIMITED_INFORMATION is enough to read
+    the times without being able to terminate or inspect the process, and it
+    works across integrity levels where full PROCESS_QUERY_INFORMATION does not.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    except (ImportError, AttributeError, OSError):
+        return None
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return None
+    try:
+        created, exited = wintypes.FILETIME(), wintypes.FILETIME()
+        kernel, user = wintypes.FILETIME(), wintypes.FILETIME()
+        if not kernel32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                        ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+        return (created.dwHighDateTime << 32) | created.dwLowDateTime
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _macos_start_time(pid):
+    """Process start time as printed by ps (no /proc on macOS), or None."""
+    try:
+        out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(int(pid))],
+                             capture_output=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    try:
+        return out.decode(errors='replace') or None
+    except AttributeError:
+        return None
+
+
+def _stat_start_time(pid):
+    """A process start time, or None when the platform has no way to read it.
+
+    The value is only ever compared with another value from this same function
+    (Linux clock ticks, Windows FILETIME, macOS ps text), which is enough to
+    reject pid reuse. Unknown stays None: callers then fall back to plain pid
+    liveness rather than keeping a dead take alive forever.
+    """
+    if os.name == 'nt':
+        return _windows_start_time(pid)
+    if sys.platform == 'darwin':
+        return _macos_start_time(pid)
+    return _linux_start_time(pid)
 
 
 def _stat_state(pid):
