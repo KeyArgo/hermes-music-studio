@@ -255,6 +255,25 @@ def replace_with_retry(source, target, attempts=REPLACE_ATTEMPTS, delay=REPLACE_
             wait = min(wait * 2, REPLACE_MAX_DELAY_SECONDS)
 
 
+def read_text_with_retry(path, attempts=REPLACE_ATTEMPTS, delay=REPLACE_DELAY_SECONDS):
+    """``Path.read_text``, waiting out a Windows writer swapping the file in with ``os.replace``.
+
+    While a replace is in flight Windows refuses other openers with a sharing violation
+    (PermissionError); the file is whole again a moment later. Other systems never refuse.
+    """
+    if os.name != 'nt':
+        return Path(path).read_text()
+    wait = delay
+    for remaining in range(attempts, 0, -1):
+        try:
+            return Path(path).read_text()
+        except PermissionError:
+            if remaining == 1:
+                raise
+            time.sleep(wait)
+            wait = min(wait * 2, REPLACE_MAX_DELAY_SECONDS)
+
+
 def sections_for(project):
     """Stored sections, or the structure implied by the lyrics when there are none."""
     stored = project.get('sections') or []
@@ -487,7 +506,7 @@ class Store:
         return list((self.get(project_id) or {}).get('checkpoints') or [])
 
     def get(self, project_id):
-        return json.loads((self.root / (valid_id(project_id) + '.json')).read_text())
+        return json.loads(read_text_with_retry(self.root / (valid_id(project_id) + '.json')))
 
     def all(self, warnings=None):
         """Return every readable project, skipping (and reporting) broken files.
