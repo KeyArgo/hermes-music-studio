@@ -208,14 +208,18 @@ class RepaintTests(StudioCase):
         self.assertIn('succeed', response.json()['detail'])
 
     def test_repaint_reports_progress_and_eta_like_a_normal_take(self):
-        make_runtime(self.runtime, delay=1.0)
+        # 2.5 s, not 1: on a Windows runner a single /status round-trip can take longer than the render,
+        # and then the take went from queued to succeeded between two polls. The behaviour was fine; the
+        # test was racing the engine.
+        make_runtime(self.runtime, delay=2.5)
         response = self.client.post('/repaint', json={
             'project_id': self.pid, 'take_id': self.parent_id,
             'start_s': 5, 'end_s': 12})
         self.assertEqual(response.status_code, 200)
         child_id = response.json()['take']['take_id']
         seen_running = False
-        for _ in range(200):
+        deadline = time.time() + 30
+        while time.time() < deadline:
             body = self.client.get('/status').json()
             take = next(t for p in body['projects'] for t in p['takes']
                         if t['take_id'] == child_id)
@@ -224,9 +228,9 @@ class RepaintTests(StudioCase):
                 self.assertIsInstance(take['progress'], int)
                 self.assertIsInstance(take['eta_seconds'], int)
                 break
-            if take['state'] in ('succeeded', 'failed'):
+            if take['state'] in ('succeeded', 'failed', 'cancelled'):
                 break
-            time.sleep(0.01)
+            time.sleep(0.02)
         self.assertTrue(seen_running, 'take never reported running')
         self.assertEqual(self.wait(child_id)['state'], 'succeeded')
 

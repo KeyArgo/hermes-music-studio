@@ -1,5 +1,6 @@
 """Setting up an engine: three paths, each tested against a stub server rather than the network."""
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -155,7 +156,10 @@ class CloudTests(unittest.TestCase):
             self.assertNotIn('sk-test-123', json.dumps(listing),
                              'the page must never receive the key back')
             mode = (Path(tmp) / setup.KEY_FILE).stat().st_mode & 0o777
-            self.assertEqual(mode, 0o600)
+            if os.name != 'nt':
+                self.assertEqual(mode, 0o600)
+            # Windows has no POSIX group/other bits: os.open's mode only sets the read-only flag and
+            # access is governed by the inherited ACL, so there is nothing here to assert.
 
     def test_a_working_endpoint_is_confirmed_with_one_request(self):
         server, base = serve({'/models': (200, {'data': [{'id': 'music-3'}]})})

@@ -38,8 +38,12 @@ def home(tmp_path, monkeypatch):
 
 
 def test_a_folder_outside_the_music_library_is_refused(home):
+    # `/etc` is not absolute on Windows, so the refusal came from the wrong rule there. A sibling of the
+    # throwaway home is absolute everywhere and is still outside the music library.
+    outside = home.parent / "elsewhere"
+    outside.mkdir(exist_ok=True)
     with pytest.raises(ValueError) as caught:
-        export.target_folder("/etc")
+        export.target_folder(str(outside))
     assert "inside" in str(caught.value)
 
 
