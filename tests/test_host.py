@@ -11,6 +11,13 @@ import urllib.request
 import pytest
 from fastapi.testclient import TestClient
 
+# `conftest` is importable when pytest loads the suite, but a single file run from the repo root needs
+# the tests folder on the path to import the shared studio_client helper.
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parent) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+
 
 @pytest.fixture()
 def app_module(tmp_path, monkeypatch):
@@ -66,10 +73,25 @@ def test_refuses_a_non_loopback_host_header(client):
     assert res.status_code == 400
 
 
-def test_refuses_a_cross_site_write(client):
-    res = client.post('/api/create', headers={'sec-fetch-site': 'cross-site'},
-                      json={'draft': {'title': 'x'}})
+def test_a_cross_site_write_without_the_token_is_refused(client):
+    # The client fixture carries the token in a default header, so this case names what it must not
+    # have: a page the person merely visited has no token, and its write is refused at the origin.
+    from conftest import studio_client
+
+    bare = studio_client(client.app)
+    del bare.headers['X-Studio-Token']
+    res = bare.post('/api/create', headers={'sec-fetch-site': 'cross-site',
+                                            'origin': 'https://evil.example'},
+                    json={'draft': {'title': 'x'}})
     assert res.status_code == 403
+
+
+def test_a_cross_site_write_with_the_token_is_served(client):
+    """The sandboxed pane is exactly this request: opaque origin, cross-site, token present."""
+    res = client.post('/api/create', headers={'sec-fetch-site': 'cross-site', 'origin': 'null'},
+                      json={'draft': {'title': 'from the pane'}})
+    assert res.status_code == 200, res.text
+    assert client.get('/api/status').status_code == 200
 
 
 def _free_port() -> int:

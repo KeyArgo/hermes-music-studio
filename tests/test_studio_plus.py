@@ -2,6 +2,13 @@ import pytest
 from standalone.ideas import build_request, parse_draft
 from standalone.workspaces import WorkspaceStore
 
+# `conftest` is importable when pytest loads the suite, but a single file run from the repo root needs
+# the tests folder on the path to import the shared studio_client helper.
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parent) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+
 
 def test_standalone_data_root_is_resolved_at_call_time(tmp_path, monkeypatch):
     from music_studio import service

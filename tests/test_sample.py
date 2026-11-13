@@ -17,6 +17,13 @@ sys.path.insert(0, str(ROOT / 'tests'))
 
 from dashboard.plugin_api import router  # noqa: E402
 
+# `conftest` is importable when pytest loads the suite, but a single file run from the repo root needs
+# the tests folder on the path to import the shared studio_client helper.
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parent) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+
 
 def dashboard_client():
     app = FastAPI()
