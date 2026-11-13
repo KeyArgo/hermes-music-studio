@@ -3,15 +3,28 @@
 Windows has no O_NOFOLLOW, so the old os.open followed a symlinked take to its target and served it
 (CI: test_symlinked_take_audio_is_refused got 200 on windows-latest). These run the Windows branch
 on any OS by hiding O_NOFOLLOW."""
+import contextlib
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from music_studio import safeopen  # noqa: E402
+
+
+@contextlib.contextmanager
+def without_o_nofollow():
+    """Hide os.O_NOFOLLOW for the block (Windows never has it, so there is nothing to hide)."""
+    saved = getattr(os, 'O_NOFOLLOW', None)
+    if saved is not None:
+        del os.O_NOFOLLOW
+    try:
+        yield
+    finally:
+        if saved is not None:
+            os.O_NOFOLLOW = saved
 
 
 class OpenNoFollowTests(unittest.TestCase):
@@ -34,14 +47,12 @@ class OpenNoFollowTests(unittest.TestCase):
             os.close(safeopen.open_nofollow(self.link))
 
     def test_a_symlink_is_refused_without_o_nofollow_like_on_windows(self):
-        with patch.object(safeopen.os, 'O_NOFOLLOW', None, create=True):
-            delattr(safeopen.os, 'O_NOFOLLOW')
+        with without_o_nofollow():
             with self.assertRaises(OSError):
                 os.close(safeopen.open_nofollow(self.link))
 
     def test_a_regular_file_opens_without_o_nofollow(self):
-        with patch.object(safeopen.os, 'O_NOFOLLOW', None, create=True):
-            delattr(safeopen.os, 'O_NOFOLLOW')
+        with without_o_nofollow():
             fd = safeopen.open_nofollow(self.target)
         with os.fdopen(fd, 'rb') as fh:
             self.assertEqual(fh.read(), b'RIFF')
