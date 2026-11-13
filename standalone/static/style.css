@@ -69,8 +69,10 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 /* The version is always on screen: an install you cannot identify is an install you cannot trust. */
 .version-chip {
   font-family: var(--mono, ui-monospace, 'SF Mono', Menlo, monospace);
-  font-size: 11px;
+  font-size: 10.5px;
   letter-spacing: 0.06em;
+  background: transparent;
+  font-weight: inherit;
   padding: 3px 8px;
   margin-right: auto;
   margin-left: 12px;
@@ -80,7 +82,7 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
   white-space: nowrap;
 }
 
-.version-chip.dirty { color: #b45309; border-color: #b45309; }
+.version-chip.dirty { color: #e8a33d; border-color: #e8a33d; }
 .version-chip[data-copied] { color: #15803d; border-color: #15803d; }
 .version-chip { cursor: pointer; }
 

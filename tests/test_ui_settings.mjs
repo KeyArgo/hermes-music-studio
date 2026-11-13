@@ -374,8 +374,10 @@ test('the version is on screen from the moment the studio opens', async t => {
   t.after(() => window.close());
   await new Promise(resolve => setTimeout(resolve, 40));
   const chip = window.document.getElementById('app-version');
-  // version · build date · short commit — from the server's stamp, not from this bundle.
-  assert.equal(text(chip), 'v0.2.5-dev.17 · 2026-11-09 · abcdef12');
+  // version · short commit · date (VERSION-CHIP.md) — from the server's stamp, not from this bundle.
+  assert.equal(text(chip), 'v0.2.5-dev.17 · abcdef12 · 2026-11-09');
+  assert.equal(chip.tagName, 'BUTTON');
+  assert.equal(chip.getAttribute('aria-label'), 'Copy version v0.2.5-dev.17 · abcdef12 · 2026-11-09');
   assert.match(chip.title, /Hermes Music Studio 0\.2\.5-dev\.17/);
   assert.match(chip.title, /commit abcdef1234567890/);
   assert.ok(!chip.classList.contains('dirty'), 'a clean tree is not marked modified');
@@ -392,9 +394,10 @@ test('clicking the version chip copies the whole line', async t => {
   });
   const chip = window.document.getElementById('app-version');
   await chip.onclick();
-  assert.deepEqual(copied, ['v0.2.5-dev.17 · 2026-11-09 · abcdef12'],
-    'the exact line the chip shows is what a bug report gets');
+  assert.deepEqual(copied, ['Hermes Music Studio v0.2.5-dev.17 · abcdef12 · 2026-11-09'],
+    'the product name plus the exact line the chip shows is what a bug report gets');
   assert.equal(chip.dataset.copied, '1');
+  assert.equal(text(chip), 'copied ✓');
 });
 
 test('the version chip never claims a copy that did not happen', async t => {
@@ -406,6 +409,14 @@ test('the version chip never claims a copy that did not happen', async t => {
   // No clipboard API and no execCommand in this DOM: copyText must report failure.
   await chip.onclick();
   assert.equal(chip.dataset.copied, 'failed', 'a failed copy is not shown as success');
+  assert.equal(text(chip), 'copy failed');
+});
+
+test('the chip shows the line the server built when it sends one', async t => {
+  const { window } = await boot({ '/api/about': { success: true, version: '1.0.0', build: { version: '1.0.0', line: 'v1.0.0 · 11112222 · 2026-11-13' } } });
+  t.after(() => window.close());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(text(window.document.getElementById('app-version')), 'v1.0.0 · 11112222 · 2026-11-13');
 });
 
 test('Play here puts the take in the footer player, not on a mystery page', async t => {

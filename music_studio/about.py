@@ -90,11 +90,13 @@ def about() -> dict:
     drift from the code that is running.
     """
     try:
-        from .version_stamp import as_dict
+        from .version_stamp import as_dict, chip_line
         stamp = as_dict()
+        stamp['line'] = chip_line(stamp)
     except Exception:  # pragma: no cover - the stamp is optional, the panel is not
         stamp = {'version': _version(), 'commit': '', 'commit_short': '', 'commit_date': '',
                  'built_at': '', 'channel': 'dev', 'dirty': None, 'source': 'manifest'}
+        stamp['line'] = 'v' + str(stamp['version'] or 'unknown')
     return {'success': True, 'version': stamp.get('version') or _version(), 'repo': REPO,
             'visibility': REPO_VISIBILITY, 'paths': dict(PATHS),
             'revamp': revamp_status(), 'build': stamp}

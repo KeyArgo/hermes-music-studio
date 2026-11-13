@@ -202,7 +202,8 @@ function wirePlayer() {
 }
 async function showVersion(){
   // One source: the server's own stamp (BUILD_INFO.json when installed, live git in a checkout).
-  // A number compiled into this file would drift from the code answering the requests.
+  // The server builds the line with version_stamp.chip_line, the same text every suite plugin shows
+  // (VERSION-CHIP.md): "v1.0.0-dev.342 · 1a2b3c4d · 2026-11-13".
   const chip = $('app-version');
   if (!chip) return;
   let build;
@@ -210,30 +211,38 @@ async function showVersion(){
     const data = await api('/about');
     build = data.build || { version: data.version };
   } catch (err) { return; }            // no guess beats a wrong number
-  const parts = ['v' + (build.version || 'unknown')];
-  if (build.commit_date) parts.push(String(build.commit_date).slice(0, 10));
-  if (build.commit_short || build.commit) parts.push((build.commit_short || build.commit).slice(0, 8));
-  chip.textContent = parts.join(' · ') + (build.dirty ? ' · modified' : '');
+  let line = build.line;
+  if (!line) {
+    const parts = ['v' + (build.version || 'unknown')];
+    if (build.commit_short || build.commit) parts.push((build.commit_short || build.commit).slice(0, 8));
+    if (build.commit_date) parts.push(String(build.commit_date).slice(0, 10));
+    if (build.dirty) parts.push('modified');
+    line = parts.join(' · ');
+  }
+  chip.hidden = false;
+  chip.dataset.line = line;
+  if (!chip.dataset.copied) chip.textContent = line;
   chip.classList.toggle('dirty', !!build.dirty);
+  chip.setAttribute('aria-label', 'Copy version ' + line);
   chip.title = [
     'Hermes Music Studio ' + (build.version || 'unknown'),
-    build.commit ? 'commit ' + build.commit : 'no commit (installed copy)',
+    build.commit ? 'commit ' + build.commit : '',
     build.commit_date ? 'committed ' + build.commit_date : '',
     build.built_at ? 'installed ' + build.built_at : '',
     build.channel ? 'channel ' + build.channel : '',
     build.source ? 'read from ' + build.source : '',
-    'click to copy this line'
+    'Click to copy'
   ].filter(Boolean).join('\n');
   chip.onclick = async () => {
-    // Copy exactly what is on screen: a bug report pasted from this line must match the chip, and
-    // the suite's format is `v<version> · <date> · <sha>`, not a prose sentence around it.
-    const line = chip.textContent.trim();
     // Say "copied" only when something was copied: a badge that lies is worse than no badge.
-    const copied = await copyText(line);
+    const copied = await copyText('Hermes Music Studio ' + chip.dataset.line);
     chip.dataset.copied = copied ? '1' : 'failed';
-    setTimeout(() => { delete chip.dataset.copied; }, 1400);
+    chip.textContent = copied ? 'copied ✓' : 'copy failed';
+    setTimeout(() => { delete chip.dataset.copied; chip.textContent = chip.dataset.line; }, 1400);
   };
 }
+// Re-read every minute so an update or reload shows without restarting the app.
+setInterval(() => { if (!document.hidden) showVersion(); }, 60000);
 
 if ($('player-play')) wirePlayer();
 showVersion();
@@ -385,7 +394,7 @@ function library() {
         await refresh(); library();
       } catch (err) { libMessage(err.message, true); } finally { changeIt.disabled = false; }
     });
-    const identity=el('div','','project-identity'); const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover,title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
+    const identity=el('div','','project-identity'); if (p.has_cover !== false) { const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover); } identity.append(title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
     const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); card.append(changeRow);
     const memory = p.memory || {}; const memNotes = (memory.events || []).length;
     if (memNotes || memory.kept_take_id) {

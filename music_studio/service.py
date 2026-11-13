@@ -332,6 +332,8 @@ def _decorate(projects, jobs):
     root = str(jobs.store.root)
     for project in projects:
         project.setdefault('updated_at', None)
+        # Lets the library ask only for covers that exist, instead of one 404 per song.
+        project['has_cover'] = os.path.isfile(os.path.join(root, 'studio-covers', project['project_id'] + '.cover'))
         # Stored sections win; otherwise expose the structure the lyrics imply
         # so a client can render an editor before any section exists.
         project['sections'], project['sections_source'] = sections_for(project)
