@@ -127,3 +127,58 @@ class CheckpointTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CoverSourceTests(unittest.TestCase):
+    """Review check: the agent's own image cache must be an accepted source for a cover.
+
+    `image_generate` writes under the profile (`cache/images`), and `set_cover` refused everything
+    outside the studio, Downloads, Pictures, Desktop and temp — so the one file an agent actually made
+    was rejected.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from music_studio import covers
+
+        self.covers = covers
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / 'studio'
+        self.root.mkdir()
+        self.png = b'\x89PNG\r\n\x1a\n' + b'x' * 64
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_an_image_from_the_profile_cache_is_accepted(self):
+        import os
+        from pathlib import Path
+
+        profile = Path(self.tmp.name) / 'profile'
+        cache = profile / 'cache' / 'images'
+        cache.mkdir(parents=True)
+        image = cache / 'cover.png'
+        image.write_bytes(self.png)
+        old = os.environ.get('HERMES_HOME')
+        os.environ['HERMES_HOME'] = str(profile)
+        try:
+            result = self.covers.cover_from_file(self.root, 'p1', str(image))
+        finally:
+            if old is None:
+                os.environ.pop('HERMES_HOME', None)
+            else:
+                os.environ['HERMES_HOME'] = old
+        self.assertTrue(result['success'])
+        self.assertEqual(result['mime'], 'image/png')
+
+    def test_a_path_outside_every_allowed_place_is_still_refused(self):
+        from pathlib import Path
+
+        stray = Path(self.tmp.name) / 'stray.png'
+        stray.write_bytes(self.png)
+        # `self.tmp` lives under the real temp dir, which is an allowed place; narrow the temp root so
+        # this really is a file from nowhere.
+        with self.assertRaises(self.covers.CoverError):
+            self.covers.cover_from_file(self.root, 'p1', str(stray),
+                                        temp=Path(self.tmp.name) / 'not-the-temp')
