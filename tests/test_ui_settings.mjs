@@ -43,8 +43,11 @@ const STATUS = { success: true, engine_available: false, engines: [], projects: 
 const PRESETS = { success: true, presets: [] };
 const empty = { success: true };
 
-async function boot(overrides = {}) {
-  const dom = new JSDOM(html, { url: 'http://127.0.0.1:8794/', runScripts: 'outside-only' });
+async function boot(overrides = {}, options = {}) {
+  // A framed page arrives with ?token=…; a test can ask for that shape, which is what makes the
+  // media-URL assertions below possible at all.
+  const pageUrl = 'http://127.0.0.1:8794/' + (options.token ? `?token=${encodeURIComponent(options.token)}` : '');
+  const dom = new JSDOM(html, { url: pageUrl, runScripts: 'outside-only' });
   const { window } = dom;
   const calls = [];
   window.confirm = () => true;
@@ -621,4 +624,23 @@ test('save spot is a button, and Back to last spot restores it', async t => {
   assert.deepEqual(calls.filter(c => c.path === '/api/checkpoint/restore').pop().body,
     { project_id: 'p1', checkpoint_id: 'cp1' });
   assert.match(doc.querySelector('#library-status').textContent, /approval was revoked/);
+});
+
+test('audio and cover URLs carry the token, because a media element cannot send a header', async t => {
+  const { window, calls } = await boot({}, { token: 'tok-abc123' });
+  t.after(() => window.close());
+  const doc = window.document;
+  const cover = doc.querySelector('img.project-cover');
+  assert.ok(cover, 'a project cover is rendered');
+  assert.match(cover.src, /token=tok-abc123/, 'the cover is a 401 without the token');
+
+  const playButton = [...doc.querySelectorAll('button')].find(b => text(b).includes('▶ Play'));
+  assert.ok(playButton, 'a take can be played');
+  playButton.click();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const audio = doc.getElementById('player');
+  assert.match(audio.src, /token=tok-abc123/, 'the take audio is a 401 without the token');
+  // and the API calls keep using the header, not the query
+  const statusCall = calls.find(c => c.path.startsWith('/api/status'));
+  assert.ok(statusCall, 'the page still asks the host for status');
 });

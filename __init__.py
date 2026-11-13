@@ -331,15 +331,20 @@ class _ChatClient:
                          'take_id': take_id}).get('export') or {}
 
     def play_url(self, project_id, take_id):
+        """An audio URL the person can open: the host's port, and the token it now requires."""
         from music_studio import host_launcher
 
-        base = 'http://127.0.0.1:8775'
+        base, token = 'http://127.0.0.1:8775', ''
         try:
             state = host_launcher._read_state(host_launcher.data_dir()) or {}
-            base = state.get('url') or base
+            port = state.get('port')
+            if port:
+                base = f'http://127.0.0.1:{port}'
+            token = str(state.get('token') or '')
         except Exception:
             pass
-        return f'{base}/api/projects/{project_id}/takes/{take_id}/audio'
+        url = f'{base}/api/projects/{project_id}/takes/{take_id}/audio'
+        return f'{url}?token={token}' if token else url
 
 
 def register(ctx):

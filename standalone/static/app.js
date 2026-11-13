@@ -19,6 +19,14 @@ function withToken(headers) {
   if (STUDIO_TOKEN) out['X-Studio-Token'] = STUDIO_TOKEN;
   return out;
 }
+// Audio and cover art are loaded by the browser itself (<audio src>, <img src>), which cannot send a
+// header — so those URLs carry the token. Without this every take is a 401 in a token-gated host,
+// even though the API calls beside it work.
+function mediaUrl(url) {
+  if (!STUDIO_TOKEN || !url) return url;
+  const separator = String(url).includes('?') ? '&' : '?';
+  return url + separator + 'token=' + encodeURIComponent(STUDIO_TOKEN);
+}
 async function api(path, data, method) {
   const opts = method ? {method} : data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)};
   if (method && data !== undefined) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(data); }
@@ -111,7 +119,7 @@ function playerProblem(message) {
 }
 function play(url, title, detail) {
   const audio = $('player');
-  audio.src = url;
+  audio.src = mediaUrl(url);
   audio.load();
   $('player-title').textContent = title;
   $('player-subtitle').textContent = detail;
@@ -377,7 +385,7 @@ function library() {
         await refresh(); library();
       } catch (err) { libMessage(err.message, true); } finally { changeIt.disabled = false; }
     });
-    const identity=el('div','','project-identity'); const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id); cover.addEventListener('error',()=>cover.remove()); identity.append(cover,title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
+    const identity=el('div','','project-identity'); const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover,title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
     const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); card.append(changeRow);
     const memory = p.memory || {}; const memNotes = (memory.events || []).length;
     if (memNotes || memory.kept_take_id) {
@@ -611,7 +619,7 @@ function showCover(id) {
   if(!id) { image.hidden=true; placeholder.hidden=false; image.removeAttribute('src'); return; }
   image.onload=()=>{image.hidden=false;placeholder.hidden=true;};
   image.onerror=()=>{image.hidden=true;placeholder.hidden=false;};
-  image.src=STUDIO.api+'/studio/covers/'+encodeURIComponent(id)+'?v='+Date.now();
+  image.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(id)+'?v='+Date.now());
 }
 function ensureTargetOption(id) {
   if (!id) return;
