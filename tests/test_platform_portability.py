@@ -142,6 +142,7 @@ def test_hardware_reports_apple_silicon_mps_on_arm64_mac(monkeypatch):
 
 
 def test_hardware_reports_no_nvidia_gpu_instead_of_a_tool_error(monkeypatch):
+    monkeypatch.setattr(hardware, '_apple_silicon', lambda: False)  # the macOS runner is arm64
     def missing(*args, **kwargs):
         raise FileNotFoundError
 
@@ -153,6 +154,7 @@ def test_hardware_reports_no_nvidia_gpu_instead_of_a_tool_error(monkeypatch):
 
 
 def test_hardware_treats_a_failed_nvidia_smi_as_no_gpu(monkeypatch):
+    monkeypatch.setattr(hardware, '_apple_silicon', lambda: False)  # the macOS runner is arm64
     class Result:
         returncode = 1
         stdout = ''
@@ -189,6 +191,7 @@ def test_ffmpeg_falls_back_to_the_winget_install_dir_on_windows(monkeypatch):
 def test_ffmpeg_falls_back_to_homebrew_on_macos(monkeypatch):
     monkeypatch.delenv('HEWN_FFMPEG', raising=False)
     monkeypatch.setattr(mm3.sys, 'platform', 'darwin')
+    monkeypatch.setattr(mm3, '_is_windows', lambda: False)  # also on a real Windows runner
     monkeypatch.setattr(mm3.shutil, 'which', lambda name: None)
     expected = '/opt/homebrew/bin/ffmpeg'
     monkeypatch.setattr(mm3.os.path, 'isfile', lambda path: path == expected)

@@ -86,9 +86,13 @@ FFMPEG_HELP = ("ffmpeg is not installed: install it with 'winget install ffmpeg'
                "to its full path")
 
 
+def _is_windows() -> bool:
+    return os.name == 'nt' or sys.platform.startswith('win')
+
+
 def _ffmpeg_candidates() -> tuple[str, ...]:
     """The usual ffmpeg locations that a desktop shortcut's PATH misses."""
-    if os.name == 'nt' or sys.platform.startswith('win'):
+    if _is_windows():
         candidates = []
         local = os.environ.get('LOCALAPPDATA')
         if local:

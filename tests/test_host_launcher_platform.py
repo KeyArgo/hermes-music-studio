@@ -70,6 +70,7 @@ def test_the_python_beside_sys_executable_is_tried(monkeypatch):
 
     _no_interpreter(monkeypatch)
     monkeypatch.setattr(host_launcher.sys, 'platform', 'linux')
+    monkeypatch.setattr(host_launcher, '_is_windows', lambda: False)  # also on a real Windows runner
     monkeypatch.setattr(host_launcher.sys, 'executable', '/fake/venv/bin/python3.13')
     sibling = '/fake/venv/bin/python'
     monkeypatch.setattr(host_launcher.os.path, 'exists',
@@ -184,6 +185,7 @@ def test_posix_keeps_reuseaddr(monkeypatch):
     from music_studio import host_launcher
 
     monkeypatch.setattr(host_launcher.sys, 'platform', 'linux')
+    monkeypatch.setattr(host_launcher, '_is_windows', lambda: False)  # also on a real Windows runner
     options = []
     _fake_socket(monkeypatch, lambda: _RecordingSocket(options))
 
