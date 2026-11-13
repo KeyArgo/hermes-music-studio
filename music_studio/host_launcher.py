@@ -122,9 +122,30 @@ def _read_state(root: Path) -> dict | None:
 
 
 def _write_state(root: Path, state: dict) -> None:
+    """Record the host so the next launch can reuse it — with owner-only permissions.
+
+    The file carries the bearer token for every ``/api`` route, so 0644 under a 022 umask let another
+    local user read it and drive the studio. ``os.open(..., 0o600)`` only applies at creation, and the
+    temp file survives a crash, so the mode is set explicitly and an existing file is tightened too.
+    """
+    target = root / STATE_FILE
     tmp = root / (STATE_FILE + '.tmp')
-    tmp.write_text(json.dumps(state), encoding='utf-8')
-    os.replace(tmp, root / STATE_FILE)
+    payload = json.dumps(state).encode('utf-8')
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        if hasattr(os, 'fchmod'):
+            os.fchmod(fd, 0o600)          # an existing .tmp keeps its old bits without this
+        os.write(fd, payload)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, target)
+    if hasattr(os, 'chmod'):
+        try:
+            os.chmod(target, 0o600)       # belt and braces: the rename should already carry 0600
+        except OSError:                   # pragma: no cover - Windows without POSIX modes
+            pass
 
 
 def forget() -> None:
