@@ -121,3 +121,65 @@ def test_a_scoped_miss_never_falls_back_to_the_process_environment(monkeypatch):
 
     with pytest.raises(UnscopedSecretError):
         ace_remote._remote_key()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not carry POSIX mode bits")
+def test_saving_again_tightens_a_key_file_an_older_build_left_at_0644(tmp_path):
+    """The mode argument to os.open only applies at creation; an existing secret stays 0644 otherwise."""
+    from music_studio import setup
+
+    path = tmp_path / setup.KEY_FILE
+    path.write_text(json.dumps({"default": {"url": "https://old", "key": "old", "model": ""}}))
+    path.chmod(0o644)
+
+    setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-new-key")
+
+    mode = stat.S_IMODE(path.stat().st_mode)
+    assert mode == 0o600, f"an upgraded install keeps a world-readable key file: {oct(mode)}"
+    assert json.loads(path.read_text())["default"]["key"] == "sk-new-key"
+
+
+def test_a_permission_error_is_fail_closed_not_a_world_readable_write(tmp_path, monkeypatch):
+    """The OSError branch used to fall back to Path.write_text, i.e. default permissions for a secret."""
+    from music_studio import setup
+
+    real_open = os.open
+
+    def refuse(path, flags, mode=0o777, *args, **kwargs):
+        if str(path).endswith(setup.KEY_FILE):
+            raise PermissionError("no permission to create the key file")
+        return real_open(path, flags, mode, *args, **kwargs)
+
+    monkeypatch.setattr(setup.os, "open", refuse)
+    with pytest.raises(PermissionError):
+        setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
+    assert not (tmp_path / setup.KEY_FILE).exists(), "a secret was written by the fallback"
+
+
+def test_a_scoped_miss_never_falls_back_to_the_process_environment(monkeypatch):
+    """The reason the scope exists: a refusal must not be answered with somebody else's key.
+
+    Under profile multiplexing `get_secret` raises `UnscopedSecretError` rather than guessing. The old
+    code caught every exception and returned `os.environ[...]`, so a key exported by another profile (or
+    by a parent process) was sent to the remote server. Only a *missing Hermes module* is a fallback now.
+    """
+    class UnscopedSecretError(RuntimeError):
+        pass
+
+    module = types.ModuleType("agent.secret_scope")
+
+    def get_secret(name, default=None):
+        raise UnscopedSecretError("no secret scope in this process")
+
+    module.get_secret = get_secret
+    module.UnscopedSecretError = UnscopedSecretError
+    package = types.ModuleType("agent")
+    package.secret_scope = module
+    monkeypatch.setitem(sys.modules, "agent", package)
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", module)
+    monkeypatch.setenv("ACE_REMOTE_API_KEY", "another-profile-key")
+
+    from music_studio.engines import ace_remote
+
+    with pytest.raises(UnscopedSecretError):
+        ace_remote._remote_key()

@@ -237,11 +237,17 @@ def _write_private(path: Path, text: str) -> None:
     Review item 6: `write_text` then `chmod` leaves a window where the key is readable by anyone, and a
     crash inside that window leaves it readable for good.
     """
+    # Fail closed. The old code answered an OSError by writing the file with default permissions,
+    # which for a key store is worse than refusing: it leaves the secret readable by everyone.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    except OSError:  # pragma: no cover - Windows ignores the permission bits
-        Path(path).write_text(text)
-        return
+        if hasattr(os, 'fchmod'):
+            # The mode argument only applies when the file is created; an existing key file from an
+            # older install keeps its 0644 bits without this.
+            os.fchmod(fd, 0o600)
+    except BaseException:
+        os.close(fd)
+        raise
     with os.fdopen(fd, 'w', encoding='utf-8') as handle:
         handle.write(text)
 
