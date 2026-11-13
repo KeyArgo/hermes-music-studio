@@ -84,16 +84,68 @@ def test_a_wrong_token_is_refused(client):
     assert client.get("/api/projects", headers={"X-Studio-Token": "nope"}).status_code == 401
 
 
-def test_the_health_probe_stays_open_and_says_nothing_about_the_library(client):
-    """The pane probes it with a no-cors fetch, which cannot send a header — and it says nothing else.
+def test_the_health_probe_needs_the_token_like_every_other_api_route(client):
+    """Review item 3 asked for the token on every /api/* request, health included.
 
-    `/api/status` used to be that exempt route, which handed every local process the project list and
-    the engine endpoints (review item 3). It is behind the token now; only this route is open.
+    The pane's no-cors liveness fetch still works: a 401 is an answer, and an opaque fetch only cares
+    that something answered. With the token, health says the host enforces it.
     """
-    response = client.get("/api/health")
+    assert client.get("/api/health").status_code == 401
+    response = client.get("/api/health", headers={"X-Studio-Token": TOKEN})
     assert response.status_code == 200
     assert response.json() == {"ok": True, "token_gated": True}
     assert client.get("/api/status").status_code == 401, "status is library data, not liveness"
+
+
+def test_the_launcher_reads_a_401_from_health_as_a_live_gated_host():
+    """A gated host refuses an unauthenticated health probe; that refusal proves it is alive and gated."""
+    import http.server
+    import threading
+
+    from music_studio import host_launcher
+
+    class Gated(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"detail": "studio token required"}')
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Gated)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert host_launcher._probe(server.server_address[1]) == {"alive": True, "token_gated": True}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_stranger_answering_401_is_not_taken_for_the_studio_host():
+    import http.server
+    import threading
+
+    from music_studio import host_launcher
+
+    class Stranger(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(401)
+            self.end_headers()
+            self.wfile.write(b"login required")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Stranger)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert host_launcher._probe(server.server_address[1]) == {"alive": False, "token_gated": False}
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_a_host_without_a_token_refuses_the_api_instead_of_serving_it(monkeypatch, tmp_path):

@@ -108,11 +108,11 @@ async def same_origin(request: Request, call_next):
             expected = request.headers.get('host', '').lower()
             if parsed.scheme != request.url.scheme or parsed.netloc.lower() != expected:
                 return _with_cors(JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
-    # Review item 3: the token gate, closed by default. Every /api/* route except the liveness probe
-    # needs it — a local process could otherwise change the ACE runtime dir (which picks the Python that
+    # Review item 3: the token gate, closed by default. Every /api/* route needs it, the liveness probe
+    # included (a 401 still tells a launcher or the pane's no-cors fetch that the host is alive) — a local process could otherwise change the ACE runtime dir (which picks the Python that
     # runs), move the library, copy folders and spend model credits. A host started without a token
     # refuses /api rather than serving everything: fail-open is how this gate was defeated before.
-    if path.startswith('/api/') and path != HEALTH_PATH:
+    if path.startswith('/api/'):
         if not expected:
             return _with_cors(JSONResponse(
                 {'detail': 'this host has no token, so it refuses every /api route; '

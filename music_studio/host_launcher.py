@@ -108,9 +108,10 @@ def _port_free(port: int) -> bool:
 def _probe(port: int, timeout: float = 1.0) -> dict:
     """What is listening on ``port``: alive, and does it enforce the token?
 
-    `/api/health` is the only route a host serves without the token, so it is the only question a
-    launcher can ask before it has one. A host that answers but does not enforce the token predates the
-    update that added it — the pane would be handed a token that host ignores, so it is not reused.
+    `/api/health` needs the token like every other route, and a launcher asks before it has one. A
+    gated host answers 401, which proves both that it is alive and that it enforces the token. A host
+    that answers 200 without a token predates the gate — the pane would be handed a token that host
+    ignores, so it is not reused.
     """
     try:
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=timeout) as res:
@@ -121,6 +122,13 @@ def _probe(port: int, timeout: float = 1.0) -> dict:
             except ValueError:
                 body = {}
             return {'alive': True, 'token_gated': bool(body.get('token_gated'))}
+    except urllib.error.HTTPError as err:
+        # Only our own refusal counts: another program on this port may answer 401 too.
+        try:
+            ours = err.code == 401 and json.loads(err.read() or b'{}').get('detail') == 'studio token required'
+        except (ValueError, AttributeError, OSError):
+            ours = False
+        return {'alive': ours, 'token_gated': ours}
     except (urllib.error.URLError, OSError, ValueError):
         return {'alive': False, 'token_gated': False}
 

@@ -20,8 +20,8 @@ All notable changes to Music Studio are recorded here. The format follows
   path), links open through `ctx.os.openExternal`, the framed page asks the pane over `postMessage`
   instead of reaching for a bridge it does not have, and the studio is framed with `SandboxedFrame`.
 - **The loopback host requires a token.** Generated per launch, handed to the host in its environment,
-  returned by `/studio/host`, carried in the framed URL and required on every `/api/*` route except the
-  health probe — those routes can change the ACE runtime directory, move the library, copy folders and
+  returned by `/studio/host`, carried in the framed URL and required on every `/api/*` route, the health
+  probe included (a launcher reads its 401 as "alive and gated") — those routes can change the ACE runtime directory, move the library, copy folders and
   spend model credits.
 - **Children get an allowlist, not our environment.** `ace_engine._render` and `service._spawn_worker`
   passed `os.environ.copy()` to the ACE runtime and the render worker, so every provider key reached
