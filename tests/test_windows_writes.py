@@ -74,7 +74,7 @@ def test_replace_with_retry_waits_out_a_windows_lock(tmp_path, monkeypatch):
     assert len(calls) == 3
 
 
-def test_replace_with_retry_gives_up_after_about_two_seconds(tmp_path, monkeypatch):
+def test_replace_with_retry_gives_up_after_a_bounded_wait(tmp_path, monkeypatch):
     source, target = tmp_path / 'source', tmp_path / 'target'
     source.write_text('rendered')
     monkeypatch.setattr(store, 'os', _fake_os('nt'))
@@ -83,7 +83,8 @@ def test_replace_with_retry_gives_up_after_about_two_seconds(tmp_path, monkeypat
     with pytest.raises(PermissionError):
         store.replace_with_retry(source, target)
 
-    assert 1.5 <= sum(sleeps) <= 2.5
+    # 60 attempts, backing off to 0.1 s: about 5.6 s, the budget that made Windows CI green.
+    assert 4.0 <= sum(sleeps) <= 7.0
 
 
 def test_replace_with_retry_is_immediate_off_windows(tmp_path, monkeypatch):
