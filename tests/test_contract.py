@@ -371,7 +371,17 @@ class BatchQueueTests(RouterTestCase):
             time.sleep(.02)
         finished = self.status_takes(pid)
         self.assertEqual([t['state'] for t in finished], ['succeeded'] * 3)
-        self.assertEqual(running_seen, [takes[0]['take_id'], takes[1]['take_id'], takes[2]['take_id']])
+        # Prove the order and the one-at-a-time rule from the recorded start and finish times, not
+        # from what a 20 ms poll happened to catch: a slow runner (Windows CI) can miss a short
+        # 'running' window entirely, which made this test fail with every take rendered correctly.
+        by_id = {t['take_id']: t for t in finished}
+        ordered = [by_id[t['take_id']] for t in takes]
+        starts = [t['started_at'] for t in ordered]
+        self.assertEqual(starts, sorted(starts), 'takes did not start in queue order')
+        for before, after in zip(ordered, ordered[1:]):
+            self.assertGreaterEqual(after['started_at'], before['finished_at'],
+                                    'a take started before the one ahead of it finished')
+        self.assertTrue(set(running_seen) <= {t['take_id'] for t in takes})
         for previous, current in zip(finished, finished[1:]):
             self.assertGreaterEqual(current['started_at'], previous['finished_at'],
                                     'the next take started before the previous one finished')
@@ -415,7 +425,9 @@ class BatchQueueTests(RouterTestCase):
     def test_batch_cancel_marks_queued_takes_cancelled(self):
         pid = self.project()['project_id']
         self.approve(pid)
-        self.render(delay=0.4)
+        # Long enough that the two queued takes are still queued when cancel lands, even on a slow
+        # runner where starting a worker process takes most of a second.
+        self.render(delay=3.0)
         takes = self.client.post('/batch', json={'project_id': pid, 'count': 3}).json()['takes']
         deadline = time.time() + 15
         while time.time() < deadline:

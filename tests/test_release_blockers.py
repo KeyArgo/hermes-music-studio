@@ -36,12 +36,21 @@ from support import install_shared_runtime, pin_fixture_runtime  # noqa: E402
 
 
 def _proc_state(pid):
-    """Single-letter /proc state, or None when the process is gone."""
-    try:
-        with open(f'/proc/{pid}/stat', 'rb') as fh:
-            return fh.read().rsplit(b')', 1)[1].split()[0].decode()
-    except OSError:
-        return None
+    """Single-letter process state, or None when the process is gone.
+
+    Uses the product's own reader (/proc on Linux, ps on macOS). Windows has no state letters and no
+    zombies, so a live process reads 'R' there."""
+    from music_studio.jobs import _stat_state
+    from music_studio.procs import pid_exists
+    if os.name == 'nt':
+        return 'R' if pid_exists(pid) else None
+    state = _stat_state(pid)
+    return state.decode() if state else None
+
+
+def _hard_kill(pid):
+    """SIGKILL: the worker gets no chance to clean up (TerminateProcess on Windows)."""
+    os.kill(pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
 
 
 def _wait_until(predicate, limit=15.0, interval=.02):
@@ -172,8 +181,29 @@ class BodyCapTests(RouterTestCase):
         self.assertEqual(response.status_code, 413)
 
 
+@unittest.skipIf(os.name == 'nt', 'Windows has no zombie processes: an exited pid is gone')
 class ZombieWorkerTests(unittest.TestCase):
     """C5: a SIGKILLed, unreaped worker must not read as a live render."""
+
+    def test_zombie_reads_dead_without_proc_like_on_macos(self):
+        """macOS has no /proc: the state must come from ps, or a zombie reads as alive."""
+        import builtins
+        real_open = builtins.open
+
+        def no_proc(path, *a, **k):
+            if str(path).startswith('/proc/'):
+                raise FileNotFoundError(path)
+            return real_open(path, *a, **k)
+
+        child = subprocess.Popen([sys.executable, '-c', 'pass'])
+        try:
+            self.assertTrue(_wait_until(lambda: _proc_state(child.pid) == 'Z', limit=10))
+            real_isdir = os.path.isdir
+            with patch('builtins.open', no_proc), \
+                    patch('os.path.isdir', lambda p: False if p == '/proc/self' else real_isdir(p)):
+                self.assertFalse(process_alive(child.pid), 'a zombie must not count as alive')
+        finally:
+            child.wait()
 
     def test_zombie_pid_is_not_alive(self):
         child = subprocess.Popen([sys.executable, '-c', 'pass'])
@@ -262,13 +292,11 @@ class OrphanRenderTests(unittest.TestCase):
 
     def _kill(self, pid):
         if isinstance(pid, int) and pid > 0:
+            from music_studio.procs import kill_tree
             try:
-                os.killpg(pid, signal.SIGKILL)
+                kill_tree(pid)
             except OSError:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
+                pass
 
     def start_long_render(self):
         script = Path(self.runtime) / 'venv/bin/python'
@@ -294,7 +322,7 @@ class OrphanRenderTests(unittest.TestCase):
 
     def test_killed_worker_reaps_its_ace_render_on_the_next_status_poll(self):
         take, ace_pid = self.start_long_render()
-        os.kill(take['pid'], signal.SIGKILL)  # OOM-killer / crash: no cleanup runs
+        _hard_kill(take['pid'])  # OOM-killer / crash: no cleanup runs
         self.assertTrue(_wait_until(lambda: not process_alive(take['pid'], take['pid_start'])),
                         'killed worker still reads as alive')
         body = service.status()
@@ -308,6 +336,8 @@ class OrphanRenderTests(unittest.TestCase):
         self.assertIsNotNone(lease)
         lease.close()
 
+    @unittest.skipIf(os.name == 'nt', 'Windows has no SIGTERM handler: terminating a worker is the '
+                     'hard kill covered by the test above')
     def test_worker_terminated_mid_render_fails_the_take_and_kills_ace(self):
         take, ace_pid = self.start_long_render()
         os.kill(take['pid'], signal.SIGTERM)
