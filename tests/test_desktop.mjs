@@ -18,6 +18,11 @@ try {
     || require('path').join(require('os').homedir(), '.hermes/hermes-agent/apps/desktop/package.json');
   ({ JSDOM } = createRequire(elsewhere)('jsdom'));
 }
+// jsdom ships no fetch. The pane asks the host one opaque question — is anything listening — so the
+// default answer here is "yes". A test that cares about the answer overrides it and restores after.
+const realFetch = globalThis.fetch;
+globalThis.fetch = async () => ({ ok: true, status: 200, opaque: true, type: 'opaque' });
+
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
 globalThis.window = dom.window; globalThis.document = dom.window.document;
 globalThis.HTMLElement = dom.window.HTMLElement; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -40,7 +45,13 @@ try {
 }
 const { render, screen, fireEvent, waitFor, cleanup } = testingLibrary;
 
-const sdk = 'export const ROUTES_AREA="routes", SIDEBAR_NAV_AREA="sidebar.nav"; export const host={};';
+// The stub must export everything the pane imports. It did not export SandboxedFrame, so importing
+// the pane threw "does not provide an export named 'SandboxedFrame'" and every test in this file
+// failed at load — the pane's frame contract was not covered at all.
+const reactUrl = pathToFileURL(require.resolve('react')).href;
+const sdk = `import { createElement } from ${JSON.stringify(reactUrl)};
+export const ROUTES_AREA="routes", SIDEBAR_NAV_AREA="sidebar.nav"; export const host={};
+export function SandboxedFrame(props) { return createElement('iframe', props); }`;;
 let source = await readFile(new URL('../desktop/plugin.js', import.meta.url), 'utf8');
 source = source.replaceAll("'@hermes/plugin-sdk'", JSON.stringify('data:text/javascript,' + encodeURIComponent(sdk)))
   .replaceAll("'react/jsx-runtime'", JSON.stringify(pathToFileURL(require.resolve('react/jsx-runtime')).href))
@@ -111,33 +122,21 @@ test('retries when the host route reports no host, then frames it', async () => 
   assert.equal(attempt, 2);
 });
 
-test('falls back to the host recorded on disk when the route is not mounted', async () => {
-  // A gateway started before GET /studio/host existed answers 404; the host it
-  // already runs is recorded next to the library, so the pane still works.
+test('a 404 from the plugin route is an error, not a reason to read the desktop bridge', async () => {
+  // Review item 2: the pane must use the plugin's own route, not the app's private bridge. An older
+  // gateway answers 404; the pane says so instead of reaching for files it is not entitled to read.
   const read = [];
   window.hermesDesktop = {
     desktopPluginsRoot: async () => '/tmp/hermes-home/desktop-plugins',
-    readFileText: async path => {
-      read.push(path);
-      if (path.endsWith('/plugin-data/hermes-music-studio/studio-host.json')) {
-        return { text: JSON.stringify({ port: 8799, pid: 4242 }) };
-      }
-      throw new Error('ENOENT');
-    }
+    readFileText: async path => { read.push(path); throw new Error('ENOENT'); }
   };
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 200, opaque: true });
   try {
     mount(async () => { throw new Error('{"detail":"Not Found"}'); });
-    const frame = await waitFor(() => {
-      const found = document.querySelector('iframe');
-      assert.ok(found, 'the pane still frames the host it found on disk');
-      return found;
-    });
-    assert.equal(frame.getAttribute('src'), 'http://127.0.0.1:8799/');
-    assert.ok(read.some(p => p.endsWith('/hermes-music-studio/studio-host.json')));
+    assert.ok(await screen.findByText(/studio host is not running/i));
+    assert.equal(document.querySelector('iframe'), null);
+    assert.match(document.body.textContent, /route said/i);
+    assert.deepEqual(read, [], 'the pane must not read studio-host.json through the desktop bridge');
   } finally {
-    globalThis.fetch = realFetch;
     delete window.hermesDesktop;
   }
 });
@@ -147,4 +146,56 @@ test('an empty reply is an error, not a broken frame', async () => {
   assert.ok(await screen.findByText(/studio host is not running/i));
   assert.equal(document.querySelector('iframe'), null);
   assert.match(document.body.textContent, /returned no host url/);
+});
+
+function mountWithOs(rest) {
+  const opened = [];
+  const contributions = [];
+  plugin.register({
+    register: c => contributions.push(c),
+    rest,
+    os: { openExternal: async url => { opened.push(url); } }
+  });
+  render(contributions.find(c => c.area === 'routes').render());
+  return opened;
+}
+
+test('a postMessage from any window but the studio frame is ignored', async () => {
+  const opened = mountWithOs(async () => ({ url: 'http://127.0.0.1:8775', token: 'tok' }));
+  const frame = await waitFor(() => {
+    const found = document.querySelector('iframe');
+    assert.ok(found, 'the studio is framed');
+    return found;
+  });
+  // Not the frame: window itself, a stray opener, anything else.
+  window.dispatchEvent(new dom.window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:open-external', url: 'https://example.com/elsewhere' },
+    source: window
+  }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(opened, [], 'a window that is not the studio frame must not be able to act');
+
+  // From the frame, the same message is honoured.
+  window.dispatchEvent(new dom.window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:open-external', url: 'https://example.com/ok' },
+    source: frame.contentWindow
+  }));
+  await waitFor(() => assert.deepEqual(opened, ['https://example.com/ok']));
+});
+
+test('only http(s) links reach the operating system', async () => {
+  const opened = mountWithOs(async () => ({ url: 'http://127.0.0.1:8775', token: 'tok' }));
+  const frame = await waitFor(() => {
+    const found = document.querySelector('iframe');
+    assert.ok(found);
+    return found;
+  });
+  for (const hostile of ['file:///etc/passwd', 'javascript:alert(1)', 'smb://host/share', 'data:text/html,x']) {
+    window.dispatchEvent(new dom.window.MessageEvent('message', {
+      data: { type: 'hermes-music-studio:open-external', url: hostile },
+      source: frame.contentWindow
+    }));
+  }
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.deepEqual(opened, [], 'a non-web scheme was handed to openExternal');
 });

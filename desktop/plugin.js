@@ -12,7 +12,7 @@
 // the desktop app's private bridge, which is not a plugin API — the route is the public seam, and a 404
 // there means the gateway predates the route, not that the answer is missing.
 import { ROUTES_AREA, SIDEBAR_NAV_AREA, SandboxedFrame } from '@hermes/plugin-sdk'
-import { createElement as h, useCallback, useEffect, useState } from 'react'
+import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
 
 const PLUGIN_ID = 'hermes-music-studio'
 const PATH = '/music-studio'
@@ -75,9 +75,20 @@ export function Studio({ ctx }) {
 
   // `ctx.os.openExternal` is the public seam; the desktop bridge is the app's own business, not a
   // plugin's (review item 2). A framed page cannot reach it either — it asks over postMessage.
-  const openExternal = useCallback(url => {
+  const openExternal = useCallback(raw => {
     const base = host.token ? `${host.url || ''}/?token=${encodeURIComponent(host.token)}` : `${host.url || ''}/`
-    const target = typeof url === 'string' && url ? url : base
+    const candidate = typeof raw === 'string' && raw ? raw : base
+    // Only a web link goes to the OS. This handler is reachable over postMessage, so a page that
+    // is not ours must not be able to hand the desktop `file:`, `javascript:` or a custom scheme.
+    let parsed = null
+    try { parsed = new URL(String(candidate)) } catch { parsed = null }
+    if (!parsed || !/^https?:$/.test(parsed.protocol)) {
+      if (typeof ctx?.notify === 'function') {
+        ctx.notify({ kind: 'error', message: `Refusing to open ${candidate}: only http(s) links` })
+      }
+      return
+    }
+    const target = parsed.href
     if (ctx && ctx.os && typeof ctx.os.openExternal === 'function') {
       void ctx.os.openExternal(target)
       return
@@ -90,8 +101,16 @@ export function Studio({ ctx }) {
   // The framed studio says when it has closed itself, and asks when it needs a browser tab opened;
   // the pane then leaves the route rather than framing a dead host. A blank frame that still says
   // "Music Studio" is worse than no frame at all.
+  const frameHost = useRef(null)
+
   useEffect(() => {
     const onMessage = event => {
+      // The studio is the only window allowed to talk: anything else on the page, or another
+      // frame, could otherwise ask this pane to navigate or open a URL.
+      const frame = frameHost.current && frameHost.current.querySelector
+        ? frameHost.current.querySelector('iframe')
+        : null
+      if (!frame || !frame.contentWindow || event.source !== frame.contentWindow) return
       const data = event && event.data
       if (!data || typeof data.type !== 'string') return
       if (data.type === 'hermes-music-studio:open-external') {
@@ -120,7 +139,7 @@ export function Studio({ ctx }) {
     ])
   }
 
-  return h('div', { style: frameWrap }, [
+  return h('div', { style: frameWrap, ref: frameHost }, [
     // The SDK's sandboxed frame, not a raw iframe: guest content gets the app's own posture (scripts
     // run, the origin is opaque, no reach into the app or its bridge).
     h(SandboxedFrame, {
