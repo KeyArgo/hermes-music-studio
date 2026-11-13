@@ -58,18 +58,29 @@ def studio_client(app, base_url='http://127.0.0.1'):
     return client
 
 
-@pytest.fixture(autouse=True)
-def _no_worker_outlives_its_test():
-    """Stop render workers before the test's temp folder is removed.
-
-    On Windows a live child keeps its log file open, and removing the folder then fails with
-    WinError 32 — a real file-handle leak in the test's timeline, not a flaky assertion. It only
-    matters where workers were actually started; elsewhere this is a no-op.
-    """
-    yield
+def _stop_workers():
     try:
         from music_studio import service
 
         service.stop_workers(timeout=10)
     except Exception:  # pragma: no cover - nothing to stop, or the module never loaded
         pass
+
+
+@pytest.fixture(autouse=True)
+def _no_worker_outlives_its_test(request):
+    """Stop render workers before the test's temp folder is removed.
+
+    On Windows a live child keeps its log file open, and removing the folder then fails with
+    WinError 32. A unittest class removes its folder in ``tearDown``, which runs before this
+    fixture's own teardown, so for those the stop is put in front of ``tearDown`` itself.
+    """
+    instance = getattr(request, 'instance', None)
+    own = getattr(instance, 'tearDown', None)
+    if instance is not None and callable(own):
+        def tear_down_after_the_workers():
+            _stop_workers()
+            own()
+        instance.tearDown = tear_down_after_the_workers
+    yield
+    _stop_workers()
