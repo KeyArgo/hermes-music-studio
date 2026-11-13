@@ -231,6 +231,21 @@ def _key_path(data_dir):
     return Path(data_dir) / KEY_FILE
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Write a small secret file with owner-only permissions from the first byte.
+
+    Review item 6: `write_text` then `chmod` leaves a window where the key is readable by anyone, and a
+    crash inside that window leaves it readable for good.
+    """
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    except OSError:  # pragma: no cover - Windows ignores the permission bits
+        Path(path).write_text(text)
+        return
+    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
 def save_cloud(data_dir, name, url, key, model=''):
     """Store a hosted endpoint and its key. The key never leaves this file for the page."""
     base = normalise_url(url)
@@ -245,11 +260,9 @@ def save_cloud(data_dir, name, url, key, model=''):
             data = {}
     data[name or 'default'] = {'url': base, 'key': key.strip(), 'model': (model or '').strip(),
                                'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S')}
-    path.write_text(json.dumps(data, indent=2))
-    try:
-        os.chmod(path, 0o600)
-    except Exception:  # pragma: no cover - Windows has no 0600
-        pass
+    # Review item 6: create the file 0600 in the first place. Writing it world-readable and chmod-ing
+    # afterwards leaves a window (and a crash leaves the window open for good).
+    _write_private(path, json.dumps(data, indent=2))
     return {'ok': True, 'name': name or 'default', 'url': base, 'has_key': True}
 
 

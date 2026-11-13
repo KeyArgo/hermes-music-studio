@@ -37,6 +37,25 @@ POLL_SECONDS = 2.0
 DEFAULT_TIMEOUT = 10.0
 
 
+def _remote_key() -> str | None:
+    """The remote key, resolved the way Hermes resolves credentials.
+
+    Review item 6. Reading `os.environ` directly bypasses the profile scope, so a key that lives in the
+    active profile's `.env` was invisible while a key from an unrelated environment leaked in. The host's
+    `get_secret` honours the scope, including the fail-closed case under multiplexing; the plain
+    environment stays as a fallback for a standalone install with no Hermes around.
+    """
+    try:
+        from agent.secret_scope import get_secret
+
+        value = get_secret('ACE_REMOTE_API_KEY')
+        if value:
+            return value
+    except Exception:
+        pass
+    return os.environ.get('ACE_REMOTE_API_KEY') or None
+
+
 class AceRemoteEngine(Engine):
     id = 'ace_remote'
     label = 'ACE-Step 1.5 (remote)'
@@ -49,7 +68,7 @@ class AceRemoteEngine(Engine):
                  timeout: float = DEFAULT_TIMEOUT):
         super().__init__()
         self.base_url = (base_url or os.environ.get('ACE_REMOTE_URL') or DEFAULT_URL).rstrip('/')
-        self.api_key = api_key if api_key is not None else os.environ.get('ACE_REMOTE_API_KEY')
+        self.api_key = api_key if api_key is not None else _remote_key()
         self.timeout = timeout
         # Overridable so tests do not sleep on the production poll interval.
         self.poll_seconds = POLL_SECONDS

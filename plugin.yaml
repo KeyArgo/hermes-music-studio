@@ -13,6 +13,12 @@ description: >
   extend), or MiniMax Music 3 through a ComfyUI server (vocals; no repaint or extension). Every
   take keeps its seed, draft snapshot, engine and lineage. There is no mock engine and no cloud
   audio service. Limits are written down; voice quality is unproven.
+requires_env:
+  - name: ACE_REMOTE_API_KEY
+    description: >-
+      Optional bearer token for a remote ACE-Step server (ACE_REMOTE_URL). Read with
+      agent.secret_scope.get_secret, never copied into the library or the page.
+    optional: true
 provides_tools:
   - music_studio
 provides_hooks: []

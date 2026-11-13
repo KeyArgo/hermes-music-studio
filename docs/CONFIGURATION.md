@@ -38,7 +38,7 @@ The legacy `hewn` names are kept on purpose: renaming them would orphan every ex
 | `ACE_SOURCE_DIR` | unset (`/nonexistent/ace-source`) | `ace_engine.py` | ACE-Step source checkout containing `acestep/` |
 | `COMFYUI_URL` | empty (no baked address) | `music_studio/engines/minimax_m3_comfy.py`, `discovery.py`, `service.py` | ComfyUI base URL for MiniMax Music 3 |
 | `ACE_REMOTE_URL` | empty | `music_studio/engines/ace_remote.py` | `acestep.api_server` base URL for the undeployed remote adapter |
-| `ACE_REMOTE_API_KEY` | unset | `music_studio/engines/ace_remote.py` | Optional bearer token for that server |
+| `ACE_REMOTE_API_KEY` | unset | `music_studio/engines/ace_remote.py` | Optional bearer token for that server. Declared in `requires_env`, resolved with `agent.secret_scope.get_secret` (profile scope first, environment as the standalone fallback) |
 | `MUSIC_STUDIO_SCAN_HOSTS` | empty | `music_studio/discovery.py`, `service.py` | Extra comma-separated hostnames for "Find a renderer" |
 | `MUSIC_STUDIO_GPU_LOCK` | `<runtime>/ace-studio-gpu.lock` | `music_studio/engines/minimax_m3_comfy.py` | Override the local GPU lock path used when ComfyUI is on this machine |
 
@@ -51,8 +51,7 @@ Saved engine paths are injected into the host process by `music_studio/host_laun
 |---|---|---|---|
 | `HOME` | — | `music_studio/export.py` | Default export folder is `~/Music/Hermes Music Studio` |
 | `MUSIC_STUDIO_BASE` | discovered | `scripts/ms.py` | Base URL for the CLI; otherwise the port from `studio-host.json`, then `8775` |
-| `HERMES_MUSIC_HERMES_COMMAND` | `hermes` on `PATH`, then `~/.local/bin/hermes` | `standalone/ideas.py` | Launcher for the creative partner / cover generation |
-| `HERMES_MUSIC_HERMES_REPO` | `~/.hermes/hermes-agent` | `standalone/hermes_worker.py` | Hermes source checkout used by that worker |
+| `HERMES_MUSIC_HERMES_COMMAND` (unused since the ctx.llm move) | `hermes` on `PATH`, then `~/.local/bin/hermes` | `standalone/ideas.py` | Launcher for the creative partner / cover generation |
 | `HERMES_MUSIC_REVAMPCTL` | `revampctl` on `PATH`, then `~/.local/bin/revampctl` | `standalone/revamp.py` | REVamp client executable |
 | `REVAMP_PORT` | `8114` | `standalone/app.py` | Origin allowed to read take audio for REVamp |
 
@@ -67,7 +66,7 @@ moved). It is written atomically and validated on save.
 |---|---|---|---|
 | `comfy_url` | `""` | `http://` or `https://` URL, trailing slash removed | ComfyUI endpoint |
 | `scan_hosts` | `""` | comma-separated hostnames | Extra machines for "Find a renderer" |
-| `export_dir` | `""` (`~/Music/Hermes Music Studio`) | absolute path | Where Export writes |
+| `export_dir` | `""` (`~/Music/Hermes Music Studio`) | absolute path | Where Export writes. Also the boundary: with it set, nothing outside it is writable; without it, anything inside `~/Music` |
 | `ace_runtime_dir` | `""` | path | ACE runtime, used to start the host |
 | `ace_source_dir` | `""` | path | ACE source checkout |
 | `ace_remote_url` | `""` | URL | ACE remote server |
