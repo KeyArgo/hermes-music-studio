@@ -15,6 +15,12 @@ class ExportError(RuntimeError):
     """The take could not be written; the message is meant for a person."""
 
 _UNSAFE = re.compile(r'[^A-Za-z0-9 \-_.()\[\]]+')
+# Windows still reserves these device names in every directory, with or
+# without an extension: "CON" and "con.wav" both name the console, not a file.
+_RESERVED_NAMES = frozenset(
+    ['CON', 'PRN', 'AUX', 'NUL']
+    + [f'COM{n}' for n in range(1, 10)]
+    + [f'LPT{n}' for n in range(1, 10)])
 
 
 def safe_name(text: str, fallback: str = 'take') -> str:
@@ -23,7 +29,11 @@ def safe_name(text: str, fallback: str = 'take') -> str:
     # A name is a file name, not a path: no dot runs that could read as ``..``.
     name = re.sub(r'\.{2,}', '.', name)
     name = re.sub(r'\s+', ' ', name).strip().strip('.')
-    return name[:80] or fallback
+    name = name[:120] or fallback
+    stem, dot, rest = name.partition('.')
+    if stem.upper() in _RESERVED_NAMES:
+        name = stem + '_' + dot + rest
+    return name[:120] or fallback
 
 
 def default_folder() -> Path:

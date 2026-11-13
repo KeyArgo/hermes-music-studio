@@ -278,7 +278,11 @@ def _render(*, job_input, output_dir, timeout_seconds, expected_seconds,
             lock_ex(lock, blocking=False)
         except BlockingIOError as exc:
             raise RuntimeError('ACE GPU worker busy') from exc
-        with tempfile.TemporaryDirectory(prefix='ace-job-', dir=out) as job:
+        # A Windows reader (Defender, an indexer) can still hold the log/output
+        # for a moment after the render ends; cleanup failure must not discard
+        # a good WAV or fail the take.
+        with tempfile.TemporaryDirectory(prefix='ace-job-', dir=out,
+                                         ignore_cleanup_errors=True) as job:
             job = Path(job)
             if source_wav is not None:
                 # The engine loads src_audio from a path; the private job dir is
