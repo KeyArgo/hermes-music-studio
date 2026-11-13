@@ -637,6 +637,44 @@ def studio_fade(body: dict = Depends(json_body)):
                   body.get('seconds') or 1.5)
 
 
+@router.post('/studio/draft')
+def studio_draft(body: dict = Depends(json_body)):
+    """Draft a song with the agent's own model, from the process that owns it.
+
+    The framed pane cannot reach Hermes' model facade directly (it is a sandboxed page talking to a
+    separate loopback host), so the pane forwards a draft request here over its plugin route and
+    posts the answer back. One model path, one place it lives.
+    """
+    from music_studio import llm_bridge
+    from standalone.ideas import build_request, parse_draft
+
+    prompt = str(body.get('prompt') or '').strip()
+    if not prompt:
+        raise HTTPException(400, 'prompt is required')
+    if not llm_bridge.available():
+        raise HTTPException(503, llm_bridge.MISSING)
+    try:
+        request = build_request(body.get('provider'), body.get('model'),
+                                [{'role': 'user', 'content': prompt}], 'draft',
+                                body.get('tone'), body.get('style'))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    try:
+        content = llm_bridge.complete(request['messages'], provider=request['provider'],
+                                      model=request['model'], max_tokens=request['max_tokens'],
+                                      temperature=request['temperature'])
+    except llm_bridge.LlmUnavailable as exc:
+        raise HTTPException(503, str(exc)) from None
+    except llm_bridge.LlmTrustError as exc:
+        raise HTTPException(403, str(exc)) from None
+    draft = parse_draft(content)
+    project = None
+    if body.get('create'):
+        from music_studio import service
+        project = service.store().create(**draft)
+    return {'success': True, 'draft': draft, 'written_by': 'ctx.llm', 'project': project}
+
+
 @router.get('/verify.json')
 def verify_json():
     """The same measurements the page shows, for a script or a bug report."""

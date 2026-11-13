@@ -82,8 +82,8 @@ and nothing is pip-installed by the plugin.
 
 | Path | What it is | Licence |
 |---|---|---|
-| `assets/brand/stamp.svg` | the ArgoLabs seal | original work, MIT |
-| `assets/brand/banner.html` / `.png` | ArgoLabs banner, rendered from that HTML | original work, MIT |
+| `assets/brand/stamp.svg` | the InovinLabs seal | original work, MIT |
+| `assets/brand/banner.html` / `.png` | InovinLabs banner, rendered from that HTML | original work, MIT |
 | `dashboard/dist/index.js` | the studio UI | original work, MIT |
 
 No web fonts, icon sets, JavaScript libraries or sample audio are bundled. The

@@ -27,8 +27,9 @@ import threading
 from typing import Any, Callable, Sequence
 
 MISSING = (
-    "Drafting needs Hermes' model access. Open Music Studio from Hermes Desktop (the pane) or call the "
-    "music_studio tool from a chat; the standalone browser view cannot borrow a model."
+    "Drafting needs Hermes' model. Use the Music Studio pane in Hermes Desktop (it forwards the request "
+    "to the plugin route that owns ctx.llm), ask in a chat, or call the music_studio tool with "
+    "action='draft'. A standalone browser tab has no host model to borrow."
 )
 
 

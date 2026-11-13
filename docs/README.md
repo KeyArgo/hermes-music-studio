@@ -24,7 +24,6 @@ Applies to 1.0.0 · revised 2026-11-11.
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Dev setup, tests, commit style, PR flow |
 | [../SECURITY.md](../SECURITY.md) | Supported version and private reporting |
 | [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Community expectations |
-| [../BRAND.md](../BRAND.md) | House style for the name, badge covenant and banner |
 
 The walkthrough screenshots are in [screenshots/](screenshots/). They were captured from this commit
 against a fixture library; see [DEVELOPMENT.md](DEVELOPMENT.md#screenshots).

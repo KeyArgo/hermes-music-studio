@@ -21,7 +21,7 @@ from music_studio import llm_bridge, service
 
 ACTIONS = ('status', 'create', 'update', 'change', 'keep', 'snippet', 'snippet_splice', 'check_take',
            'checkpoint', 'checkpoints', 'restore', 'doctor', 'approve', 'render', 'queue', 'takes',
-           'export', 'wait', 'compare', 'compare_status', 'set_cover')
+           'export', 'wait', 'compare', 'compare_status', 'set_cover', 'draft')
 
 SCHEMA = {
     'name': 'music_studio',
@@ -229,6 +229,29 @@ def _handler(args):
         return {'success': True, 'project_id': project['project_id'],
                 'title': project.get('title'), 'approved': project.get('approved'),
                 'updated_at': project.get('updated_at'), 'takes': _takes_of(project)}
+    if action == 'draft':
+        # The agent's own model writes the draft — this is the one place a model is reachable, so a
+        # chat should not have to leave the tool to get one. `create=True` opens a project with it.
+        from music_studio import llm_bridge
+        from standalone.ideas import build_request, parse_draft
+
+        prompt = str(args.get('prompt') or args.get('idea') or '').strip()
+        if not prompt:
+            raise ValueError('prompt is required (describe the song you want)')
+        if not llm_bridge.available():
+            raise RuntimeError(llm_bridge.MISSING)
+        request = build_request(args.get('provider'), args.get('model'),
+                                [{'role': 'user', 'content': prompt}], 'draft',
+                                args.get('tone'), args.get('style'))
+        content = llm_bridge.complete(request['messages'], provider=request['provider'],
+                                      model=request['model'], max_tokens=request['max_tokens'],
+                                      temperature=request['temperature'])
+        draft = parse_draft(content)
+        result = {'success': True, 'draft': draft, 'written_by': 'ctx.llm'}
+        if args.get('create'):
+            project = store.create(**draft)
+            result['project'] = project
+        return result
     if action == 'set_cover':
         # Review item 1, the public way: the agent makes the picture, the studio stores the file. The
         # path is untrusted input, so `covers.cover_from_file` confines it to places an image plausibly
