@@ -7,6 +7,7 @@ import os
 import random
 import signal
 import stat
+import subprocess
 import tempfile
 import time
 import uuid
@@ -15,6 +16,7 @@ from .store import (EXTEND_MAX_OVERLAP_SECONDS, EXTEND_MAX_SECONDS,
                     EXTEND_MIN_SECONDS, EXTEND_SOURCE_MIN_SECONDS, FIELDS,
                     REPAINT_MAX_SECONDS, REPAINT_MIN_SECONDS, TOTAL_MAX_SECONDS,
                     fsync_dir, valid_id, validate_ready)
+from .safeopen import open_nofollow
 
 # A take whose worker pid has not been recorded yet (spawn in flight) is only
 # considered abandoned after this long, so a status poll cannot kill a job that
@@ -43,13 +45,27 @@ def _stat_start_time(pid):
 
 
 def _stat_state(pid):
-    """Single-letter /proc state ('R', 'S', 'Z', ...) or None when gone."""
+    """Single-letter process state ('R', 'S', 'Z', ...) or None when gone or unknown.
+
+    Linux reads /proc. macOS and the BSDs have no /proc, so ``ps`` answers there; without it a
+    zombie worker read as alive and kept the profile "GPU busy" until a manual recover. Windows
+    has no zombies (pid_exists already reports an exited process as gone), so it answers None.
+    """
     try:
         with open(f'/proc/{pid}/stat', 'rb') as fh:
             raw = fh.read()
         return raw.rsplit(b')', 1)[1].split()[0]
+    except FileNotFoundError:
+        if os.name == 'nt' or os.path.isdir('/proc/self'):
+            return None
     except (OSError, IndexError, ValueError):
         return None
+    try:
+        out = subprocess.run(['ps', '-o', 'stat=', '-p', str(int(pid))], capture_output=True,
+                             timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out[:1] or None
 
 
 def process_alive(pid, start_time=None):
@@ -781,7 +797,7 @@ class Jobs:
         except ValueError:
             raise ValueError('audio unavailable') from None
         try:
-            fd = os.open(self.store.root / name, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+            fd = open_nofollow(self.store.root / name)
         except OSError as exc:
             raise ValueError('audio unavailable') from exc
         if not stat.S_ISREG(os.fstat(fd).st_mode):
