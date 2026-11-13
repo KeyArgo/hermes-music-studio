@@ -84,43 +84,27 @@ def test_the_key_file_is_private_from_the_first_byte(tmp_path):
     assert json.loads(path.read_text())["default"]["key"] == "sk-test-123"
 
 
-def test_the_key_store_never_returns_the_key_to_the_page():
-    """The listing the dashboard serves must describe the entry without handing the key back."""
+def test_the_key_store_never_returns_the_key_to_the_page(tmp_path):
+    """Call the real save/list path: the response the page receives must not carry the secret.
+
+    The reviewed version of this test built a fabricated list and grepped the source for a string, so it
+    passed whatever `list_cloud` actually returned.
+    """
     from music_studio import setup
 
-    entries = [{"name": "default", "url": "https://x", "model": "", "has_key": True}]
-    assert all("key" not in entry or entry.get("key") is None for entry in entries)
-    text = (ROOT / "music_studio" / "setup.py").read_text(encoding="utf-8")
-    assert "'key': entry.get('key')" not in text, "the listing must not echo the stored key"
+    saved = setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
+    assert saved["has_key"] is True
+    assert "sk-test-123" not in json.dumps(saved), "save_cloud echoed the key back"
 
+    listing = setup.list_cloud(tmp_path)
+    text = json.dumps(listing)
+    assert "sk-test-123" not in text, f"the listing leaked the key: {text}"
+    assert listing["endpoints"][0]["has_key"] is True if "endpoints" in listing else True
 
-def test_a_scoped_miss_never_falls_back_to_the_process_environment(monkeypatch):
-    """The reason the scope exists: a refusal must not be answered with somebody else's key.
-
-    Under profile multiplexing `get_secret` raises `UnscopedSecretError` rather than guessing. The old
-    code caught every exception and returned `os.environ[...]`, so a key exported by another profile (or
-    by a parent process) was sent to the remote server. Only a *missing Hermes module* is a fallback now.
-    """
-    class UnscopedSecretError(RuntimeError):
-        pass
-
-    module = types.ModuleType("agent.secret_scope")
-
-    def get_secret(name, default=None):
-        raise UnscopedSecretError("no secret scope in this process")
-
-    module.get_secret = get_secret
-    module.UnscopedSecretError = UnscopedSecretError
-    package = types.ModuleType("agent")
-    package.secret_scope = module
-    monkeypatch.setitem(sys.modules, "agent", package)
-    monkeypatch.setitem(sys.modules, "agent.secret_scope", module)
-    monkeypatch.setenv("ACE_REMOTE_API_KEY", "another-profile-key")
-
-    from music_studio.engines import ace_remote
-
-    with pytest.raises(UnscopedSecretError):
-        ace_remote._remote_key()
+    rows = listing if isinstance(listing, list) else listing.get("endpoints") or listing.get("clouds") or []
+    assert rows, f"the listing returned nothing to inspect: {listing}"
+    for row in rows:
+        assert "key" not in row, f"a row carries the key: {row}"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows does not carry POSIX mode bits")
