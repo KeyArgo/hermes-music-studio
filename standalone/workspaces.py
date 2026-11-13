@@ -2,6 +2,7 @@
 import base64
 import binascii
 from music_studio.portalock import lock_ex, unlock
+from music_studio.store import replace_with_retry
 import json
 import os
 import tempfile
@@ -43,7 +44,7 @@ class WorkspaceStore:
             with os.fdopen(fd, 'w', encoding='utf-8') as handle:
                 json.dump(data, handle, ensure_ascii=False)
                 handle.flush(); os.fsync(handle.fileno())
-            os.replace(path, self.path)
+            replace_with_retry(path, self.path)
             if os.name != 'nt':  # Windows cannot open a directory to fsync it
                 dfd = os.open(str(self.root), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
                 try: os.fsync(dfd)

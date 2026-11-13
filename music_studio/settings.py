@@ -18,6 +18,8 @@ import json
 import os
 from pathlib import Path
 
+from .store import replace_with_retry
+
 SETTINGS_FILE = 'engine-settings.json'
 LIBRARY_POINTER = 'library.json'
 
@@ -132,7 +134,7 @@ def write(base: Path, payload: dict) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(merged, indent=2) + '\n', encoding='utf-8')
-    os.replace(tmp, path)
+    replace_with_retry(tmp, path)
     return merged
 
 
@@ -170,7 +172,7 @@ def point_library_at(base: Path, target: Path) -> dict:
     path = base / LIBRARY_POINTER
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
-    os.replace(tmp, path)
+    replace_with_retry(tmp, path)
     return payload
 
 

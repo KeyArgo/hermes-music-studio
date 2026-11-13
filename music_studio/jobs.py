@@ -16,7 +16,7 @@ import wave
 from .store import (EXTEND_MAX_OVERLAP_SECONDS, EXTEND_MAX_SECONDS,
                     EXTEND_MIN_SECONDS, EXTEND_SOURCE_MIN_SECONDS, FIELDS,
                     REPAINT_MAX_SECONDS, REPAINT_MIN_SECONDS, TOTAL_MAX_SECONDS,
-                    fsync_dir, valid_id, validate_ready)
+                    fsync_dir, replace_with_retry, valid_id, validate_ready)
 from .safeopen import open_nofollow
 
 # A take whose worker pid has not been recorded yet (spawn in flight) is only
@@ -618,7 +618,7 @@ class Jobs:
                     out.flush()
                     os.fsync(out.fileno())
                 # A crash before metadata commit can leave an orphan, never a false success.
-                os.replace(temp, self.store.root / name)
+                replace_with_retry(temp, self.store.root / name)
                 fsync_dir(self.store.root)
                 edit_record = None
                 if edit is not None:
@@ -689,7 +689,7 @@ class Jobs:
                 out.write(edited)
                 out.flush()
                 os.fsync(out.fileno())
-            os.replace(temp, self.store.root / name)
+            replace_with_retry(temp, self.store.root / name)
             written = name
             fsync_dir(self.store.root)
             return {
