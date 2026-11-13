@@ -3,6 +3,7 @@ from music_studio.childenv import minimal_env
 from music_studio.portalock import lock_ex
 import io
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -114,19 +115,29 @@ def _detach():
 
 
 def _kill_process_group(proc):
-    """Kill the render and every descendant it started (ACE spawns helpers)."""
+    """Kill the render and every descendant it started (ACE spawns helpers).
+
+    Raises when the process is not actually gone: a live ACE render holds the
+    GPU and the next take, so a cancel that only "issued" a kill must become a
+    visible job error instead of silently continuing.
+    """
     from music_studio.procs import kill_tree
     try:
-        kill_tree(proc.pid)
+        stopped = kill_tree(proc.pid)
     except OSError:
+        stopped = False
         try:
             proc.kill()
+            stopped = True
         except OSError:
             pass
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        pass
+        stopped = False
+    if not stopped:
+        logging.error('could not stop the render process %s', proc.pid)
+        raise RuntimeError(f'could not stop the render process {proc.pid}')
 
 
 # An absolute path anywhere in ACE output is noise the user cannot act on (and
