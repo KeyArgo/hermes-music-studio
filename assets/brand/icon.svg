@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Music Studio">
+  <defs>
+    <linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c1240"/><stop offset="1" stop-color="#08091a"/></linearGradient>
+    <linearGradient id="a" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff4fd8"/><stop offset="1" stop-color="#3350ff"/></linearGradient>
+    <radialGradient id="vinyl" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffffff"/><stop offset=".2" stop-color="#ffd6f6"/><stop offset=".22" stop-color="#ff4fd8"/><stop offset="1" stop-color="#6a3cff"/></radialGradient>
+    <radialGradient id="g" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#a14bff" stop-opacity=".45"/><stop offset="1" stop-color="#a14bff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#b)"/>
+  <circle cx="512" cy="512" r="420" fill="url(#g)"/>
+  <!-- the beam is the song's waveform; the lit section is the one being repainted -->
+  <g stroke-linecap="round" stroke-width="26" transform="translate(-30 -60)">
+    <g stroke="#8e7fd6"><path d="M330 300v40"/><path d="M372 282v76"/><path d="M414 292v56"/></g>
+    <rect x="440" y="238" width="196" height="164" rx="26" fill="#ff4fd8" fill-opacity=".2"/>
+    <g stroke="#ff9bf0"><path d="M470 262v116"/><path d="M512 284v72"/><path d="M554 250v140"/><path d="M596 276v88"/></g>
+    <g stroke="#8e7fd6"><path d="M664 290v60"/><path d="M706 276v88"/></g>
+  </g>
+  <!-- solid beam: it is still a note -->
+  <path d="M312 322 L724 270 L724 338 L312 390 Z" fill="url(#a)"/>
+  <!-- stems are faders -->
+  <rect x="312" y="300" width="36" height="380" rx="18" fill="url(#a)"/>
+  <rect x="688" y="300" width="36" height="340" rx="18" fill="url(#a)"/>
+  <rect x="280" y="470" width="100" height="40" rx="12" fill="#f5edff"/>
+  <rect x="656" y="420" width="100" height="40" rx="12" fill="#f5edff"/>
+  <!-- note heads are records: every take is pressed -->
+  <g>
+    <circle cx="236" cy="704" r="118" fill="url(#vinyl)"/>
+    <g fill="none" stroke="#1a0f3a" stroke-opacity=".35" stroke-width="6"><circle cx="236" cy="704" r="56"/><circle cx="236" cy="704" r="78"/><circle cx="236" cy="704" r="98"/></g>
+    <circle cx="236" cy="704" r="9" fill="#08091a"/>
+    <circle cx="610" cy="664" r="118" fill="url(#vinyl)"/>
+    <g fill="none" stroke="#1a0f3a" stroke-opacity=".35" stroke-width="6"><circle cx="610" cy="664" r="56"/><circle cx="610" cy="664" r="78"/><circle cx="610" cy="664" r="98"/></g>
+    <circle cx="610" cy="664" r="9" fill="#08091a"/>
+  </g>
+  <rect x="68" y="68" width="888" height="888" rx="204" fill="none" stroke="url(#a)" stroke-width="8" opacity=".35"/>
+  <path d="M842 176c-40 6-78 26-104 58 30-6 58-4 82 6-24 4-46 14-62 30 28-2 52 4 70 16-14-34-8-80 14-110Z" fill="#f2f4ff" opacity=".9"/>
+</svg>
