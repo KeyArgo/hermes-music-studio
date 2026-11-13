@@ -769,19 +769,53 @@ async function loadModels() {
 function fillModels(preferred){const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
 $('idea-provider').onchange=()=>fillModels();
 function addIdea(role, text){const p=el('p',text,role==='user'?'human':'assistant');$('idea-messages').append(p);$('idea-messages').scrollTop=$('idea-messages').scrollHeight;}
+// A standalone host has no model of its own: the model lives in the Hermes plugin process. When the
+// page is framed by the desktop pane, it asks the pane (postMessage) and the pane calls its own
+// plugin route — the one place ctx.llm exists. In a plain browser tab there is no pane to ask, and
+// the message says where drafting does work.
+function paneDraft(request) {
+  return new Promise((resolve, reject) => {
+    const parentWindow = window.parent;
+    if (!parentWindow || parentWindow === window) {
+      reject(new Error("Drafting needs Hermes' model. Use the Music Studio pane in Hermes Desktop, ask in a chat, or call the music_studio tool with action='draft'."));
+      return;
+    }
+    const id = 'draft-' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onReply);
+      reject(new Error('The pane did not answer the draft request in time.'));
+    }, 60000);
+    function onReply(event) {
+      const data = event && event.data;
+      if (!data || data.type !== 'hermes-music-studio:draft-result' || data.id !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onReply);
+      if (data.ok) resolve({ draft: data.draft, content: data.content, written_by: 'ctx.llm' });
+      else reject(new Error(data.error || 'drafting failed'));
+    }
+    window.addEventListener('message', onReply);
+    parentWindow.postMessage({ type: 'hermes-music-studio:draft', id,
+      prompt: request.prompt, tone: request.tone, style: request.style }, '*');
+  });
+}
+
 async function idea(action) {
   const input=$('idea-input').value.trim(); if(input){conversation.push({role:'user',content:input});addIdea('user',input);$('idea-input').value='';}
   if(!conversation.some(m=>m.role==='user')){$('idea-connection').textContent='Tell me a little about the song first.';return;}
   const provider=$('idea-provider-manual').value.trim() || $('idea-provider').value, model=$('idea-model-manual').value.trim() || $('idea-model').value;
-  if(!provider || !model){$('idea-connection').textContent='Connect Hermes and choose a model first.';return;}
   $('idea-send').disabled=true;$('idea-apply').disabled=true;$('idea-connection').textContent='Thinking…';
-  try {const d=await api('/studio/ideas',{provider,model,messages:conversation.slice(-20),action,tone:$('idea-tone').value.toLowerCase(),style:Number($('idea-style').value)});
+  const tone=$('idea-tone').value.toLowerCase(), style=Number($('idea-style').value);
+  try {const d = provider && model
+      ? await api('/studio/ideas',{provider,model,messages:conversation.slice(-20),action,tone,style})
+      : await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n')});
     if(action==='chat'){conversation.push({role:'assistant',content:d.content.slice(0,4000)});addIdea('assistant',d.content);}
     else {if((form.elements.caption.value || form.elements.lyrics.value) && !window.confirm('Replace the current draft fields with the suggested draft?'))return;
       const draft=d.draft || {};for(const key of ['title','caption','lyrics','bpm','keyscale','duration_seconds']) if(draft[key]!==undefined && form.elements[key])form.elements[key].value=draft[key];
       if(typeof draft.instrumental==='boolean')form.elements.instrumental.checked=draft.instrumental;
       dirty=true;revision++;buttons();message('Suggested draft added. Review and save it.');show('create');}
-    $('idea-connection').textContent='Using '+provider+' / '+model+'.';
+    $('idea-connection').textContent = provider && model
+      ? 'Using ' + provider + ' / ' + model + '.'
+      : 'Drafted by the Hermes agent (its own model).';
   } catch(e) {$('idea-connection').textContent=e.message;}
   finally {$('idea-send').disabled=false;$('idea-apply').disabled=false;}
 }

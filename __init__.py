@@ -242,7 +242,7 @@ def _handler(args):
             raise RuntimeError(llm_bridge.MISSING)
         request = build_request(args.get('provider'), args.get('model'),
                                 [{'role': 'user', 'content': prompt}], 'draft',
-                                args.get('tone'), args.get('style'))
+                                args.get('tone'), int(args.get('style') or 50))
         content = llm_bridge.complete(request['messages'], provider=request['provider'],
                                       model=request['model'], max_tokens=request['max_tokens'],
                                       temperature=request['temperature'])

@@ -656,7 +656,7 @@ def studio_draft(body: dict = Depends(json_body)):
     try:
         request = build_request(body.get('provider'), body.get('model'),
                                 [{'role': 'user', 'content': prompt}], 'draft',
-                                body.get('tone'), body.get('style'))
+                                body.get('tone'), int(body.get('style') or 50))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     try:

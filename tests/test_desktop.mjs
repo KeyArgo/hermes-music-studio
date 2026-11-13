@@ -199,3 +199,36 @@ test('only http(s) links reach the operating system', async () => {
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.deepEqual(opened, [], 'a non-web scheme was handed to openExternal');
 });
+
+test('a draft request from the frame is answered through the plugin route', async () => {
+  const calls = [];
+  const contributions = [];
+  plugin.register({
+    register: c => contributions.push(c),
+    rest: async (path, options) => {
+      calls.push({ path, options });
+      if (path === '/studio/host') return { url: 'http://127.0.0.1:8775', token: 'tok' };
+      return { draft: { title: 'Night Drive' } };
+    }
+  });
+  render(contributions.find(c => c.area === 'routes').render());
+  const frame = await waitFor(() => {
+    const found = document.querySelector('iframe');
+    assert.ok(found, 'the studio is framed');
+    return found;
+  });
+  const posted = [];
+  frame.contentWindow.postMessage = message => posted.push(message);
+  window.dispatchEvent(new dom.window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:draft', id: 'd1', prompt: 'a night drive', tone: 'warm', style: 70 },
+    source: frame.contentWindow
+  }));
+  await waitFor(() => assert.ok(posted.length, 'the frame was answered'));
+  const draftCall = calls.find(c => c.path === '/studio/draft');
+  assert.ok(draftCall, 'drafting goes to the route that owns the model');
+  assert.equal(draftCall.options.method, 'POST');
+  assert.equal(draftCall.options.body.prompt, 'a night drive');
+  assert.equal(posted[0].type, 'hermes-music-studio:draft-result');
+  assert.equal(posted[0].id, 'd1');
+  assert.equal(posted[0].draft.title, 'Night Drive');
+});

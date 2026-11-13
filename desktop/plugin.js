@@ -117,6 +117,22 @@ export function Studio({ ctx }) {
         openExternal(data.url)
         return
       }
+      if (data.type === 'hermes-music-studio:draft') {
+        // The frame has no model and no plugin route of its own; this process has both.
+        const answer = payload => {
+          try {
+            frame.contentWindow.postMessage(
+              { type: 'hermes-music-studio:draft-result', id: data.id, ...payload }, '*')
+          } catch { /* the frame went away while drafting */ }
+        }
+        Promise.resolve(ctx.rest('/studio/draft', {
+          method: 'POST',
+          body: { prompt: data.prompt, tone: data.tone, style: data.style }
+        }))
+          .then(reply => answer({ ok: true, draft: reply && reply.draft, content: reply && reply.content }))
+          .catch(err => answer({ ok: false, error: String((err && err.message) || err) }))
+        return
+      }
       if (data.type !== 'hermes-music-studio:closed') return
       if (typeof ctx.navigate === 'function') ctx.navigate('/')
     }

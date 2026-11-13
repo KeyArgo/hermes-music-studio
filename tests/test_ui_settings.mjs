@@ -644,3 +644,39 @@ test('audio and cover URLs carry the token, because a media element cannot send 
   const statusCall = calls.find(c => c.path.startsWith('/api/status'));
   assert.ok(statusCall, 'the page still asks the host for status');
 });
+
+test('with no model in the host, the page asks the pane to draft', async t => {
+  // The standalone host has no ctx.llm; in Hermes Desktop the pane does. The page must not simply
+  // refuse ("Connect Hermes and choose a model first") — it asks the window that framed it.
+  const { window } = await boot();
+  t.after(() => window.close());
+  const doc = window.document;
+  const sent = [];
+  Object.defineProperty(window, 'parent', {
+    value: { postMessage: message => sent.push(message) }, configurable: true
+  });
+  doc.getElementById('idea-input').value = 'a night drive, warm synths';
+  doc.getElementById('idea-apply').click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  const ask = sent.find(m => m.type === 'hermes-music-studio:draft');
+  assert.ok(ask, 'the page did not ask the pane for a draft');
+  assert.match(ask.prompt, /night drive/);
+
+  window.dispatchEvent(new window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:draft-result', id: ask.id, ok: true,
+            draft: { title: 'Night Drive', caption: 'warm synthwave' } }
+  }));
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(doc.querySelector('input[name=title]').value, 'Night Drive');
+  assert.match(text(doc.getElementById('idea-connection')), /Hermes agent/);
+});
+
+test('a plain browser tab is told where drafting does work', async t => {
+  const { window } = await boot();
+  t.after(() => window.close());
+  const doc = window.document;
+  doc.getElementById('idea-input').value = 'a night drive';
+  doc.getElementById('idea-apply').click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.match(text(doc.getElementById('idea-connection')), /pane in Hermes Desktop|music_studio tool/);
+});
