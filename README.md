@@ -16,6 +16,10 @@
   <a href="https://github.com/KeyArgo/hermes-music-studio/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KeyArgo/hermes-music-studio?style=flat-square&color=f5b301"></a>
 </p>
 
+<p align="center">
+  <img src="docs/media/music-create.gif" width="100%" alt="Music Studio: describe the song, let Hermes draft it, approve it, then render">
+</p>
+
 ![The create screen with an approved draft loaded](docs/screenshots/create-form.png)
 
 <p align="center"><sub>The draft is the gate: nothing renders until a person approves this exact version.</sub></p>
