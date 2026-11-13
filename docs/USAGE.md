@@ -8,7 +8,13 @@ Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 
 ## The first sixty seconds
 
-1. Open the Music Studio pane (or `python3 -m uvicorn standalone.app:app --port 8770` from a clone).
+1. Open the Music Studio pane (or run the standalone host from a clone — it refuses `/api` without a token, so:
+
+   ```bash
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+HEWN_STUDIO_TOKEN=$TOKEN python3 -m uvicorn standalone.app:app --port 8770
+# then open http://127.0.0.1:8770/?token=$TOKEN — the host refuses /api without it
+   ```
 2. In **Create**, type a title and a description of the sound. The description becomes the engine's
    caption, so it is the one text field that reaches the model.
 3. Choose **Simple** or **Custom**. Custom exposes tempo, key, vocal language and MiniMax guidance.

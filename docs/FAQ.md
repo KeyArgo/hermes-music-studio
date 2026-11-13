@@ -5,7 +5,13 @@ Short answers, with the document that has the detail.
 Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 
 **Does it work without Hermes?**
-Yes. `python3 -m uvicorn standalone.app:app --port 8770` serves the same studio and router locally.
+Yes. Start it with a token — the host refuses `/api` without one — and open the URL it prints:
+
+```bash
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+HEWN_STUDIO_TOKEN=$TOKEN python3 -m uvicorn standalone.app:app --port 8770
+# then open http://127.0.0.1:8770/?token=$TOKEN — the host refuses /api without it
+```
 The tool and `/song` need Hermes, but the window does not.
 
 **Does it generate audio by itself?**

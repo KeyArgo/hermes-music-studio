@@ -72,7 +72,8 @@ def test_api_workspaces_and_uploaded_art(tmp_path, monkeypatch):
     monkeypatch.setenv('HEWN_STUDIO_DATA_DIR', str(tmp_path))
     from fastapi.testclient import TestClient
     from standalone.app import app
-    client = TestClient(app, base_url='http://127.0.0.1')
+    from conftest import studio_client
+    client = studio_client(app)
     p = client.post('/api/create', json={'draft': {'title': 'Track', 'caption': 'ambient', 'lyrics': 'words'}}).json()['project']
     w = client.post('/api/studio/workspaces', json={'name': 'Album A'}).json()['workspace']
     response = client.post('/api/studio/assign', json={'project_id': p['project_id'], 'workspace_id': w['id']})
@@ -102,7 +103,8 @@ def test_idea_bridge_forwards_selected_model(tmp_path, monkeypatch):
         return '{"title":"Night Drive","caption":"warm synths","lyrics":"a line"}'
     monkeypatch.setattr(ideas.llm_bridge, 'available', lambda: True)
     monkeypatch.setattr(ideas.llm_bridge, 'complete', fake_complete)
-    client = TestClient(app, base_url='http://127.0.0.1')
+    from conftest import studio_client
+    client = studio_client(app)
     response = client.post('/api/studio/ideas', json={'provider':'nous','model':'model-x','messages':[{'role':'user','content':'night drive'}],'action':'draft','tone':'warm','style':70})
     assert response.status_code == 200, response.text
     assert response.json()['draft']['title'] == 'Night Drive'
@@ -125,7 +127,8 @@ def test_revamp_playlist_and_play_routes(tmp_path, monkeypatch):
         if method == 'PUT': return {'id':'a-list','items':body['items']}
         return []
     monkeypatch.setattr(revamp, '_call', fake_call)
-    c=TestClient(app,base_url='http://127.0.0.1')
+    from conftest import studio_client
+    c=studio_client(app)
     assert c.post('/api/studio/revamp/playlists',json={'name':'Favorites'}).json()['playlist']['id']=='a-list'
     track={'track_id':'0123456789abcdef','title':'Song','artist':'Artist'}
     assert c.post('/api/studio/revamp/play',json=track).json()['delivered']==1
@@ -149,7 +152,8 @@ def test_revamp_can_reference_finished_studio_take(tmp_path, monkeypatch):
     store=service.store(); project=store.create(title='My song',caption='sound',lyrics='words')
     take_id=str(uuid.uuid4()); project['takes']=[{'take_id':take_id,'state':'succeeded'}]
     with store.locked(): store._save(project)
-    c=TestClient(app,base_url='http://127.0.0.1:8765')
+    from conftest import studio_client
+    c=studio_client(app,'http://127.0.0.1:8765')
     response=c.post('/api/studio/revamp/add-take',json={'playlist_id':'favorites','project_id':project['project_id'],'take_id':take_id})
     assert response.status_code==200, response.text
     assert response.json()['requires_studio_running'] is True

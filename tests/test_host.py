@@ -22,7 +22,9 @@ def app_module(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def client(app_module):
-    return TestClient(app_module.app, base_url='http://127.0.0.1')
+    from conftest import studio_client
+
+    return studio_client(app_module.app)
 
 
 def test_serves_the_studio_page(client):
@@ -102,7 +104,9 @@ def _start_and_check(tmp_path, monkeypatch, extra_env=None):
     info = host_launcher.ensure_host()
     try:
         assert info['port'] == port and info['started'] is True
-        with urllib.request.urlopen(f"{info['url']}/api/status", timeout=5) as res:
+        probe = urllib.request.Request(f"{info['url']}/api/status")
+        probe.add_header('X-Studio-Token', info.get('token') or '')
+        with urllib.request.urlopen(probe, timeout=5) as res:
             assert res.status == 200
         again = host_launcher.ensure_host()
         assert again['port'] == port and again['started'] is False

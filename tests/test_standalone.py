@@ -13,11 +13,13 @@ def test_standalone_import_and_routes_without_hermes(tmp_path):
     env.pop('PYTHONPATH', None)
     env.pop('PYTHONHOME', None)
     env['HEWN_STUDIO_DATA_DIR'] = str(tmp_path / 'studio')
+    env['HEWN_STUDIO_TOKEN'] = 'test-token-abc123'
     code = '''
 import json, sys
 from fastapi.testclient import TestClient
 from standalone.app import app
 c = TestClient(app, base_url='http://127.0.0.1')
+c.headers['X-Studio-Token'] = 'test-token-abc123'
 assert c.get('/').status_code == 200
 assert c.get('/api/demo').status_code == 200
 assert c.get('/api/demo/audio').status_code == 200

@@ -37,8 +37,9 @@ class SampleRouteTests(unittest.TestCase):
         from standalone.app import app as standalone_app
 
         dashboard = dashboard_client().get('/api/plugins/hermes-music-studio/studio/sample')
-        standalone = TestClient(standalone_app,
-                                base_url='http://127.0.0.1').get('/api/studio/sample')
+        from conftest import studio_client
+
+        standalone = studio_client(standalone_app).get('/api/studio/sample')
         self.assertEqual(standalone.status_code, 200)
         self.assertEqual(standalone.content, dashboard.content,
                          'the two surfaces drifted: they must serve one file the same way')

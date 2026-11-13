@@ -126,7 +126,9 @@ Running from a clone instead:
 git clone https://github.com/KeyArgo/hermes-music-studio
 cd hermes-music-studio
 pip install -r requirements-dev.txt
-python3 -m uvicorn standalone.app:app --port 8770   # the studio on its own, no Hermes needed
+TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+HEWN_STUDIO_TOKEN=$TOKEN python3 -m uvicorn standalone.app:app --port 8770
+# then open http://127.0.0.1:8770/?token=$TOKEN — the host refuses /api without it   # the studio on its own, no Hermes needed
 ```
 
 ### Upgrade
