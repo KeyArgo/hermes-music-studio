@@ -1,4 +1,5 @@
 """Local-only standalone server for the existing Music Studio API."""
+import hmac
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -53,6 +54,15 @@ async def same_origin(request: Request, call_next):
             expected = request.headers.get('host', '').lower()
             if parsed.scheme != request.url.scheme or parsed.netloc.lower() != expected:
                 return JSONResponse({'detail': 'cross-site request rejected'}, status_code=403)
+    # Review item 3: the token gate. Every /api/* route except the health probe needs it — a local
+    # process could otherwise change the ACE runtime dir (which picks the Python that runs), move the
+    # library, copy folders and spend model credits. `/api/status` stays open because the pane probes it
+    # with a no-cors request that cannot carry a header, and it returns nothing but liveness.
+    expected = os.environ.get('HEWN_STUDIO_TOKEN', '')
+    if expected and request.url.path.startswith('/api/') and request.url.path != '/api/status':
+        supplied = request.headers.get('x-studio-token') or request.query_params.get('token') or ''
+        if not hmac.compare_digest(supplied, expected):
+            return JSONResponse({'detail': 'studio token required'}, status_code=401)
     response = await call_next(request)
     # REVamp's local player may stream an explicitly selected studio take.
     port = os.environ.get('REVAMP_PORT', '8114')

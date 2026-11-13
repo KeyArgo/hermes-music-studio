@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import socket
 import subprocess
 
@@ -42,6 +43,19 @@ def data_dir() -> Path:
     the two could disagree about the engine and the export folder.
     """
     return Path(service.default_data_dir(service.PLUGIN_ID))
+
+
+def _token_for(root: Path, state: dict | None, fresh: bool) -> str:
+    """A per-launch token for the loopback host.
+
+    Review item 3: the host served every ``/api/*`` route to any local process, and those routes can
+    change the ACE runtime directory (which picks the Python that later runs), move the library, copy
+    folders and spend model credits. The token is generated here, handed to the host in its
+    environment, and returned to the pane so the framed page can send it back.
+    """
+    if not fresh and state and isinstance(state.get('token'), str) and state['token']:
+        return state['token']
+    return secrets.token_urlsafe(32)
 
 
 def _python() -> str:
@@ -153,14 +167,20 @@ def ensure_host(port: int | None = None) -> dict:
         if state:
             known = int(state.get('port') or 0)
             if known and _alive(known):
+                token = _token_for(root, state, fresh=False)
+                if token != state.get('token'):
+                    _write_state(root, {**state, 'token': token})
                 return {'url': f'http://127.0.0.1:{known}', 'port': known,
-                        'pid': state.get('pid'), 'started': False}
+                        'pid': state.get('pid'), 'started': False, 'token': token}
         candidates = [wanted] if wanted else list(range(DEFAULT_PORT, DEFAULT_PORT + PORT_SPAN))
         chosen = next((p for p in candidates if _port_free(p)), None)
         if chosen is None:
             raise RuntimeError('no free loopback port for the studio host')
+        token = _token_for(root, state, fresh=True)
         env = {**_clean_env(),
                'HEWN_STUDIO_DATA_DIR': str(root),
+               # The framed page and the pane both need it; the host requires it on every /api route.
+               'HEWN_STUDIO_TOKEN': token,
                'HEWN_STUDIO_HOST_PORT': str(chosen),
                'HEWN_STUDIO_HOST': '127.0.0.1',
                # The host watches this pid: when Hermes is gone, the host goes too. Without it a
@@ -193,9 +213,9 @@ def ensure_host(port: int | None = None) -> dict:
             if proc.poll() is not None:
                 raise RuntimeError(f'studio host exited ({proc.returncode}); see {root / LOG_FILE}')
             if _alive(chosen, timeout=0.5):
-                _write_state(root, {'port': chosen, 'pid': proc.pid})
+                _write_state(root, {'port': chosen, 'pid': proc.pid, 'token': token})
                 return {'url': f'http://127.0.0.1:{chosen}', 'port': chosen,
-                        'pid': proc.pid, 'started': True}
+                        'pid': proc.pid, 'started': True, 'token': token}
             time.sleep(0.15)
         proc.terminate()
         raise RuntimeError(f'studio host did not answer within {START_TIMEOUT_S:.0f}s')
