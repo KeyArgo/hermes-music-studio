@@ -8,6 +8,7 @@ import random
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -56,7 +57,8 @@ def _stat_state(pid):
             raw = fh.read()
         return raw.rsplit(b')', 1)[1].split()[0]
     except FileNotFoundError:
-        if os.name == 'nt' or os.path.isdir('/proc/self'):
+        # Linux always has /proc, so a missing stat file means the process is gone.
+        if os.name == 'nt' or sys.platform.startswith('linux'):
             return None
     except (OSError, IndexError, ValueError):
         return None

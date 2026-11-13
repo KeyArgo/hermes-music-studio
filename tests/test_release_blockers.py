@@ -198,9 +198,7 @@ class ZombieWorkerTests(unittest.TestCase):
         child = subprocess.Popen([sys.executable, '-c', 'pass'])
         try:
             self.assertTrue(_wait_until(lambda: _proc_state(child.pid) == 'Z', limit=10))
-            real_isdir = os.path.isdir
-            with patch('builtins.open', no_proc), \
-                    patch('os.path.isdir', lambda p: False if p == '/proc/self' else real_isdir(p)):
+            with patch('builtins.open', no_proc), patch('sys.platform', 'darwin'):
                 self.assertFalse(process_alive(child.pid), 'a zombie must not count as alive')
         finally:
             child.wait()
