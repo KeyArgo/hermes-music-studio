@@ -29,7 +29,7 @@ async function answering(url) {
   try {
     // Opaque on purpose: this page's origin cannot read the host's JSON, it only
     // needs to know something is listening.
-    await fetch(`${url}/api/status`, { mode: 'no-cors', cache: 'no-store' })
+    await fetch(`${url}/api/health`, { mode: 'no-cors', cache: 'no-store' })
     return true
   } catch {
     return false

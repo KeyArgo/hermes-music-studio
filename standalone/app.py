@@ -20,6 +20,9 @@ from standalone.workspaces import router as workspaces_router  # noqa: E402
 from standalone.revamp import router as revamp_router  # noqa: E402
 
 ROOT = Path(__file__).parent
+# The one route that may answer without the token, because the pane and the launcher ask it whether
+# anything is listening. It returns liveness and nothing about the library.
+HEALTH_PATH = '/api/health'
 app = FastAPI(title='Hermes Music Studio', docs_url=None, redoc_url=None)
 
 @app.middleware('http')
@@ -54,12 +57,19 @@ async def same_origin(request: Request, call_next):
             expected = request.headers.get('host', '').lower()
             if parsed.scheme != request.url.scheme or parsed.netloc.lower() != expected:
                 return JSONResponse({'detail': 'cross-site request rejected'}, status_code=403)
-    # Review item 3: the token gate. Every /api/* route except the health probe needs it — a local
-    # process could otherwise change the ACE runtime dir (which picks the Python that runs), move the
-    # library, copy folders and spend model credits. `/api/status` stays open because the pane probes it
-    # with a no-cors request that cannot carry a header, and it returns nothing but liveness.
-    expected = os.environ.get('HEWN_STUDIO_TOKEN', '')
-    if expected and request.url.path.startswith('/api/') and request.url.path != '/api/status':
+    # Review item 3: the token gate, closed by default. Every /api/* route except the liveness probe
+    # needs it — a local process could otherwise change the ACE runtime dir (which picks the Python that
+    # runs), move the library, copy folders and spend model credits. A host started without a token
+    # refuses /api rather than serving everything: fail-open is how this gate was defeated before.
+    expected = os.environ.get('HEWN_STUDIO_TOKEN', '').strip()
+    path = request.url.path
+    if path.startswith('/api/') and path != HEALTH_PATH:
+        if not expected:
+            return JSONResponse(
+                {'detail': 'this host has no token, so it refuses every /api route; '
+                           'start the studio through the plugin, or set HEWN_STUDIO_TOKEN '
+                           'before starting it by hand'},
+                status_code=503)
         supplied = request.headers.get('x-studio-token') or request.query_params.get('token') or ''
         if not hmac.compare_digest(supplied, expected):
             return JSONResponse({'detail': 'studio token required'}, status_code=401)
@@ -79,6 +89,12 @@ app.include_router(ideas_router, prefix='/api')
 app.include_router(workspaces_router, prefix='/api')
 app.include_router(revamp_router, prefix='/api')
 app.mount('/static', StaticFiles(directory=str(ROOT / 'static'), check_dir=False), name='static')
+
+
+@app.get(HEALTH_PATH)
+def health():
+    """Liveness, plus whether this host enforces the token (the launcher restarts one that does not)."""
+    return {'ok': True, 'token_gated': bool(os.environ.get('HEWN_STUDIO_TOKEN', '').strip())}
 
 @app.get('/')
 def index():

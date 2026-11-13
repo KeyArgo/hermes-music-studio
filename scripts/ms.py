@@ -42,10 +42,28 @@ def discover_base():
     return f'http://127.0.0.1:{port}'
 
 
+def studio_token():
+    """The token the running host requires: from the environment, else from its state file.
+
+    The host refuses every /api route without it (review item 3), so a shell client has to carry it
+    the same way the framed page does. The state file is owner-only and lives beside the library.
+    """
+    token = (os.environ.get('HEWN_STUDIO_TOKEN') or '').strip()
+    if token:
+        return token
+    try:
+        return str(json.loads((DATA_DIR / 'studio-host.json').read_text()).get('token') or '')
+    except Exception:
+        return ''
+
+
 def call(base, path, payload=None, method=None, timeout=30):
     url = base + path
     data = None
     headers = {'Accept': 'application/json'}
+    token = studio_token()
+    if token:
+        headers['X-Studio-Token'] = token
     if payload is not None:
         data = json.dumps(payload).encode()
         headers['Content-Type'] = 'application/json'

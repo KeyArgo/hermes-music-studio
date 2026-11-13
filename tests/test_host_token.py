@@ -51,6 +51,10 @@ def client(monkeypatch, tmp_path):
     def settings():
         return {"ok": True}
 
+    @router.get("/health")
+    def health():
+        return {"ok": True, "token_gated": True}
+
     app.include_router(router, prefix="/api")
     # The host middleware requires a loopback Host header as well as the token; the default
     # TestClient host ("testserver") is refused for that reason, not for a missing token.
@@ -80,11 +84,89 @@ def test_a_wrong_token_is_refused(client):
     assert client.get("/api/projects", headers={"X-Studio-Token": "nope"}).status_code == 401
 
 
-def test_the_health_probe_stays_open(client):
-    """The pane probes it with a no-cors fetch, which cannot send a header — and it says nothing else."""
-    response = client.get("/api/status")
+def test_the_health_probe_stays_open_and_says_nothing_about_the_library(client):
+    """The pane probes it with a no-cors fetch, which cannot send a header — and it says nothing else.
+
+    `/api/status` used to be that exempt route, which handed every local process the project list and
+    the engine endpoints (review item 3). It is behind the token now; only this route is open.
+    """
+    response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {"ok": True, "token_gated": True}
+    assert client.get("/api/status").status_code == 401, "status is library data, not liveness"
+
+
+def test_a_host_without_a_token_refuses_the_api_instead_of_serving_it(monkeypatch, tmp_path):
+    """Fail closed. The gate used to disappear with the environment variable, so the documented
+    `uvicorn standalone.app:app` invocation served every route to every local process."""
+    monkeypatch.setenv("HEWN_STUDIO_DATA_DIR", str(tmp_path / "studio2"))
+    monkeypatch.delenv("HEWN_STUDIO_TOKEN", raising=False)
+    from fastapi import APIRouter
+    from standalone import app as host_app
+
+    app = FastAPI()
+    app.middleware("http")(host_app.same_origin)
+    router = APIRouter()
+
+    @router.get("/projects")
+    def projects():
+        return {"ok": True, "secret": "library listing"}
+
+    app.include_router(router, prefix="/api")
+    bare = TestClient(app, base_url="http://127.0.0.1:8775")
+
+    refused = bare.get("/api/projects")
+    assert refused.status_code == 503, "a host with no token must not serve /api"
+    assert "secret" not in refused.text
+    assert "HEWN_STUDIO_TOKEN" in refused.json()["detail"]
+
+
+def test_the_launcher_does_not_reuse_a_host_that_ignores_the_token(monkeypatch, tmp_path):
+    """A host started before the update has no gate; handing the pane a token it ignores is not a fix."""
+    from music_studio import host_launcher
+
+    monkeypatch.setenv("HEWN_STUDIO_DATA_DIR", str(tmp_path))
+    host_launcher._write_state(tmp_path, {"port": 8775, "pid": 111, "token": "old"})
+    monkeypatch.setattr(host_launcher, "_probe",
+                        lambda port, timeout=1.0: {"alive": True, "token_gated": False})
+    monkeypatch.setattr(host_launcher, "_alive", lambda port, timeout=1.0: True)
+    monkeypatch.setattr(host_launcher, "_port_free", lambda port: port != 8775)
+    monkeypatch.setattr(host_launcher, "_python", lambda: __import__("sys").executable)
+    started = []
+
+    class FakeProc:
+        pid = 4242
+        args = ['fake-studio-host']
+
+        def poll(self):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def communicate(self, *args, **kwargs):
+            return (b'', b'')
+
+        def wait(self, *args, **kwargs):
+            return 0
+
+        def terminate(self):
+            return None
+
+    def fake_popen(*args, **kwargs):
+        started.append(kwargs.get("env") or {})
+        return FakeProc()
+
+    monkeypatch.setattr(host_launcher.subprocess, "Popen", fake_popen)
+
+    result = host_launcher.ensure_host()
+
+    assert result["started"] is True, "the ungated host was reused"
+    assert result["port"] != 8775, "a new host must not be started on the port the old one holds"
+    assert started and started[0]["HEWN_STUDIO_TOKEN"], "the new host must be given a token"
 
 
 def test_the_launcher_generates_a_random_token_per_launch():

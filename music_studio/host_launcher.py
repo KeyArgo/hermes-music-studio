@@ -105,12 +105,28 @@ def _port_free(port: int) -> bool:
     return True
 
 
-def _alive(port: int, timeout: float = 1.0) -> bool:
+def _probe(port: int, timeout: float = 1.0) -> dict:
+    """What is listening on ``port``: alive, and does it enforce the token?
+
+    `/api/health` is the only route a host serves without the token, so it is the only question a
+    launcher can ask before it has one. A host that answers but does not enforce the token predates the
+    update that added it — the pane would be handed a token that host ignores, so it is not reused.
+    """
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=timeout) as res:
-            return res.status == 200 and res.headers.get('content-type', '').startswith('application/json')
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=timeout) as res:
+            if res.status != 200:
+                return {'alive': False, 'token_gated': False}
+            try:
+                body = json.loads(res.read() or b'{}')
+            except ValueError:
+                body = {}
+            return {'alive': True, 'token_gated': bool(body.get('token_gated'))}
     except (urllib.error.URLError, OSError, ValueError):
-        return False
+        return {'alive': False, 'token_gated': False}
+
+
+def _alive(port: int, timeout: float = 1.0) -> bool:
+    return _probe(port, timeout)['alive']
 
 
 def _read_state(root: Path) -> dict | None:
@@ -187,7 +203,8 @@ def ensure_host(port: int | None = None) -> dict:
         state = _read_state(root)
         if state:
             known = int(state.get('port') or 0)
-            if known and _alive(known):
+            probe = _probe(known) if known else {'alive': False, 'token_gated': False}
+            if probe['alive'] and probe['token_gated']:
                 token = _token_for(root, state, fresh=False)
                 if token != state.get('token'):
                     _write_state(root, {**state, 'token': token})

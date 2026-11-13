@@ -30,8 +30,30 @@ problems: list[str] = []
 notes: list[str] = []
 
 
+def studio_token() -> str:
+    """The host refuses /api without its token; a shell check carries it the way the pane does."""
+    import os
+    from pathlib import Path
+
+    token = (os.environ.get("HEWN_STUDIO_TOKEN") or "").strip()
+    if token:
+        return token
+    root = Path(os.environ.get("HEWN_STUDIO_DATA_DIR")
+                or Path.home() / ".hermes" / "plugin-data" / "hermes-music-studio")
+    try:
+        return str(json.loads((root / "studio-host.json").read_text()).get("token") or "")
+    except Exception:
+        return ""
+
+
+TOKEN = studio_token()
+
+
 def get(path: str) -> tuple[int, dict, bytes]:
-    with urllib.request.urlopen(BASE + path, timeout=15) as answer:
+    request = urllib.request.Request(BASE + path)
+    if TOKEN:
+        request.add_header("X-Studio-Token", TOKEN)
+    with urllib.request.urlopen(request, timeout=15) as answer:
         body = answer.read()
         kind = answer.headers.get("content-type", "")
         if "json" in kind:

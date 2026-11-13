@@ -1,5 +1,6 @@
 {
   "mirrors": [
     "dashboard/manifest.json"
-  ]
+  ],
+  "dev_base": 103
 }
