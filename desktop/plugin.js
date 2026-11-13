@@ -7,17 +7,15 @@
 // for the host URL and frames exactly that UI, on the same library the agent
 // tool writes to.
 //
-// Two ways to find the host, on purpose: `GET /studio/host` (authoritative, and
-// profile-aware), then the state file the launcher writes next to the library.
-// The file path matters because a gateway that started before this route existed
-// answers 404 for it until it restarts, while the host it already runs is fine
-// and recorded on disk.
-import { ROUTES_AREA, SIDEBAR_NAV_AREA } from '@hermes/plugin-sdk'
+// The host is discovered through the plugin's own route: `GET /studio/host` is authoritative and
+// profile-aware. An earlier version also read the launcher's state file through
+// the desktop app's private bridge, which is not a plugin API — the route is the public seam, and a 404
+// there means the gateway predates the route, not that the answer is missing.
+import { ROUTES_AREA, SIDEBAR_NAV_AREA, SandboxedFrame } from '@hermes/plugin-sdk'
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 
 const PLUGIN_ID = 'hermes-music-studio'
 const PATH = '/music-studio'
-const STATE_REL = ['plugin-data', 'hermes-music-studio', 'studio-host.json']
 
 const frameWrap = { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }
 const notice = { padding: 24, maxWidth: 640, lineHeight: 1.5 }
@@ -26,29 +24,6 @@ const bar = { display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px
   borderTop: '1px solid rgba(127,127,127,0.25)', fontSize: 12 }
 const linkButton = { background: 'transparent', border: 'none', color: 'inherit', font: 'inherit',
   fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 }
-
-/** The host launcher's state file, read through the desktop file bridge. */
-async function readHostFromDisk() {
-  const bridge = typeof window !== 'undefined' ? window.hermesDesktop : null
-  const rootFn = bridge && (bridge.desktopPluginsRoot || (bridge.fs && bridge.fs.desktopPluginsRoot))
-  if (!bridge || typeof bridge.readFileText !== 'function' || typeof rootFn !== 'function') return null
-  const root = String((await rootFn()) || '')
-  const home = root.replace(/[\\/]desktop-plugins[\\/]?$/, '')
-  if (!home || home === root) return null
-  for (const parts of [STATE_REL, ['profiles', 'default'].concat(STATE_REL)]) {
-    try {
-      const file = await bridge.readFileText(`${home}/${parts.join('/')}`)
-      const text = String((file && file.text) || '').trim()
-      if (!text) continue
-      const state = JSON.parse(text)
-      const port = Number(state && state.port)
-      if (Number.isInteger(port) && port > 0 && port < 65536) return `http://127.0.0.1:${port}`
-    } catch {
-      /* no state file here yet */
-    }
-  }
-  return null
-}
 
 async function answering(url) {
   try {
@@ -62,30 +37,29 @@ async function answering(url) {
 }
 
 async function resolveHost(ctx) {
+  let url = null
+  let hostReply = null
   let routeError = null
   try {
     const reply = await Promise.resolve(ctx.rest('/studio/host'))
-    const url = reply && typeof reply.url === 'string' ? reply.url : null
-    if (url) return url
-    routeError = 'the plugin route returned no host url'
+    hostReply = reply
+    url = reply && typeof reply.url === 'string' ? reply.url : null
+    if (!url) routeError = 'the plugin route returned no host url'
   } catch (err) {
     routeError = String((err && err.message) || err)
   }
-  const fromDisk = await readHostFromDisk().catch(() => null)
-  if (fromDisk && await answering(fromDisk)) return fromDisk
-  throw new Error(fromDisk
-    ? `nothing is answering at ${fromDisk} (route said: ${routeError})`
-    : `route said: ${routeError}`)
+  if (url && await answering(url)) return { url, token: String((hostReply && hostReply.token) || '') }
+  throw new Error(url ? `nothing is answering at ${url}` : `route said: ${routeError}`)
 }
 
 function useStudioHost(ctx) {
-  const [state, setState] = useState({ ready: false, url: null, error: null, attempt: 0 })
+  const [state, setState] = useState({ ready: false, url: null, token: '', error: null, attempt: 0 })
 
   useEffect(() => {
     let alive = true
     setState(prev => ({ ...prev, ready: false, error: null }))
     resolveHost(ctx)
-      .then(url => { if (alive) setState(prev => ({ ...prev, ready: true, url })) })
+      .then(reply => { if (alive) setState(prev => ({ ...prev, ready: true, url: reply.url, token: reply.token })) })
       .catch(err => {
         if (alive) setState(prev => ({ ...prev, ready: true, error: String((err && err.message) || err) }))
       })
@@ -99,18 +73,37 @@ function useStudioHost(ctx) {
 export function Studio({ ctx }) {
   const host = useStudioHost(ctx)
 
-  // The framed studio says when it has closed itself; the pane then leaves the route rather
-  // than framing a dead host. A blank frame that still says "Music Studio" is worse than
-  // no frame at all.
+  // `ctx.os.openExternal` is the public seam; the desktop bridge is the app's own business, not a
+  // plugin's (review item 2). A framed page cannot reach it either — it asks over postMessage.
+  const openExternal = useCallback(url => {
+    const base = host.token ? `${host.url || ''}/?token=${encodeURIComponent(host.token)}` : `${host.url || ''}/`
+    const target = typeof url === 'string' && url ? url : base
+    if (ctx && ctx.os && typeof ctx.os.openExternal === 'function') {
+      void ctx.os.openExternal(target)
+      return
+    }
+    if (typeof ctx?.notify === 'function') {
+      ctx.notify({ kind: 'error', message: `This Hermes build cannot open a browser tab. Open ${target}` })
+    }
+  }, [ctx, host.url])
+
+  // The framed studio says when it has closed itself, and asks when it needs a browser tab opened;
+  // the pane then leaves the route rather than framing a dead host. A blank frame that still says
+  // "Music Studio" is worse than no frame at all.
   useEffect(() => {
     const onMessage = event => {
       const data = event && event.data
-      if (!data || data.type !== 'hermes-music-studio:closed') return
+      if (!data || typeof data.type !== 'string') return
+      if (data.type === 'hermes-music-studio:open-external') {
+        openExternal(data.url)
+        return
+      }
+      if (data.type !== 'hermes-music-studio:closed') return
       if (typeof ctx.navigate === 'function') ctx.navigate('/')
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [ctx])
+  }, [ctx, openExternal])
 
   if (!host.ready) {
     return h('div', { style: notice }, 'Starting the studio…')
@@ -127,24 +120,21 @@ export function Studio({ ctx }) {
     ])
   }
 
-  const openExternal = () => {
-    const target = `${host.url}/`
-    const bridge = typeof window !== 'undefined' ? window.hermesDesktop : null
-    if (bridge && typeof bridge.openExternal === 'function') bridge.openExternal(target)
-    else if (typeof window !== 'undefined') window.open(target, '_blank', 'noopener')
-  }
-
   return h('div', { style: frameWrap }, [
-    h('iframe', {
+    // The SDK's sandboxed frame, not a raw iframe: guest content gets the app's own posture (scripts
+    // run, the origin is opaque, no reach into the app or its bridge).
+    h(SandboxedFrame, {
       key: 'studio',
-      src: `${host.url}/`,
+      // The token travels in the query string so the framed page can send it back; the host requires it
+      // on every /api route (review item 3).
+      src: host.token ? `${host.url}/?token=${encodeURIComponent(host.token)}` : `${host.url}/`,
       title: 'Music Studio',
-      allow: 'autoplay; clipboard-write',
+      sandbox: 'allow-scripts allow-forms allow-downloads',
       style: { flex: 1, width: '100%', border: 'none', display: 'block', background: 'transparent' }
     }),
     h('div', { key: 'bar', style: bar }, [
       h('span', { key: 'where', style: { opacity: 0.65 } }, `${host.url} · same library as the agent tool`),
-      h('button', { key: 'open', type: 'button', style: linkButton, onClick: openExternal }, 'Open in a browser ↗'),
+      h('button', { key: 'open', type: 'button', style: linkButton, onClick: () => openExternal() }, 'Open in a browser ↗'),
       h('button', { key: 'reload', type: 'button', style: linkButton, onClick: host.retry }, 'Restart host')
     ])
   ])
