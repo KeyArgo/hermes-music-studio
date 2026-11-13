@@ -118,37 +118,22 @@ async def save_cover(project_id: str, request: Request):
     return _write_cover(store, project_id, data)
 
 def _write_cover(store, project_id, data):
-    mime, encoded = data.get('mime'), data.get('data')
-    if mime not in TYPES or not isinstance(encoded, str): raise HTTPException(400, 'unsupported image')
-    try: image = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError): raise HTTPException(400, 'invalid image') from None
-    if len(image) > MAX_IMAGE: raise HTTPException(413, 'image exceeds 2 MiB')
-    ext, magic = TYPES[mime]
-    if not image.startswith(magic) or (mime == 'image/webp' and image[8:12] != b'WEBP'):
-        raise HTTPException(400, 'image does not match its type')
-    directory = Path(store.root) / 'studio-covers'; directory.mkdir(exist_ok=True)
-    # One fixed extension; the MIME accompanies bytes in a small header.
-    fd, temp = tempfile.mkstemp(prefix='.cover-', dir=directory)
-    try:
-        with os.fdopen(fd, 'wb') as handle:
-            handle.write((mime + '\n').encode('ascii') + image)
-            handle.flush(); os.fsync(handle.fileno())
-        os.replace(temp, directory / (project_id + '.cover'))
-    finally:
-        if os.path.exists(temp): os.unlink(temp)
-    return {'success': True}
+    """Store a cover posted by the page; the rules live in ``music_studio.covers``."""
+    from music_studio import covers
 
-@router.post('/studio/covers/{project_id}/generate')
-async def generate_cover(project_id: str, request: Request):
-    _project(project_id)
-    data = await _body(request)
-    prompt = data.get('prompt')
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 2000:
-        raise HTTPException(400, 'art direction must contain 1–2000 characters')
-    from starlette.concurrency import run_in_threadpool
-    from standalone.ideas import _run_hermes
-    image = await run_in_threadpool(_run_hermes, {'action':'art', 'prompt':prompt.strip()})
-    return _write_cover(_project(project_id), project_id, image)
+    mime, encoded = data.get('mime'), data.get('data')
+    if mime not in covers.TYPES or not isinstance(encoded, str):
+        raise HTTPException(400, 'unsupported image')
+    try:
+        image = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(400, 'invalid image') from None
+    try:
+        covers.write_cover(store.root, project_id, image, mime)
+    except covers.CoverError as exc:
+        code = 413 if '2 MiB' in str(exc) else 400
+        raise HTTPException(code, str(exc)) from None
+    return {'success': True}
 
 @router.get('/studio/covers/{project_id}')
 def get_cover(project_id: str):

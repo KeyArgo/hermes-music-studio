@@ -1,22 +1,27 @@
-"""Music idea drafting with the user's configured Hermes providers.
+"""Music idea drafting through Hermes' public plugin LLM (`ctx.llm`).
 
-The Hermes worker has no tools and runs in Hermes's own Python environment.
+Review item 1. The previous version spawned `hermes --print-runtime-command` and ran a worker that
+imported Hermes' private modules and built an `AIAgent` with resolved provider credentials. Drafting now
+goes through `music_studio.llm_bridge`, which calls `ctx.llm.complete` in the plugin process: the host
+owns the provider, the model, the credentials and the timeouts, and this plugin never sees a key.
+
+Cover-art *generation* is gone with it: it reached into `tools.image_generation_tool._handle_image_generate`,
+which is core's private surface. Uploading your own image still works, and an issue asking Hermes for a
+public image-generation call is written up in `docs/HERMES-ISSUES.md`.
 """
 
 from __future__ import annotations
 
 import json
 import math
-import os
 import re
-import shutil
-import subprocess
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from music_studio import llm_bridge
 
 router = APIRouter()
 
@@ -71,8 +76,11 @@ class ChatMessage(BaseModel):
 
 
 class IdeaRequest(BaseModel):
-    provider: str = Field(min_length=1, max_length=MAX_NAME_CHARS)
-    model: str = Field(min_length=1, max_length=MAX_NAME_CHARS)
+    # Optional since review item 1: the host's `ctx.llm` chooses the provider and model, and an override
+    # is only honoured when the owner has trusted this plugin with one. A picker that is not trusted
+    # therefore degrades to the default instead of refusing to draft.
+    provider: str | None = Field(default=None, max_length=MAX_NAME_CHARS)
+    model: str | None = Field(default=None, max_length=MAX_NAME_CHARS)
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
     action: Literal["chat", "draft"]
     tone: str = Field(default="", max_length=MAX_TONE_CHARS)
@@ -167,21 +175,21 @@ def parse_draft(text: str) -> dict[str, Any]:
 
 
 def build_request(
-    provider: str,
-    model: str,
+    provider: str | None,
+    model: str | None,
     messages: list[dict[str, Any]],
     action: str,
     tone: str,
     style: int,
 ) -> dict[str, Any]:
-    """Build a bounded, OpenAI-compatible chat completion payload.
+    """Build a bounded chat payload for the host's LLM facade.
 
-    The user-selected ``provider`` and ``model`` are preserved verbatim.
+    ``provider`` and ``model`` are *requests*, not instructions: `ctx.llm` honours them only when the
+    owner has trusted this plugin with an override, and uses the host's own choice otherwise. Empty (or
+    missing) means "you decide", which is the default and the only behaviour without that trust.
     """
-    provider = _bounded_text(provider, "provider", MAX_NAME_CHARS)
-    model = _bounded_text(model, "model", MAX_NAME_CHARS)
-    if not provider.strip() or not model.strip():
-        raise ValueError("provider and model must not be empty")
+    provider = _bounded_text(provider or "", "provider", MAX_NAME_CHARS)
+    model = _bounded_text(model or "", "model", MAX_NAME_CHARS)
 
     if action not in ("chat", "draft"):
         raise ValueError("action must be 'chat' or 'draft'")
@@ -221,31 +229,38 @@ def build_request(
     }
 
 
-def _run_hermes(request: dict) -> dict:
-    """Use Hermes's published runtime command and a tool-disabled worker."""
-    executable = os.environ.get('HERMES_MUSIC_HERMES_COMMAND') or shutil.which('hermes')
-    if not executable:
-        executable = str(Path.home() / '.local' / 'bin' / 'hermes')
+def _complete(body: dict[str, Any]) -> str:
+    """Draft through the host's LLM facade, and say what is missing when there is no host."""
     try:
-        launcher = subprocess.run([executable, '--print-runtime-command'], capture_output=True,
-                                  text=True, timeout=15, check=True)
-        runtime = json.loads(launcher.stdout)
-        if not isinstance(runtime, list) or not runtime or not isinstance(runtime[0], str):
-            raise ValueError('invalid runtime')
-        result = subprocess.run([runtime[0], '-I', str(Path(__file__).with_name('hermes_worker.py'))],
-                                input=json.dumps(request), capture_output=True, text=True,
-                                timeout=300 if request.get('action') == 'art' else 150 if request.get('action') == 'complete' else 40)
-        data = json.loads(result.stdout)
-        if result.returncode or not isinstance(data, dict) or data.get('error'):
-            raise ValueError('Hermes request failed')
-        return data
-    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
-        raise HTTPException(status_code=503, detail='Hermes model connection failed. Check the selected provider and model.') from None
+        return llm_bridge.complete(
+            body["messages"],
+            provider=body.get("provider") or None,
+            model=body.get("model") or None,
+            max_tokens=int(body.get("max_tokens") or 1200),
+            temperature=float(body.get("temperature") or 0.7),
+        )
+    except llm_bridge.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    except llm_bridge.LlmTrustError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Hermes model connection failed. Check the selected provider and model.",
+        ) from None
 
 
 @router.get("/studio/models")
 def studio_models() -> JSONResponse:
-    return JSONResponse(content=_run_hermes({'action': 'models'}))
+    """What the host will use. A plugin cannot enumerate the owner's providers any more, and should not:
+    `ctx.llm` routes to whatever Hermes is configured with."""
+    if not llm_bridge.available():
+        return JSONResponse(content={"provider": None, "model": None, "providers": [],
+                                     "detail": llm_bridge.MISSING})
+    return JSONResponse(content={"provider": None, "model": None, "providers": [],
+                                 "detail": "Hermes chooses the provider and model."})
 
 
 @router.post("/studio/ideas")
@@ -263,9 +278,8 @@ def studio_ideas(payload: IdeaRequest) -> JSONResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    data = _run_hermes({'action': 'complete', 'request': body})
-    content = data.get('content')
-    if not isinstance(content, str) or not content.strip():
+    content = _complete(body)
+    if not content.strip():
         raise HTTPException(status_code=502, detail="Hermes returned no content")
     if len(content) > MAX_REPLY_CHARS:
         raise HTTPException(status_code=502, detail="Hermes returned an oversized response")

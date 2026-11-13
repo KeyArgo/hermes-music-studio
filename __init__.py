@@ -17,11 +17,11 @@ from pathlib import Path
 _ROOT = str(Path(__file__).resolve().parent)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-from music_studio import service
+from music_studio import llm_bridge, service
 
 ACTIONS = ('status', 'create', 'update', 'change', 'keep', 'snippet', 'snippet_splice', 'check_take',
            'checkpoint', 'checkpoints', 'restore', 'doctor', 'approve', 'render', 'queue', 'takes',
-           'export', 'wait', 'compare', 'compare_status')
+           'export', 'wait', 'compare', 'compare_status', 'set_cover')
 
 SCHEMA = {
     'name': 'music_studio',
@@ -43,7 +43,11 @@ SCHEMA = {
             'updated_at': {'type': 'string',
                            'description': 'The draft version the person reviewed, from create or '
                                           'status. An approval attaches to exactly this version.'},
-            'folder': {'type': 'string', 'description': 'Export folder; defaults to the setting'},
+            # No `folder`: the export destination is the owner's setting, never a model's choice.
+            'image_path': {'type': 'string', 'description':
+                           'Absolute path to an image file to use as the cover (PNG, JPEG or WebP, '
+                           'under 2 MiB). Make the image with your own image tool first, then pass its '
+                           'path; the file must be in the studio folder, Downloads, Pictures or temp.'},
             'engines': {'type': 'array', 'items': {'type': 'string'},
                         'description': 'For compare: engine ids, in order. Defaults to every ready engine.'},
             'instruction': {'type': 'string',
@@ -225,13 +229,26 @@ def _handler(args):
         return {'success': True, 'project_id': project['project_id'],
                 'title': project.get('title'), 'approved': project.get('approved'),
                 'updated_at': project.get('updated_at'), 'takes': _takes_of(project)}
+    if action == 'set_cover':
+        # Review item 1, the public way: the agent makes the picture, the studio stores the file. The
+        # path is untrusted input, so `covers.cover_from_file` confines it to places an image plausibly
+        # comes from and sniffs the bytes rather than trusting the extension.
+        from music_studio import covers
+
+        project_id = args.get('project_id')
+        if not project_id:
+            raise ValueError('project_id is required')
+        store.get(project_id)  # raises if the project is unknown
+        return {'success': True, 'cover': covers.cover_from_file(store.root, project_id,
+                                                                 args.get('image_path'))}
     if action == 'export':
         project_id = args.get('project_id')
         if not project_id:
             raise ValueError('project_id is required')
         take = _find_take(store.get(project_id), args.get('take_id'))
-        result = service.export_take(project_id, take['take_id'],
-                                     folder=args.get('folder') or None)
+        # Review item 5: the agent does not choose where files land on disk. The folder comes from the
+        # owner's Settings; a `folder` argument from a model is ignored, not obeyed.
+        result = service.export_take(project_id, take['take_id'], folder=None)
         return {'success': True, 'export': result}
     if action == 'compare':
         from music_studio import compare
@@ -339,6 +356,15 @@ def register(ctx):
             import logging
             logging.getLogger(__name__).exception('music_studio tool failed')
             return json.dumps({'success': False, 'error': 'studio operation failed'})
+
+    # Drafting goes through the host's public LLM facade (review item 1). `ctx.llm` exists only in the
+    # plugin process, which is exactly where the dashboard routes run; the standalone loopback host has
+    # no ctx and answers 503 with a sentence that says where to draft instead.
+    try:
+        llm_bridge.bind(ctx.llm)
+    except Exception:  # noqa: BLE001 - an older host may not expose ctx.llm yet
+        import logging
+        logging.getLogger(__name__).warning('ctx.llm is unavailable; drafting will report that')
 
     ctx.register_tool(name='music_studio', toolset='music_studio',
                       schema=SCHEMA, handler=handler)

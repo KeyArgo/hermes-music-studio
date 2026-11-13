@@ -83,15 +83,12 @@ def test_api_workspaces_and_uploaded_art(tmp_path, monkeypatch):
     assert client.post(url, json={'mime': 'image/png', 'data': base64.b64encode(image).decode()}).status_code == 200
     assert client.get(url).content == image
     assert client.post(url, json={'mime': 'image/jpeg', 'data': base64.b64encode(image).decode()}).status_code == 400
-    import standalone.ideas as ideas
-    calls=[]
-    def fake_art(request):
-        calls.append(request)
-        return {'mime':'image/png','data':base64.b64encode(image).decode()}
-    monkeypatch.setattr(ideas,'_run_hermes',fake_art)
-    response=client.post(url+'/generate',json={'prompt':'A warm night sky'})
-    assert response.status_code==200 and client.get(url).content==image
-    assert calls == [{'action':'art','prompt':'A warm night sky'}]
+    # Cover *generation* went with the private image tool (review item 1): the route is gone, and the
+    # page no longer offers a button that would call it. Uploading a cover is now the only way in.
+    assert client.post(url + '/generate', json={'prompt': 'A warm night sky'}).status_code in (404, 405)
+    second = b'\x89PNG\r\n\x1a\n' + b'second-image'
+    assert client.post(url, json={'mime': 'image/png', 'data': base64.b64encode(second).decode()}).status_code == 200
+    assert client.get(url).content == second
 
 
 def test_idea_bridge_forwards_selected_model(tmp_path, monkeypatch):
@@ -100,16 +97,18 @@ def test_idea_bridge_forwards_selected_model(tmp_path, monkeypatch):
     from standalone.app import app
     import standalone.ideas as ideas
     requests = []
-    def fake_hermes(request):
-        requests.append(request)
-        return {'content': '{"title":"Night Drive","caption":"warm synths","lyrics":"a line"}'}
-    monkeypatch.setattr(ideas, '_run_hermes', fake_hermes)
+    def fake_complete(messages, *, provider=None, model=None, max_tokens=1200, temperature=0.7):
+        requests.append({'provider': provider, 'model': model, 'messages': messages})
+        return '{"title":"Night Drive","caption":"warm synths","lyrics":"a line"}'
+    monkeypatch.setattr(ideas.llm_bridge, 'available', lambda: True)
+    monkeypatch.setattr(ideas.llm_bridge, 'complete', fake_complete)
     client = TestClient(app, base_url='http://127.0.0.1')
     response = client.post('/api/studio/ideas', json={'provider':'nous','model':'model-x','messages':[{'role':'user','content':'night drive'}],'action':'draft','tone':'warm','style':70})
     assert response.status_code == 200, response.text
     assert response.json()['draft']['title'] == 'Night Drive'
-    sent = requests[0]['request']
-    assert sent['provider'] == 'nous' and sent['model'] == 'model-x'
+    assert requests[0]['provider'] == 'nous' and requests[0]['model'] == 'model-x', (
+        "a trusted override still reaches the host's LLM — as a request, which the host may ignore"
+    )
 
 
 def test_revamp_playlist_and_play_routes(tmp_path, monkeypatch):

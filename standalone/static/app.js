@@ -11,9 +11,18 @@ if (brandLink && STUDIO.plugin) brandLink.href = STUDIO.api + '/studio/ui';
 const form = $('draft-form');
 let current = null, dirty = false, busy = false, revision = 0, engines = [], projects = [], workspaces = [], conversation = [], libraryFilter = null, modelCatalog = [], targets = [], targetProbes = {}, hardware = null, hardwareProblem = '', hardwareFetchedAt = 0, refreshing = false, pollTimer = null;
 const message = (text, bad = false) => { $('form-message').textContent = text; $('form-message').classList.toggle('error', bad); };
+// The host requires a per-launch token on every /api route (review item 3). The pane frames this page
+// with it in the query string; a browser tab opened by hand has none, which is the point.
+const STUDIO_TOKEN = new URLSearchParams(location.search).get('token') || '';
+function withToken(headers) {
+  const out = Object.assign({}, headers || {});
+  if (STUDIO_TOKEN) out['X-Studio-Token'] = STUDIO_TOKEN;
+  return out;
+}
 async function api(path, data, method) {
   const opts = method ? {method} : data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)};
   if (method && data !== undefined) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(data); }
+  opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
   if (!res.ok || value.success === false) throw new Error(value.detail || value.error || 'Request failed');
@@ -771,7 +780,6 @@ async function idea(action) {
 $('idea-send').onclick=()=>idea('chat');$('idea-apply').onclick=()=>idea('draft');
 $('cover-save').onclick=async()=>{const file=$('cover-input').files[0];if(!current){$('cover-message').textContent='Save the song first.';return;}if(!file){$('cover-message').textContent='Choose an image first.';return;}if(file.size>2*1024*1024){$('cover-message').textContent='Image must be 2 MiB or smaller.';return;} const projectId=current.project_id;
   try {const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});await api('/studio/covers/'+encodeURIComponent(projectId),{mime:file.type,data:encoded});if(current?.project_id===projectId)showCover(projectId);$('cover-message').textContent='Cover saved.';}catch(e){$('cover-message').textContent=e.message;}};
-$('cover-generate').onclick=async()=>{if(!current){$('cover-message').textContent='Save the song first.';return;}const projectId=current.project_id;const direction=$('cover-prompt').value.trim() || ('Album cover for '+(form.elements.title.value || 'this song')+': '+form.elements.caption.value);$('cover-generate').disabled=true;$('cover-message').textContent='Generating with your configured Hermes image provider…';try{await api('/studio/covers/'+encodeURIComponent(projectId)+'/generate',{prompt:direction});if(current?.project_id===projectId)showCover(projectId);$('cover-message').textContent='Generated cover saved.';}catch(e){$('cover-message').textContent=e.message;}finally{$('cover-generate').disabled=false;}};
 async function fillRevampPlaylists() {
   const select = $('revamp-playlist');
   if (!select) return;
@@ -1082,9 +1090,15 @@ function aboutMessage(text, bad = false) {
 }
 function openLink(url) {
   if (!url) return;
-  const bridge = window.hermesDesktop;
-  if (bridge && typeof bridge.openExternal === 'function') bridge.openExternal(url);
-  else window.open(url, '_blank', 'noopener');
+  // Inside the Hermes pane this page is a sandboxed frame: it has no bridge and must not reach for one.
+  // Ask the pane instead — it holds `ctx.os.openExternal`, which is the public seam (review item 2).
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'hermes-music-studio:open-external', url: String(url) }, '*');
+      return;
+    }
+  } catch (err) { /* fall through to a plain tab in the standalone browser view */ }
+  window.open(url, '_blank', 'noopener');
 }
 async function copyText(text) {
   try {

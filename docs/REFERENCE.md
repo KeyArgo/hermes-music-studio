@@ -12,13 +12,13 @@ enforced by the store, not by the caller.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string enum | yes | One of `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait`, `compare`, `compare_status` |
+| `action` | string enum | yes | One of `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait`, `compare`, `compare_status`, `set_cover` |
 | `project_id` | string | action-dependent | Project UUID |
 | `take_id` | string | action-dependent | Take UUID |
 | `draft` | object | for create/update | Draft fields: `title`, `caption`, `lyrics`, `duration_seconds`, `instrumental`, `engine`, `bpm`, `keyscale`, `vocal_language`, `sections`, `minimax_guidance`, `comfy_target_id` |
 | `seed` | integer | no | Render seed; omitted means a random seed |
 | `updated_at` | string | for approve | The draft version the person reviewed |
-| `folder` | string | no | Export folder; defaults to the saved setting |
+| `image_path` | string | `set_cover` | Absolute path to a PNG/JPEG/WebP under 2 MiB, inside the studio folder, Downloads, Pictures or temp |
 | `engines` | array of string | no | `compare`: engine ids in order; defaults to every ready engine |
 | `instruction` | string | for change | Plain words, e.g. "add a fiddle" |
 | `start_s`, `end_s` | number | for snippet | Range in the parent take |
@@ -47,10 +47,11 @@ Action results (all return a JSON object; a refusal is `{"success": false, "erro
 | `render` | `project_id` | Queues and waits; reports the take or `running` |
 | `queue` | `project_id` | Queues and returns immediately |
 | `takes` | `project_id` | Project id, title, approval and take list |
-| `export` | `project_id`, optional `take_id`, `folder` | `{success, export}` with the written path |
+| `export` | `project_id`, optional `take_id` | `{success, export}` with the written path — always the configured `export_dir` (or `~/Music/Hermes Music Studio`); a model cannot choose it |
 | `wait` | `project_id`, optional `take_id`, `timeout_s` | Take state |
 | `compare` | `project_id`, optional `engines`, `seed` | Plan of takes |
 | `compare_status` | `project_id` | Plan and each take's state |
+| `set_cover` | `project_id`, `image_path` | Stores the image as the project's cover; nothing is generated |
 
 ## Slash command: `/song`
 
@@ -192,7 +193,7 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | GET | `/api/studio/models`; POST `/api/studio/ideas` | Hermes model catalog and creative partner |
 | GET/POST | `/api/studio/workspaces` | List/create workspaces |
 | POST | `/api/studio/assign` | Assign a project to a workspace |
-| GET/POST | `/api/studio/covers/{project_id}`, `/generate` | Read, upload or generate cover art |
+| GET/POST | `/api/studio/covers/{project_id}` | Read or upload cover art (no generation route) |
 | GET | `/api/studio/revamp/status`, `/tracks`, `/playlists`, `/added` | REVamp state |
 | POST | `/api/studio/revamp/playlists`, `/play`, `/add`, `/add-take`, `/playlist`, `/remove` | REVamp actions |
 

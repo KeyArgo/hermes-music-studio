@@ -70,7 +70,7 @@ accident. The library, the worker and the audio stay on your machine.
   saved style presets, and an A/B compare across ready engines.
 - **A real player.** Play/pause, −10 s / +10 s, a scrubber that moves the audio, elapsed and total
   time, and a volume slider. Exported songs are ordinary `.wav` files.
-- **Workspaces and cover art.** Group songs; upload PNG/JPEG/WebP up to 2 MiB or generate a cover
+- **Workspaces and cover art.** Group songs; upload PNG/JPEG/WebP up to 2 MiB, or let the agent save a picture it made as the cover (`set_cover`)
   through your configured Hermes image provider.
 - **REVamp is optional.** Create a playlist from exported takes; with REVamp absent the screen says so
   and playing and exporting still work.

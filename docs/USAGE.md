@@ -50,7 +50,11 @@ studio still works.
 ### Cover art
 
 Upload a PNG, JPEG or WebP up to 2 MiB, or generate one with your configured Hermes image provider.
-Generation may use a paid provider. The cover is stored with the project and shown in the library.
+Cover art arrives two ways, both without the studio spending model credits itself: upload a PNG, JPEG or
+WebP (2 MiB) in the project, or ask the assistant for a picture and let it save the file it makes as the
+cover (`set_cover`). The studio only accepts an image from the studio folder, Downloads, Pictures or the
+temp directory, and it reads the bytes rather than the extension. The cover is stored with the project and
+shown in the library.
 
 ## Library
 

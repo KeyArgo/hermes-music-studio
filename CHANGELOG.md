@@ -6,6 +6,35 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## 1.0.0 — in catalog review
 
+### Nous review fixes
+
+- **Drafting goes through the host's own LLM.** `standalone/hermes_worker.py` is gone: it spawned
+  `hermes --print-runtime-command`, imported core modules, built an `AIAgent` from resolved provider
+  credentials and called the private image tool. `music_studio/llm_bridge.py` now calls
+  `ctx.llm.complete`, and a provider/model override is honoured only when the owner has trusted the
+  plugin with one (`plugins.entries.<id>.llm.allow_provider_override`). Cover *generation* is removed;
+  `set_cover` accepts an image file the agent made (PNG/JPEG/WebP, 2 MiB, inside the studio folder,
+  Downloads, Pictures or temp). `docs/HERMES-ISSUES.md` asks for a public image-generation call.
+- **The pane uses the plugin SDK, not the desktop's bridge.** The state-file fallback through
+  `window.hermesDesktop.readFileText` is deleted (`ctx.rest('/studio/host')` is the only discovery
+  path), links open through `ctx.os.openExternal`, the framed page asks the pane over `postMessage`
+  instead of reaching for a bridge it does not have, and the studio is framed with `SandboxedFrame`.
+- **The loopback host requires a token.** Generated per launch, handed to the host in its environment,
+  returned by `/studio/host`, carried in the framed URL and required on every `/api/*` route except the
+  health probe — those routes can change the ACE runtime directory, move the library, copy folders and
+  spend model credits.
+- **Children get an allowlist, not our environment.** `ace_engine._render` and `service._spawn_worker`
+  passed `os.environ.copy()` to the ACE runtime and the render worker, so every provider key reached
+  them; `music_studio/childenv.py` keeps PATH/HOME/LANG plus the CUDA/HF/ACE knobs and drops anything
+  that looks like a credential, even inside an allowed family.
+- **Export writes only where the owner keeps music.** `export.target_folder` accepts the configured
+  `export_dir` (or anywhere inside `~/Music`), refuses everything else including `..` and symlink
+  escapes, and the tool ignores a model-supplied folder instead of obeying one.
+- **The remote key is declared and scope-aware.** `ACE_REMOTE_API_KEY` is in `requires_env` and read
+  with `agent.secret_scope.get_secret`; the hosted-key file is created `0600` with `os.open` rather
+  than chmod-ed after writing.
+
+
 - **The build states its own identity.** `music_studio/version_stamp.py` (vendored from the suite
   template) resolves `BUILD_INFO.json` → live `git` → `plugin.yaml`, and `GET /api/v1/version`
   reports version, commit, commit date, install time, dirty state and channel.
