@@ -27,9 +27,11 @@ from __future__ import annotations
 from ..portalock import lock_ex, unlock
 import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -78,6 +80,41 @@ LICENCE_NOTICE = (
     'and permission notice with copies, and display "MiniMax-Music3" in the '
     'interface of any commercial product or service that uses it.'
 )
+
+FFMPEG_HELP = ("ffmpeg is not installed: install it with 'winget install ffmpeg' "
+               "on Windows or 'brew install ffmpeg' on macOS, or set HEWN_FFMPEG "
+               "to its full path")
+
+
+def _ffmpeg_candidates() -> tuple[str, ...]:
+    """The usual ffmpeg locations that a desktop shortcut's PATH misses."""
+    if os.name == 'nt' or sys.platform.startswith('win'):
+        candidates = []
+        local = os.environ.get('LOCALAPPDATA')
+        if local:
+            candidates.append(local.rstrip('\\/') + r'\Microsoft\WinGet\Links\ffmpeg.exe')
+        candidates.append(r'C:\ffmpeg\bin\ffmpeg.exe')
+        program_files = os.environ.get('ProgramFiles') or os.environ.get('PROGRAMFILES')
+        if program_files:
+            candidates.append(program_files.rstrip('\\/') + r'\ffmpeg\bin\ffmpeg.exe')
+        return tuple(candidates)
+    if sys.platform == 'darwin' or platform.system() == 'Darwin':
+        return ('/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg')
+    return ()
+
+
+def _find_ffmpeg() -> str | None:
+    """HEWN_FFMPEG, then PATH, then the per-platform install directories."""
+    override = os.environ.get('HEWN_FFMPEG')
+    if override:
+        return os.path.expanduser(os.path.expandvars(override))
+    found = shutil.which('ffmpeg')
+    if found:
+        return found
+    for candidate in _ffmpeg_candidates():
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def _saved_settings() -> dict:
@@ -129,7 +166,7 @@ class MiniMaxM3ComfyEngine(Engine):
         self.steps = knobs.get('steps', 30) if steps is None else steps
         self.sampler = knobs.get('sampler', 'euler')
         self.scheduler = knobs.get('scheduler', 'simple')
-        self.ffmpeg = ffmpeg if ffmpeg is not None else shutil.which('ffmpeg')
+        self.ffmpeg = ffmpeg if ffmpeg is not None else _find_ffmpeg()
         self._format_options: tuple[str, ...] = ('flac',)
         # Overridable so tests do not sleep on the production poll interval.
         self.poll_seconds = POLL_SECONDS
@@ -245,14 +282,14 @@ class MiniMaxM3ComfyEngine(Engine):
         check('wav_output', lossless and (wav_direct or bool(self.ffmpeg)),
               'native wav' if wav_direct else
               ('flac + ffmpeg transcode' if lossless and self.ffmpeg else
-               ('no flac option' if not lossless else 'flac but no ffmpeg')))
+               ('no flac option' if not lossless else FFMPEG_HELP)))
         extra['licence'] = LICENCE_ID
 
         hard = [c for c in checks if not c.ok and c.name != 'wav_output']
         if hard:
             state, detail = 'unavailable', '; '.join(f'{c.name}: {c.detail}' for c in hard)
         elif not (wav_direct or (lossless and self.ffmpeg)):
-            state, detail = 'degraded', 'ComfyUI cannot emit WAV and ffmpeg is not installed'
+            state, detail = 'degraded', 'ComfyUI cannot emit WAV and ' + FFMPEG_HELP
         else:
             state, detail = 'ready', 'ComfyUI MiniMax Music 3 ready'
         return EngineStatus(self.id, state, detail, checks,
@@ -398,7 +435,7 @@ class MiniMaxM3ComfyEngine(Engine):
         44.1 kHz stereo and the WAV must say exactly that.
         """
         if not self.ffmpeg:
-            raise EngineError('server returned non-WAV audio and ffmpeg is unavailable',
+            raise EngineError('server returned non-WAV audio and ' + FFMPEG_HELP,
                               engine_id=self.id)
         suffix = '.' + source_format if source_format else '.flac'
         with tempfile.TemporaryDirectory(prefix='mm3-wav-') as tmp:

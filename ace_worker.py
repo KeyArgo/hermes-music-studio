@@ -46,6 +46,42 @@ def _language(value, instrumental):
     return value
 
 
+# ACE-Step is a GPU model. It can technically run on the CPU, but slowly enough
+# that it is not a supported configuration; say so instead of letting the
+# runtime fail with a CUDA-specific error on a machine that has no CUDA.
+CPU_UNSUPPORTED = ('ACE-Step on CPU is very slow and unsupported (not a supported '
+                   'configuration); use a CUDA or Apple MPS device')
+
+
+def _device():
+    """The compute device for this render.
+
+    ACE_DEVICE wins when set, so an operator can pin a device (or force the CPU
+    path) without editing code. Otherwise prefer CUDA, then Apple MPS, then CPU.
+    torch lives in the ACE runtime's venv, not necessarily in this process, so
+    the import stays lazy and a failure means "no accelerator we can see".
+    """
+    override = os.environ.get('ACE_DEVICE')
+    if override and override.strip():
+        return override.strip().lower()
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 - torch is optional outside the ACE runtime
+        return 'cpu'
+    try:
+        if torch.cuda.is_available():
+            return 'cuda'
+    except Exception:  # noqa: BLE001 - a broken CUDA build is not an accelerator
+        pass
+    try:
+        mps = getattr(getattr(torch, 'backends', None), 'mps', None)
+        if mps is not None and mps.is_available():
+            return 'mps'
+    except Exception:  # noqa: BLE001 - old torch builds have no MPS backend
+        pass
+    return 'cpu'
+
+
 def run(job, Handler, LLM, Params, Config, generate_music):
     job = Path(job).resolve()
     data = json.loads((job / 'input.json').read_text(encoding='utf-8'))
@@ -81,9 +117,18 @@ def run(job, Handler, LLM, Params, Config, generate_music):
     params = Params(**fields)
     config = Config(batch_size=1, use_random_seed=False, audio_format='wav')
     handler = Handler()
-    status, ok = handler.initialize_service(project_root=os.environ.get('ACE_SOURCE_DIR', os.path.expanduser('~/ACE-Step-1.5')), config_path='acestep-v15-turbo', device='cuda', offload_to_cpu=True, compile_model=False)
+    device = _device()
+    try:
+        status, ok = handler.initialize_service(project_root=os.environ.get('ACE_SOURCE_DIR', os.path.expanduser('~/ACE-Step-1.5')), config_path='acestep-v15-turbo', device=device, offload_to_cpu=True, compile_model=False)
+    except Exception as exc:  # noqa: BLE001 - ACE raises CUDA errors as plain exceptions
+        if device == 'cpu':
+            raise RuntimeError(f'ACE initialization failed: {exc} ({CPU_UNSUPPORTED})') from exc
+        raise
     if not ok:
-        raise RuntimeError('ACE initialization failed: ' + str(status))
+        detail = str(status)
+        if device == 'cpu':
+            detail += f' ({CPU_UNSUPPORTED})'
+        raise RuntimeError('ACE initialization failed: ' + detail)
     result = generate_music(handler, LLM(), params, config, save_dir=str(job))
     if not result.success:
         raise RuntimeError('ACE generation failed: ' + str(result.error or result.status_message))
