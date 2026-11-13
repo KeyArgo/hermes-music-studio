@@ -8,10 +8,8 @@ jobs:
   python:
     name: ${{ matrix.os }} / py3.13
     runs-on: ${{ matrix.os }}
-    # Linux only for now, and the README says so. Five modules still take a POSIX file lock
-    # (`import fcntl`); until the portable lock from the portability branch lands here, a Windows
-    # or macOS runner would go red on an import, and a matrix that cannot pass is worse than a
-    # matrix that states its scope.
+    # Linux, macOS and Windows: file locks go through music_studio/portalock.py and process
+    # handling through music_studio/procs.py, so every module imports on all three.
     strategy:
       fail-fast: false
       matrix:
@@ -33,8 +31,10 @@ jobs:
             exit 0
           fi
           python -m pip install --quiet --disable-pip-version-check imageio-ffmpeg
-          python -c "import os, shutil, imageio_ffmpeg, pathlib; d = pathlib.Path(os.environ['HOME']) / '.local/bin'; d.mkdir(parents=True, exist_ok=True); t = d / 'ffmpeg'; shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), t); os.chmod(t, 0o755); print('installed', t)"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python -c "import os, shutil, imageio_ffmpeg, pathlib; d = pathlib.Path(os.environ['HOME']) / '.local/bin'; d.mkdir(parents=True, exist_ok=True); t = d / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'); shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), t); os.chmod(t, 0o755); print('installed', t)"
+          # Windows needs the .exe name to find it on PATH, and a native path in GITHUB_PATH.
+          bin="$HOME/.local/bin"; [ "$RUNNER_OS" = Windows ] && bin=$(cygpath -w "$bin")
+          echo "$bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/ffmpeg" -version | head -1
       - name: Install
         shell: bash
