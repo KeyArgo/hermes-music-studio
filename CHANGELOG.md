@@ -14,7 +14,7 @@ All notable changes to Music Studio are recorded here. The format follows
   `ctx.llm.complete`, and a provider/model override is honoured only when the owner has trusted the
   plugin with one (`plugins.entries.<id>.llm.allow_provider_override`). Cover *generation* is removed;
   `set_cover` accepts an image file the agent made (PNG/JPEG/WebP, 2 MiB, inside the studio folder,
-  Downloads, Pictures or temp). `docs/HERMES-ISSUES.md` asks for a public image-generation call.
+  Downloads, Pictures or temp). A public image-generation call from Hermes is the missing piece.
 - **The pane uses the plugin SDK, not the desktop's bridge.** The state-file fallback through
   `window.hermesDesktop.readFileText` is deleted (`ctx.rest('/studio/host')` is the only discovery
   path), links open through `ctx.os.openExternal`, the framed page asks the pane over `postMessage`

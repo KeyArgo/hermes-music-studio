@@ -6,8 +6,8 @@ goes through `music_studio.llm_bridge`, which calls `ctx.llm.complete` in the pl
 owns the provider, the model, the credentials and the timeouts, and this plugin never sees a key.
 
 Cover-art *generation* is gone with it: it reached into `tools.image_generation_tool._handle_image_generate`,
-which is core's private surface. Uploading your own image still works, and an issue asking Hermes for a
-public image-generation call is written up in `docs/HERMES-ISSUES.md`.
+which is core's private surface. Uploading your own image still works; generating one needs a public image call from Hermes, which
+this plugin does not have yet.
 """
 
 from __future__ import annotations

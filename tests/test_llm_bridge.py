@@ -134,6 +134,14 @@ def test_cover_generation_is_not_a_route():
     assert any(path.endswith("/studio/covers/{project_id}") for path in paths), "upload must still work"
 
 
-def test_the_issue_for_a_public_image_call_is_written_down():
-    text = (ROOT / "docs" / "HERMES-ISSUES.md").read_text(encoding="utf-8")
-    assert "image" in text.lower() and "ctx.image" in text
+def test_cover_generation_stays_gone_until_hermes_offers_a_public_call():
+    """The plugin must not reach into core's private image tool to get a picture back.
+
+    Issue drafts live outside the repository now, so this test pins the code, not a document: no
+    route and no import of the private handler, and uploads still work (asserted above).
+    """
+    text = (ROOT / "standalone" / "ideas.py").read_text(encoding="utf-8")
+    imports = [line for line in text.splitlines() if line.strip().startswith(("import ", "from "))]
+    assert not any("image_generation" in line for line in imports), (
+        "the docstring may name the private surface; the code may not import it"
+    )
