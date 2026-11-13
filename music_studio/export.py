@@ -26,12 +26,32 @@ def safe_name(text: str, fallback: str = 'take') -> str:
     return name[:80] or fallback
 
 
-def target_folder(raw: str | None) -> Path:
-    """The folder to write into: the one given, else ``~/Music/Hermes Music Studio``."""
+def default_folder() -> Path:
+    """Where an export goes when nobody has chosen a folder: the owner's own music library."""
+    return Path.home() / 'Music' / 'Hermes Music Studio'
+
+
+def target_folder(raw: str | None, configured: str | None = None) -> Path:
+    """The folder to write into, confined to somewhere the owner already keeps music.
+
+    Review item 5: the tool wrote to any absolute path an agent named, which is a write primitive with
+    the agent's imagination as the input. Two things are allowed now — the folder configured in Settings
+    (the owner's choice), or anything inside ``~/Music`` (the place music lives) — and everything else is
+    refused. Symlinks are resolved first, so a link inside the music folder cannot point the write
+    somewhere else.
+    """
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        root = Path.home() / 'Music'
+    root = root.resolve()
     chosen = (raw or '').strip()
-    path = Path(chosen).expanduser() if chosen else Path.home() / 'Music' / 'Hermes Music Studio'
+    path = Path(chosen).expanduser() if chosen else (Path(configured).expanduser() if configured else default_folder())
     if not path.is_absolute():
         raise ValueError('folder must be an absolute path')
+    path = path.resolve()
+    if path != root and root not in path.parents:
+        raise ValueError(f'export folder must be inside {root}')
     path.mkdir(parents=True, exist_ok=True)
     if not path.is_dir():
         raise ValueError('folder is not a directory')
@@ -49,14 +69,18 @@ def free_path(folder: Path, stem: str, suffix: str = '.wav') -> Path:
 
 
 def export_take(jobs, project: dict, take_id: str, folder: str | None = None,
-                title: str | None = None) -> dict:
-    """Write one finished take into ``folder`` and report where it went."""
+                title: str | None = None, configured_folder: str | None = None) -> dict:
+    """Write one finished take into ``folder`` and report where it went.
+
+    ``configured_folder`` is the owner's Settings value; when it is set, an explicit ``folder`` must be
+    inside it (see ``target_folder``).
+    """
     take = next((row for row in project.get('takes', []) if row.get('take_id') == take_id), None)
     if take is None:
         raise ValueError('take not found')
     if take.get('state') != 'succeeded':
         raise ValueError('that take has not finished rendering')
-    destination = target_folder(folder)
+    destination = target_folder(folder, configured=configured_folder)
     stem = safe_name(title or project.get('title') or 'Music Studio take')
     path = free_path(destination, stem)
     # Write beside the destination and rename when complete: a copy that fails halfway must not
