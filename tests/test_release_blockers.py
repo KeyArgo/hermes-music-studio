@@ -215,7 +215,7 @@ class ZombieWorkerTests(unittest.TestCase):
 
 LONG_RENDER_SCRIPT = '''#!/usr/bin/env python3
 import os, sys, time
-with open(os.environ['ORPHAN_PIDFILE'], 'w') as fh:
+with open(os.environ['ACE_ORPHAN_PIDFILE'], 'w') as fh:
     fh.write(str(os.getpid()))
 time.sleep(120)
 '''
@@ -240,7 +240,7 @@ class OrphanRenderTests(unittest.TestCase):
         self.runtime = make_runtime(self.runtime_dir.name)
         self.env = patch.dict(os.environ, {
             'HERMES_HOME': self.home.name,
-            'ORPHAN_PIDFILE': str(self.pidfile)})
+            'ACE_ORPHAN_PIDFILE': str(self.pidfile)})
         self.env.start()
         self.pinned = pin_fixture_runtime(self.runtime)
         self.pinned.__enter__()

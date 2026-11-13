@@ -1,4 +1,5 @@
 """Bounded subprocess adapter for the locally installed ACE-Step runtime."""
+from music_studio.childenv import minimal_env
 from music_studio.portalock import lock_ex
 import io
 import json
@@ -284,8 +285,18 @@ def _render(*, job_input, output_dir, timeout_seconds, expected_seconds,
                 # the only place it is ever visible.
                 (job / 'source.wav').write_bytes(source_wav)
             (job / 'input.json').write_text(json.dumps(job_input), encoding='utf-8')
-            env = os.environ.copy()
-            env.update(ACESTEP_CHECKPOINTS_DIR=str(RUNTIME / 'checkpoints'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_DATASETS_OFFLINE='1', PYTHONPATH=str(SOURCE), ACE_SOURCE_DIR=str(SOURCE), HF_HOME=str(RUNTIME / 'hfmodules'), TRITON_CACHE_DIR=str(RUNTIME / 'triton'))
+            # Review item 4: the ACE runtime gets an allowlisted environment (PATH, HOME, LANG, the
+            # CUDA/HF/ACE knobs) rather than every provider key the Hermes process happens to hold.
+            env = minimal_env({
+                'ACESTEP_CHECKPOINTS_DIR': str(RUNTIME / 'checkpoints'),
+                'HF_HUB_OFFLINE': '1',
+                'TRANSFORMERS_OFFLINE': '1',
+                'HF_DATASETS_OFFLINE': '1',
+                'PYTHONPATH': str(SOURCE),
+                'ACE_SOURCE_DIR': str(SOURCE),
+                'HF_HOME': str(RUNTIME / 'hfmodules'),
+                'TRITON_CACHE_DIR': str(RUNTIME / 'triton'),
+            })
             _emit(on_progress, 3)
             with (job / 'worker.log').open('wb') as log:
                 proc = subprocess.Popen([*_interpreter_cmd(), str(WORKER), str(job)],

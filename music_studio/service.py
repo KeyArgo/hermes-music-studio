@@ -439,7 +439,10 @@ def _spawn_worker(s, project_id, take_id):
     _reap_workers()
     log_dir = s.root / 'worker-logs'
     log_dir.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
+    # Review item 4: the render worker gets an allowlist, not a copy of the Hermes environment.
+    from .childenv import minimal_env
+
+    env = minimal_env()
     env['PYTHONPATH'] = os.pathsep.join(p for p in (str(_ROOT), env.get('PYTHONPATH', '')) if p)
     args = [sys.executable, '-m', 'music_studio.worker',
             '--data-dir', str(s.root), '--project', project_id, '--take', take_id]
@@ -780,7 +783,18 @@ def export_take(project_id, take_id, folder=None, title=None):
                 'reused': True}
     project = store().get(project_id)
     try:
-        result = export.export_take(Jobs(store()), project, take_id, folder=folder, title=title)
+        from . import settings as _settings
+
+        # The owner's export folder is the boundary; without a store root (a caller that only supplies
+        # the project) the default library folder applies.
+        _root = getattr(store(), 'root', None)
+        configured = ''
+        if _root is not None:
+            configured = str((_settings.read(_root) or {}).get('export_dir') or '').strip() or None
+        else:
+            configured = None
+        result = export.export_take(Jobs(store()), project, take_id, folder=folder, title=title,
+                                    configured_folder=configured)
     except ValueError as exc:
         raise ValueError(str(exc)) from None
     ledger[key] = {'path': result['path'], 'title': result.get('title') or '',
