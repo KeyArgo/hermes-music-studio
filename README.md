@@ -24,6 +24,9 @@
 
 <p align="center"><sub><b>Describe a song, approve the draft, hear it.</b> <a href="https://x.com/MHArgonaut/status/2120635407113339039">Watch the full demo ▶</a></sub></p>
 
+<p align="center"><img src="docs/media/music-create.gif" alt="Music Studio: drafting a song, approving the draft, then rendering it" width="100%"/>
+<br/><sub><b>Write, approve, render.</b> Draft the song, approve it, then render the take.</sub></p>
+
 <p align="center"><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#documentation">Documentation</a> · <a href="#testing">Testing</a> · <a href="#contributing">Contributing</a></p>
 
 ## What it is
