@@ -56,14 +56,15 @@ Measured counts and exact summary lines are in [../TESTING.md](../TESTING.md).
 
 ## How CI works
 
-`.github/workflows/tests.yml` runs on every push and pull request, on `ubuntu-latest` only:
+`.github/workflows/tests.yml` runs on every push and pull request, on `ubuntu-latest`, `macos-latest`
+and `windows-latest`:
 
 1. **python** — Python 3.13, `pip install -r requirements-dev.txt`, an `ffmpeg` install only when the
    runner lacks one, then `python -m pytest --rootdir=tests tests -q -p no:cacheprovider`.
 2. **browser** — Node 20, `npm install --no-audit --no-fund`, then `node --test tests/*.mjs`.
 
-CI is Linux-only because parts of the product use `fcntl` and `/proc`. The workflow and the README
-state that scope rather than running a matrix that cannot pass.
+CI runs both jobs on all three platforms. File locks and process handling live in `portalock.py` and
+`procs.py`, so every module imports on each of them.
 
 ## What a change needs
 

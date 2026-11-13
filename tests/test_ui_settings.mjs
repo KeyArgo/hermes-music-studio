@@ -316,7 +316,7 @@ test('closing the studio posts the close and says the studio stopped', async t =
 });
 
 test('the REVamp screen lists only the takes Music Studio added', async t => {
-  const { window, calls } = await boot();
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -326,6 +326,20 @@ test('the REVamp screen lists only the takes Music Studio added', async t => {
   assert.match(text(box), /Afterglow/);
   assert.doesNotMatch(text(box), /Dune|audiobook/i, 'nothing from the REVamp library leaks in');
   assert.equal(doc.getElementById('revamp-query'), null, 'there is no library search to browse other music');
+});
+
+test('a missing REVamp is never asked for its added list', async t => {
+  // The status answers { detail: 'REVamp is unavailable.' } here. Asking for the list anyway is a
+  // guaranteed 503 on every visit, and a red error in the console for a plugin that is optional.
+  const { window, calls } = await boot();
+  t.after(() => window.close());
+  const doc = window.document;
+  doc.getElementById('nav-listen').click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok(!calls.some(c => c.path === '/api/studio/revamp/added'),
+    'no list is requested from a REVamp that is not there');
+  assert.match(text(doc.getElementById('revamp-status')), /not installed/i);
+  assert.match(text(doc.getElementById('revamp-added')), /Nothing added yet/);
 });
 
 test('Add to REVamp hands the take over without a playlist picker', async t => {
@@ -354,7 +368,7 @@ test('closing the studio tells the Hermes pane, so the frame goes away', async t
 });
 
 test('a new REVamp playlist is built from the exported takes, not from the live stream', async t => {
-  const { window, calls } = await boot();
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -420,7 +434,7 @@ test('the chip shows the line the server built when it sends one', async t => {
 });
 
 test('Play here puts the take in the footer player, not on a mystery page', async t => {
-  const { window, calls } = await boot();
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -439,6 +453,7 @@ test('Play here says why it cannot play an item with no file', async t => {
   // REVamp can hold an item whose audio it never indexed. The button must explain that instead of
   // looking alive and doing nothing — the failure this product keeps being judged on.
   const { window } = await boot({
+    '/api/studio/revamp/status': { available: true, player_connected: false },
     '/api/studio/revamp/added': { success: true, playlist: 'pl01', name: 'Music Studio',
       items: [{ id: 'studio:p9:t9', source: 'studio', title: 'No file yet',
         artist: 'Hermes Music Studio', playback: {} }] }

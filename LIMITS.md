@@ -86,7 +86,7 @@ Caveats that belong with those numbers:
 
 | Requirement | Detail |
 |---|---|
-| OS | Linux (tested); macOS untested; Windows unsupported. The plugin uses `fcntl` locks and `/proc` |
+| OS | Linux, macOS and Windows; CI runs the suites on all three. Real ACE-Step hardware use has been Linux; local ACE-Step on Windows or macOS is untested |
 | For `ace_local` | CUDA GPU with ~12 GB free, ACE-Step 1.5 runtime venv + checkpoints, ACE source tree |
 | For `minimax_m3_comfy` | reachable ComfyUI with MiniMax Music 3 nodes and weights; `ffmpeg` on the Hermes host |
 | Users | one OS user, one Hermes profile |

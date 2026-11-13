@@ -10,7 +10,7 @@
   <a href="https://github.com/NousResearch/hermes-agent/pull/154029"><img alt="Hermes plugin catalog: in review" src="https://img.shields.io/badge/plugin%20catalog-in%20review-f59e0b?style=flat-square"></a>
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/license-MIT-2f6bff?style=flat-square"></a>
   <a href="https://github.com/NousResearch/hermes-agent"><img alt="Hermes Agent" src="https://img.shields.io/badge/Hermes%20Agent-plugin-7c3aed?style=flat-square"></a>
-  <a href="#install"><img alt="Platforms" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-555?style=flat-square"></a>
+  <a href="#install"><img alt="Platforms" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-555?style=flat-square"></a>
   <a href="requirements-dev.txt"><img alt="Python" src="https://img.shields.io/badge/python-3.13-3776ab?style=flat-square"></a>
   <a href="package.json"><img alt="Node" src="https://img.shields.io/badge/node-20%2B-5fa04e?style=flat-square"></a>
   <a href="https://github.com/KeyArgo/hermes-music-studio/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KeyArgo/hermes-music-studio?style=flat-square&color=f5b301"></a>
@@ -109,7 +109,8 @@ You need:
 - **Node 20+** only for the browser-side tests
 - **Hermes** itself, since this ships as a plugin
 - **Something to render with** — see [Limits](#limits)
-- **Linux or macOS.** Windows is not a supported target for this release.
+- **Linux, macOS or Windows.** The plugin, the studio and the ComfyUI engine run on all three, and
+  CI tests all three. Local ACE-Step rendering needs a CUDA GPU and has been run on Linux only.
 
 ```bash
 hermes plugins install KeyArgo/hermes-music-studio --yes-deps --enable
@@ -276,7 +277,8 @@ summary lines are in [TESTING.md](TESTING.md).
   by listening.
 - **MiniMax cannot repaint or extend**, and `ace_remote` is registered but undeployed.
 - **A seed reproduces on the same runtime and hardware**, not across GPUs or checkpoints.
-- **macOS is untested in CI.** Linux is the daily path; Windows is not supported.
+- **CI covers all three platforms.** The suites run on Linux, macOS and Windows. Real-hardware use
+  has been on Linux, and local ACE-Step rendering on Windows or macOS is untested.
 
 The complete list, with the code that enforces each item, is in [LIMITS.md](LIMITS.md).
 

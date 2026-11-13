@@ -120,11 +120,12 @@ CI runs them on Node 20.
 
 ## Windows
 
-Windows is not a supported target for this release. Parts of the product use `fcntl` file locks and
-`/proc` for worker recovery. A Windows port is not shipped.
+CI runs both suites on Windows. Real-hardware use has been on Linux, and local ACE-Step rendering on
+Windows is untested. File locks go through `msvcrt` on Windows, and process state comes from the
+platform APIs rather than `/proc`.
 
 ## macOS
 
-The code path is not exercised by CI, which runs Linux only. `fcntl` exists on macOS; worker recovery
-uses `/proc` start times, so the recovery path is less proven there. The README states this rather
-than claiming parity.
+CI runs both suites on macOS. Real-hardware use has been on Linux, and local ACE-Step rendering on
+macOS is untested. Worker recovery reads `/proc` start times on Linux and falls back to `ps` on macOS,
+so that path is less proven there. The README states this rather than claiming parity.

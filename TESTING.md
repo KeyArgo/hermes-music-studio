@@ -50,16 +50,15 @@ Three files carry the DOM tests: `tests/test_player.mjs`, `tests/test_desktop.mj
 
 ## What CI runs
 
-`.github/workflows/tests.yml` has two jobs on `ubuntu-latest`:
+`.github/workflows/tests.yml` has two jobs, each on `ubuntu-latest`, `macos-latest` and `windows-latest`:
 
 | Job | Runner | Command |
 |---|---|---|
-| Python | Python 3.13 | `python -m pytest --rootdir=tests tests -q -p no:cacheprovider` |
-| Browser-side | Node 20 | `npm install --no-audit --no-fund` then `node --test tests/*.mjs` |
+| Python | Python 3.13 on all three | `python -m pytest --rootdir=tests tests -q -p no:cacheprovider` |
+| Browser-side | Node 20 on all three | `npm install --no-audit --no-fund` then `node --test tests/*.mjs` |
 
 The Python job installs `requirements-dev.txt`, and installs `ffmpeg` from `imageio-ffmpeg` only when
-the runner does not already have it. CI is Linux-only because parts of the product use `fcntl` and
-`/proc`; the workflow says so and the README states the same scope.
+the runner does not already have it. CI runs both suites on Linux, macOS and Windows.
 
 ## Counting
 

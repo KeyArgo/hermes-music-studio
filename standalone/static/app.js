@@ -911,14 +911,16 @@ async function loadRevamp(){
   const box = $('revamp-added');
   try {
     const status = await api('/studio/revamp/status').catch(() => ({}));
-    if (status.available === false) {
+    if (status.available !== true) {
       $('revamp-status').textContent = status.reason || 'REVamp is not installed. Your takes still play and export from here.';
-    } else {
-      $('revamp-status').textContent = status.player_connected
-        ? 'REVamp connected. Press Play here, or open REVamp to hear it there.'
-        : 'REVamp is available. Open its player in Hermes to hear playback.';
-      fillRevampPlaylists();
+      revampItems = [];
+      box.replaceChildren(el('p','Nothing added yet. Open a draft in Library and press “Add to REVamp”.'));
+      return;
     }
+    $('revamp-status').textContent = status.player_connected
+      ? 'REVamp connected. Press Play here, or open REVamp to hear it there.'
+      : 'REVamp is available. Open its player in Hermes to hear playback.';
+    fillRevampPlaylists();
     const data = await api('/studio/revamp/added').catch(() => ({ items: [] }));
     const items = data.items || [];
     revampItems = items;
