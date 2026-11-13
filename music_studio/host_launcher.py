@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 
@@ -27,7 +28,7 @@ from . import service
 STATE_FILE = 'studio-host.json'
 LOG_FILE = 'studio-host.log'
 DEFAULT_PORT = 8775
-PORT_SPAN = 12
+PORT_SPAN = 50
 START_TIMEOUT_S = 20.0
 
 _lock = threading.Lock()
@@ -58,30 +59,101 @@ def _token_for(root: Path, state: dict | None, fresh: bool) -> str:
     return secrets.token_urlsafe(32)
 
 
-def _python() -> str:
+def _is_windows() -> bool:
+    return os.name == 'nt' or sys.platform.startswith('win')
+
+
+def _is_darwin() -> bool:
+    return sys.platform == 'darwin'
+
+
+def _hermes_python() -> str | None:
+    """The interpreter beside ``sys.executable`` — a venv's own ``python`` shim."""
+    executable = getattr(sys, 'executable', '') or ''
+    if not executable:
+        return None
+    return str(Path(executable).with_name('python.exe' if _is_windows() else 'python'))
+
+
+def _candidate_command(candidate) -> list[str] | None:
+    """A runnable command for one candidate, or None when it is not installed."""
+    if isinstance(candidate, (list, tuple)):
+        command = [str(part) for part in candidate]
+        if not command:
+            return None
+        first = command[0]
+        return command if os.path.exists(first) or shutil.which(first) else None
+    if not candidate or not os.path.exists(candidate):
+        return None
+    return [str(candidate)]
+
+
+def _dedupe_key(command: list[str]) -> tuple:
+    return tuple(os.path.normcase(os.path.abspath(part)) if os.path.exists(part) else part
+                 for part in command)
+
+
+def _python() -> list[str]:
     """An interpreter that can import uvicorn (the Hermes runtime need not have it).
 
+    Returns a command list, because the Windows launcher is ``[py, -3]`` rather than a path.
     Probed with a cleaned environment: a ``PYTHONPATH``/``VIRTUAL_ENV`` inherited
     from the gateway points at the Hermes venv's site-packages (a different minor
     version), and a system interpreter honouring it dies importing pydantic.
     """
+    windows = _is_windows()
+    candidates = []
     override = os.environ.get('HEWN_STUDIO_HOST_PYTHON')
-    candidates = [override] if override else []
-    candidates += ['/usr/bin/python3.13', sys.executable]
+    if override:
+        candidates.append(override)
+    if sys.executable:
+        candidates.append(sys.executable)
+    sibling = _hermes_python()
+    if sibling:
+        candidates.append(sibling)
+    if windows:
+        candidates.append(['py', '-3'])
+    for name in ('python3.13', 'python3.12', 'python3', 'python'):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+    if _is_darwin():
+        candidates += ['/opt/homebrew/bin/python3', '/usr/local/bin/python3']
+    candidates.append('/usr/bin/python3.13')
+
+    seen = set()
+    tried = []
     for candidate in candidates:
-        if not candidate or not os.path.exists(candidate):
+        command = _candidate_command(candidate)
+        if command is not None:
+            display = ' '.join(command)
+            key = _dedupe_key(command)
+        else:
+            display = (' '.join(str(part) for part in candidate)
+                       if isinstance(candidate, (list, tuple)) else str(candidate))
+            key = display
+        if not display or key in seen:
+            continue
+        seen.add(key)
+        tried.append(display if command is not None else f'{display} (not found)')
+        if command is None:
             continue
         try:
             # Probe everything the host imports, not just one of them: an interpreter with
             # uvicorn but without fastapi would be selected and then die on start-up, and the
             # next candidate would never be tried.
-            probe = subprocess.run([candidate, '-c', 'import uvicorn, fastapi, starlette'],
+            probe = subprocess.run([*command, '-c', 'import uvicorn, fastapi, starlette'],
                                    capture_output=True, timeout=20, env=_clean_env())
         except (OSError, subprocess.SubprocessError):
             continue
         if probe.returncode == 0:
-            return candidate
-    raise RuntimeError('no interpreter with uvicorn found for the studio host')
+            return command
+
+    installer = 'py -3' if windows else (sys.executable or 'python3')
+    raise RuntimeError(
+        'no interpreter with uvicorn found for the studio host; '
+        f"tried {', '.join(tried) or '(none)'}. Install what it needs with: "
+        f'{installer} -m pip install "fastapi" "uvicorn[standard]"')
 
 
 #: Inherited from the gateway and fatal to a system interpreter: they point
@@ -97,10 +169,23 @@ def _clean_env() -> dict:
 
 def _port_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if _is_windows():
+            # Windows reads SO_REUSEADDR as "share the port": bind succeeds on a port somebody
+            # else is listening on, and the host then fails to start. Exclusive use (or no
+            # option at all) makes bind tell the truth.
+            exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+            if exclusive is not None:
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+                except OSError:
+                    pass
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(('127.0.0.1', port))
         except OSError:
+            # Another socket owns the port — on Windows WSAEACCES (10013) or WSAEADDRINUSE
+            # (10048) — or this address cannot be bound here at all: try the next one either way.
             return False
     return True
 
@@ -247,7 +332,10 @@ def ensure_host(port: int | None = None) -> dict:
         log = open(root / LOG_FILE, 'ab', buffering=0)
         try:
             log.write(f'--- starting studio host on 127.0.0.1:{chosen} ---\n'.encode('utf-8'))
-            proc = subprocess.Popen([_python(), '-m', 'music_studio.host'],
+            python = _python()
+            if isinstance(python, str):
+                python = [python]
+            proc = subprocess.Popen([*python, '-m', 'music_studio.host'],
                                     cwd=str(Path(__file__).resolve().parents[1]),
                                     env=env, stdin=subprocess.DEVNULL,
                                     stdout=log, stderr=log, **detach_kwargs())

@@ -149,8 +149,8 @@ export function Studio({ ctx }) {
       h('p', { key: 't' }, 'The studio host is not running, so the interface cannot load.'),
       h('p', { key: 'd', style: detail }, host.error || 'no url'),
       h('p', { key: 'h', style: { opacity: 0.7 } },
-        'The host starts with the plugin. If this persists, start it once with: ' +
-        'python3.13 -m music_studio.host (inside the plugin folder, with HEWN_STUDIO_DATA_DIR set).'),
+        'The host starts with the plugin. If this persists, do what its message above says ' +
+        '(it names the exact install command), then try again.'),
       h('button', { key: 'r', type: 'button', onClick: host.retry }, 'Try again')
     ])
   }
