@@ -434,6 +434,41 @@ def recover_interrupted(*, confirmed=False):
     return {'success': True, 'recovered': Jobs(store()).reconcile_interrupted(confirmed=confirmed)}
 
 
+def live_workers():
+    """The workers this process started that are still running."""
+    _reap_workers()
+    return list(_workers)
+
+
+def stop_workers(timeout: float = 10.0) -> int:
+    """Terminate the workers this process started and wait for them to exit.
+
+    A live worker is a live file handle: on Windows a child that inherited its log file makes
+    `shutil.rmtree` of the library fail with WinError 32. Shutting them down is the honest fix, and
+    the same call is what a clean exit wants anyway.
+    """
+    from . import procs
+
+    stopped = 0
+    for proc in live_workers():
+        if proc.poll() is not None:
+            continue
+        try:
+            procs.kill_tree(proc.pid)
+        except Exception:
+            logging.exception('could not stop a studio worker')
+        stopped += 1
+    deadline = time.monotonic() + max(0.0, timeout)
+    for proc in live_workers():
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            proc.wait(timeout=remaining)
+        except Exception:
+            logging.exception('a studio worker did not exit in time')
+    _reap_workers()
+    return stopped
+
+
 def _spawn_worker(s, project_id, take_id):
     """Start the render in a detached session; the worker owns the GPU lease."""
     _reap_workers()
