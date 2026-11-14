@@ -14,14 +14,14 @@ os.environ.setdefault('HEWN_STUDIO_DATA_DIR', str(default_root / 'hewn-music-stu
 os.environ['HEWN_STUDIO_NO_HOST'] = '1'
 
 from dashboard.plugin_api import router  # noqa: E402
-from music_studio import service  # noqa: E402
+from music_studio import media_sign, service  # noqa: E402
 from standalone.ideas import router as ideas_router  # noqa: E402
 from standalone.workspaces import router as workspaces_router  # noqa: E402
 from standalone.revamp import router as revamp_router  # noqa: E402
 
 ROOT = Path(__file__).parent
-# The one route that may answer without the token, because the pane and the launcher ask it whether
-# anything is listening. It returns liveness and nothing about the library.
+# The liveness route. It needs the token like every other /api route (review item 3); a 401 still
+# tells the launcher and the pane's no-cors probe that something is listening.
 HEALTH_PATH = '/api/health'
 app = FastAPI(title='Hermes Music Studio', docs_url=None, redoc_url=None)
 
@@ -112,7 +112,12 @@ async def same_origin(request: Request, call_next):
     # included (a 401 still tells a launcher or the pane's no-cors fetch that the host is alive) — a local process could otherwise change the ACE runtime dir (which picks the Python that
     # runs), move the library, copy folders and spend model credits. A host started without a token
     # refuses /api rather than serving everything: fail-open is how this gate was defeated before.
-    if path.startswith('/api/'):
+    # The one exception, and it is narrow: REVamp's player streams a take it was handed with a
+    # signature for that one take's audio (music_studio/media_sign.py). It opens nothing else.
+    signed_audio = (not authorized and request.method in ('GET', 'HEAD')
+                    and media_sign.verify(service.store().root, path,
+                                          request.query_params.get('sig', '')))
+    if path.startswith('/api/') and not signed_audio:
         if not expected:
             return _with_cors(JSONResponse(
                 {'detail': 'this host has no token, so it refuses every /api route; '

@@ -80,11 +80,13 @@ def test_an_audiobook_in_revamp_never_reaches_the_studio_screen(fake):
     assert [item['id'] for item in revamp._studio_items(current)] == []
 
 
-def test_adding_a_take_uses_the_loopback_host_under_the_plugin(monkeypatch, fake):
+def test_adding_a_take_uses_the_loopback_host_under_the_plugin(monkeypatch, fake, tmp_path):
     monkeypatch.setattr('music_studio.host_launcher.ensure_host',
                         lambda port=None: {'url': 'http://127.0.0.1:8775', 'port': 8775})
 
     class Store:
+        root = tmp_path  # the signing key for REVamp links lives beside the library
+
         def get(self, project_id):
             return {'title': 'Afterglow', 'takes': [{'take_id': '22222222-2222-2222-2222-222222222222', 'state': 'succeeded'}]}
 
@@ -94,11 +96,15 @@ def test_adding_a_take_uses_the_loopback_host_under_the_plugin(monkeypatch, fake
     item = result['item']
     assert item['source'] == 'studio'
     assert item['playback']['url'].startswith('http://127.0.0.1:8775/api/projects/')
+    # REVamp's page never holds the studio token, so the link carries a signature for this take.
+    assert '/audio?sig=' in item['playback']['url']
     assert item['title'] == 'Afterglow'
 
 
-def test_adding_the_same_take_twice_keeps_one_copy(monkeypatch, fake):
+def test_adding_the_same_take_twice_keeps_one_copy(monkeypatch, fake, tmp_path):
     class Store:
+        root = tmp_path  # the signing key for REVamp links lives beside the library
+
         def get(self, project_id):
             return {'title': 'Afterglow', 'takes': [{'take_id': '22222222-2222-2222-2222-222222222222', 'state': 'succeeded'}]}
 
@@ -120,8 +126,10 @@ def test_removing_a_take_leaves_the_other_items_alone(fake):
     assert [item['id'] for item in result['items']] == ['studio:a:b']
 
 
-def test_a_take_that_is_not_finished_is_refused(monkeypatch, fake):
+def test_a_take_that_is_not_finished_is_refused(monkeypatch, fake, tmp_path):
     class Store:
+        root = tmp_path  # the signing key for REVamp links lives beside the library
+
         def get(self, project_id):
             return {'title': 'Draft', 'takes': [{'take_id': '22222222-2222-2222-2222-222222222222', 'state': 'failed'}]}
 
@@ -132,8 +140,10 @@ def test_a_take_that_is_not_finished_is_refused(monkeypatch, fake):
     assert caught.value.status_code == 404
 
 
-def test_a_person_can_pick_their_own_playlist(monkeypatch, fake):
+def test_a_person_can_pick_their_own_playlist(monkeypatch, fake, tmp_path):
     class Store:
+        root = tmp_path  # the signing key for REVamp links lives beside the library
+
         def get(self, project_id):
             return {'title': 'Cursor Blink', 'takes': [{'take_id': '22222222-2222-2222-2222-222222222222',
                                                          'state': 'succeeded'}]}

@@ -11,6 +11,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from music_studio import media_sign
+
 router = APIRouter()
 # Music Studio keeps exactly one playlist in REVamp. Everything the studio hands over lands
 # here, so its own screen can list those items and nothing else — no audiobooks, no albums.
@@ -147,8 +149,9 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
     item = {'id': 'studio:' + body.project_id + ':' + body.take_id, 'source': 'studio',
             'kind': 'music', 'title': project.get('title') or 'Music Studio take',
             'artist': 'Hermes Music Studio',
-            'playback': {'backend': 'webamp', 'url': _audio_base(request) +
-                         '/api/projects/' + body.project_id + '/takes/' + body.take_id + '/audio'},
+            # Signed for this one take: REVamp's page never holds the studio token (review item 3).
+            'playback': {'backend': 'webamp', 'url': media_sign.audio_url(
+                _audio_base(request), service.store().root, body.project_id, body.take_id)},
             'capabilities': ['seek']}
     items = [row for row in current['items']
              if not (isinstance(row, dict) and row.get('id') == item['id'])]
@@ -160,7 +163,7 @@ def _audio_base(request: Request) -> str:
     """A URL the REVamp player can fetch.
 
     Under the Hermes plugin the page is behind gateway auth, so REVamp cannot read that
-    address; the studio's own loopback host serves the same audio with no credentials.
+    address; the studio's own loopback host serves the same audio to a link signed for that take.
     """
     if '/api/plugins/hermes-music-studio/' not in request.url.path:
         return str(request.base_url).rstrip('/')
@@ -177,13 +180,18 @@ def added(request: Request):
         raise HTTPException(502, 'REVamp returned an invalid playlist')
     current = _call('GET', '/api/playlists/' + urllib.parse.quote(playlist_id, safe=''))
     items = _studio_items(current)
+    from music_studio import service
     base = _audio_base(request)
     for item in items:
         playback = item.get('playback') or {}
         url = str(playback.get('url') or '')
         marker = '/api/projects/'
         if marker in url:
-            playback['url'] = base + url[url.index(marker):]
+            # Re-sign on the way out, so a take added before signing existed plays again too.
+            route = url[url.index(marker):].split('?', 1)[0]
+            match = media_sign.AUDIO_PATH.match(route)
+            playback['url'] = (media_sign.audio_url(base, service.store().root, *match.groups())
+                               if match else base + route)
     return {'success': True, 'playlist': playlist_id, 'name': STUDIO_PLAYLIST, 'items': items}
 
 
