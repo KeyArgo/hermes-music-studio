@@ -131,6 +131,23 @@ def demo_audio_json():
             'audio_base64': base64.b64encode(data).decode('ascii')}
 
 
+@router.get('/demo/peaks')
+def demo_peaks(buckets: int = 512):
+    """Waveform buckets for the shipped demo, the same shape as a take's peaks."""
+    from music_studio.peaks import compute_peaks, validate_buckets
+    try:
+        validate_buckets(buckets)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    path = demo.audio_path()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail='demo take not found')
+    with path.open('rb') as audio:
+        duration, peaks = invoke(compute_peaks, audio, buckets)
+    return {'success': True, 'buckets': buckets,
+            'duration_seconds': duration, 'peaks': peaks}
+
+
 @router.get('/status')
 def status():
     return invoke(service.status)
