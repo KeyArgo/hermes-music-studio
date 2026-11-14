@@ -156,6 +156,14 @@ class HealthTests(FakeComfyCase):
         with self.assertRaises(EngineError):
             self.engine(ffmpeg='').render(_request())
 
+    def test_a_stale_ffmpeg_path_degrades_like_missing_ffmpeg(self):
+        # A HEWN_FFMPEG value that used to exist (an old install) is not a usable transcoder.
+        status = self.engine(ffmpeg='/nonexistent/stale/ffmpeg').health()
+        self.assertEqual(status.state, 'degraded')
+        self.assertIn(mm3.FFMPEG_HELP, status.detail)
+        checks = {c.name: c for c in status.checks}
+        self.assertFalse(checks['wav_output'].ok)
+
     def test_health_never_claims_repaint_or_continuation(self):
         engine = self.engine()
         caps = engine.capabilities

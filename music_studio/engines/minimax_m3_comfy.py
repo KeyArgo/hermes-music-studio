@@ -122,6 +122,16 @@ def _find_ffmpeg() -> str | None:
     return None
 
 
+def _ffmpeg_usable(path: str | None) -> bool:
+    """True only when the configured ffmpeg is actually there (and executable off Windows).
+
+    HEWN_FFMPEG can point at an install that has since moved; a non-empty string is not a transcoder.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    return _is_windows() or os.access(path, os.X_OK)
+
+
 def _saved_settings() -> dict:
     """The operator's saved endpoint and sampler knobs, when there are any."""
     try:
@@ -284,16 +294,17 @@ class MiniMaxM3ComfyEngine(Engine):
             extra['save_formats'] = list(options)
         wav_direct = 'wav' in self._format_options
         lossless = wav_direct or 'flac' in self._format_options
-        check('wav_output', lossless and (wav_direct or bool(self.ffmpeg)),
+        ffmpeg_ok = _ffmpeg_usable(self.ffmpeg)
+        check('wav_output', lossless and (wav_direct or ffmpeg_ok),
               'native wav' if wav_direct else
-              ('flac + ffmpeg transcode' if lossless and self.ffmpeg else
+              ('flac + ffmpeg transcode' if lossless and ffmpeg_ok else
                ('no flac option' if not lossless else FFMPEG_HELP)))
         extra['licence'] = LICENCE_ID
 
         hard = [c for c in checks if not c.ok and c.name != 'wav_output']
         if hard:
             state, detail = 'unavailable', '; '.join(f'{c.name}: {c.detail}' for c in hard)
-        elif not (wav_direct or (lossless and self.ffmpeg)):
+        elif not (wav_direct or (lossless and ffmpeg_ok)):
             state, detail = 'degraded', 'ComfyUI cannot emit WAV and ' + FFMPEG_HELP
         else:
             state, detail = 'ready', 'ComfyUI MiniMax Music 3 ready'

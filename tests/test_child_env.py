@@ -138,6 +138,8 @@ def test_the_render_worker_is_spawned_with_the_minimal_env(parent, monkeypatch, 
     env = captured.get("env")
     assert env is not None, "_spawn_worker passed no env"
     for name in SECRETS:
+        if name == "ACE_REMOTE_API_KEY":
+            continue  # the worker's own declared key is passed through deliberately (tested below)
         assert name not in env, f"{name} reached the render worker"
     assert env.get("PYTHONPATH"), "the worker still needs the package on its path"
 
@@ -201,3 +203,58 @@ def test_ffmpeg_runs_without_provider_keys(parent, monkeypatch, tmp_path):
     assert seen["env"] is not None, "ffmpeg inherited the whole environment"
     for name in SECRETS:
         assert name not in seen["env"], f"{name} reached ffmpeg"
+
+
+def test_the_render_worker_gets_the_scoped_remote_key(parent, monkeypatch, tmp_path):
+    """The worker gets the allowlist, which drops ACE_REMOTE_API_KEY because it looks like a secret.
+    A remote ACE render needs that key, so the spawning process reads it from the scoped store and
+    passes it through explicitly."""
+    from music_studio import service
+
+    captured: dict[str, object] = {}
+
+    class FakeProc:
+        pid = 4444
+
+    def fake_popen(args, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return FakeProc()
+
+    monkeypatch.setattr(service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(service, "_reap_workers", lambda: None)
+    monkeypatch.setattr("music_studio.engines.ace_remote._remote_key", lambda: "scoped-remote-key")
+
+    class FakeStore:
+        root = tmp_path
+
+    try:
+        service._spawn_worker(FakeStore(), "p1", "t1")
+    finally:
+        service._workers.clear()
+    assert captured["env"]["ACE_REMOTE_API_KEY"] == "scoped-remote-key"
+
+
+def test_the_render_worker_gets_no_remote_key_when_the_store_has_none(parent, monkeypatch, tmp_path):
+    from music_studio import service
+
+    captured: dict[str, object] = {}
+
+    class FakeProc:
+        pid = 4545
+
+    def fake_popen(args, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return FakeProc()
+
+    monkeypatch.setattr(service.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(service, "_reap_workers", lambda: None)
+    monkeypatch.setattr("music_studio.engines.ace_remote._remote_key", lambda: None)
+
+    class FakeStore:
+        root = tmp_path
+
+    try:
+        service._spawn_worker(FakeStore(), "p1", "t1")
+    finally:
+        service._workers.clear()
+    assert "ACE_REMOTE_API_KEY" not in captured["env"]

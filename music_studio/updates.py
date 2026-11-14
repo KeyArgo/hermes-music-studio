@@ -16,6 +16,8 @@ import sys
 import time
 from pathlib import Path
 
+from .childenv import minimal_env
+
 REPO = 'KeyArgo/hermes-music-studio'
 API = f'https://api.github.com/repos/{REPO}'
 PREVIOUS_FILE = 'update-previous.json'
@@ -31,8 +33,10 @@ def _installed_dir():
 
 def _git(*args, cwd=None):
     try:
+        # git needs PATH/HOME, which the allowlist keeps; it has no use for provider keys.
         out = subprocess.run(['git', *args], cwd=str(cwd or _installed_dir()),
-                             capture_output=True, text=True, timeout=TIMEOUT_S)
+                             capture_output=True, text=True, timeout=TIMEOUT_S,
+                             env=minimal_env())
     except Exception:
         return None
     if out.returncode != 0:

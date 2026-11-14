@@ -38,6 +38,11 @@ import json
 import subprocess
 from pathlib import Path
 
+try:
+    from .childenv import minimal_env
+except ImportError:  # executed directly as ``python version_stamp.py``
+    from childenv import minimal_env
+
 _HERE = Path(__file__).resolve().parent
 
 
@@ -66,8 +71,9 @@ def _find_build_info() -> dict:
 def _git(*args: str) -> str:
     for root in (_plugin_root(), _HERE.parent, _HERE):
         try:
+            # git needs PATH/HOME, which the allowlist keeps; it has no use for provider keys.
             proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
-                                  text=True, timeout=5, check=False)
+                                  text=True, timeout=5, check=False, env=minimal_env())
             if proc.returncode == 0 and proc.stdout.strip():
                 return proc.stdout.strip()
         except (OSError, subprocess.TimeoutExpired):

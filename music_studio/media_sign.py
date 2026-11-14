@@ -15,6 +15,7 @@ import hmac
 import os
 import re
 import secrets
+import tempfile
 from pathlib import Path
 
 KEY_FILE = 'media-key'
@@ -32,8 +33,10 @@ def _key(root: Path) -> bytes:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
     value = secrets.token_hex(32).encode('ascii')
-    tmp = path.with_name(KEY_FILE + '.tmp')
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # A unique temp per writer: a shared '<key>.tmp' let one first request truncate or unlink the
+    # other's file before it was linked, so a signing key could vanish mid-race.
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix='media-key.')
+    tmp = Path(tmp_name)
     try:
         if hasattr(os, 'fchmod'):
             os.fchmod(fd, 0o600)
