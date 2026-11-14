@@ -1043,3 +1043,52 @@ test('the compute pane shows each engine doctor row and its fix beneath it', asy
   assert.match(text(miniRow), /MiniMax Music 3 \(ComfyUI\) · ready: nodes present/);
   assert.match(text(miniRow), /Install ffmpeg if ComfyUI outputs FLAC/);
 });
+
+// Renaming a song is an inline edit on the card, saved through the same /update route the draft
+// form uses — including the version token it was loaded with.
+const RENAME_STATUS = {
+  success: true, engine_available: false, engines: [], projects: [
+    { project_id: 'p1', title: 'First song', caption: 'quiet', engine: 'ace', approved: true,
+      updated_at: '2026-11-13T09:30:00-07:00', takes: [] }
+  ]
+};
+
+test('rename swaps the title for an inline input and saves through /update', async t => {
+  const { window, calls } = await boot({ '/api/status': RENAME_STATUS });
+  t.after(() => window.close());
+  const doc = window.document;
+  const pause = () => new Promise(resolve => setTimeout(resolve, 30));
+  window.prompt = () => { throw new Error('a typed dialog opened'); };
+
+  [...doc.querySelectorAll('#library button')].find(b => text(b) === 'Rename').click();
+  const input = doc.querySelector('#library .rename-input');
+  assert.ok(input, 'the title is replaced by an input');
+  assert.equal(input.value, 'First song');
+  assert.equal(doc.querySelector('#library .project-title'), null, 'the heading is out of the way');
+
+  input.value = 'A better name';
+  input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await pause();
+
+  const saved = calls.filter(c => c.path === '/api/rename' && c.body && c.body.project_id === 'p1').pop();
+  assert.ok(saved, 'the rename posts to /rename, which keeps the draft approved');
+  assert.deepEqual(saved.body, { project_id: 'p1', title: 'A better name' });
+  assert.ok(!calls.some(c => c.path === '/api/update' && c.body && c.body.project_id === 'p1'),
+    'a rename must not go through /update, which un-approves the draft');
+});
+
+test('escape cancels a rename and restores the title without a request', async t => {
+  const { window, calls } = await boot({ '/api/status': RENAME_STATUS });
+  t.after(() => window.close());
+  const doc = window.document;
+
+  [...doc.querySelectorAll('#library button')].find(b => text(b) === 'Rename').click();
+  const input = doc.querySelector('#library .rename-input');
+  input.value = 'Never mind';
+  input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(doc.querySelector('#library .rename-input'), null);
+  assert.equal(text(doc.querySelector('#library .project-title')), 'First song');
+  assert.ok(!calls.some(c => (c.path === '/api/update' || c.path === '/api/rename') && c.body && c.body.project_id === 'p1'), 'no request was sent');
+});

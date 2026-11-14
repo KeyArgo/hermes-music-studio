@@ -659,6 +659,25 @@ function library() {
       try { await api('/duplicate',{project_id:p.project_id}); libMessage(`Copied \u201c${p.title || 'Untitled'}\u201d with its takes.`); await refresh(); library(); }
       catch(err){ libMessage(err.message, true); } finally { dup.disabled = false; }
     });
+    const rename = el('button','Rename','button secondary'); rename.type='button'; rename.addEventListener('click', () => {
+      const input = el('input'); input.type='text'; input.className='rename-input'; input.value = p.title || '';
+      title.replaceWith(input); input.focus(); input.select();
+      let settled = false;
+      const restore = () => { if (settled) return; settled = true; input.replaceWith(title); };
+      input.addEventListener('keydown', async e => {
+        if (e.key === 'Escape') { e.preventDefault(); restore(); title.focus(); return; }
+        if (e.key !== 'Enter' || settled) return;
+        e.preventDefault();
+        const value = input.value.trim();
+        if (!value) { libMessage('A title is required.', true); return; }
+        settled = true;
+        try {
+          // /rename, not /update: a title is not part of a render, so it must not un-approve the draft.
+          await api('/rename',{project_id:p.project_id,title:value});
+          libMessage('Renamed.'); await refresh(); library();
+        } catch(err){ settled = false; input.replaceWith(title); libMessage(err.message, true); }
+      });
+    });
     const del = el('button','Delete','button secondary'); del.type='button'; del.addEventListener('click', async () => {
       if (!confirm(`Delete \u201c${p.title || 'Untitled'}\u201d and all of its audio? This cannot be undone.`)) return;
       del.disabled = true;
@@ -681,7 +700,7 @@ function library() {
         await refresh(); library();
       } catch (err) { libMessage(err.message, true); } finally { changeIt.disabled = false; }
     });
-    const identity=el('div','','project-identity'); if (p.has_cover !== false) { const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover); } identity.append(title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
+    const identity=el('div','','project-identity'); if (p.has_cover !== false) { const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover); } identity.append(title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, rename, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
     const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); changeRow.hidden = true; card.append(changeRow);
     const changeToggle = el('button','Change with words…','button secondary'); changeToggle.type='button';
     changeToggle.setAttribute('aria-expanded','false');

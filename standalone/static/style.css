@@ -120,6 +120,7 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .library-tools label{margin:0}.library-search{flex:1 1 280px}.library-sort{flex:0 0 170px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .project-title{cursor:pointer}.project-title:hover{text-decoration:underline;text-underline-offset:4px}
+.rename-input{font-family:Georgia,serif;font-size:22px;font-weight:400;margin:7px 0;padding:5px 9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);max-width:min(100%,26rem)}
 .project-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .take{flex-wrap:wrap}.take>span{flex:1 1 260px;min-width:0}
 .take-more{position:relative}.take-more summary{list-style:none;cursor:pointer;border:1px solid #4a4e42;border-radius:99px;padding:7px 12px;font-size:12px}
