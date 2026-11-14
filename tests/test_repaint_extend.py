@@ -330,6 +330,17 @@ class LongformStitchTests(unittest.TestCase):
         self.assertEqual(samples(data)[:20 * RATE * CHANNELS],
                          samples(a)[:20 * RATE * CHANNELS])
 
+    def test_full_scale_source_keeps_a_bit_identical_head(self):
+        from music_studio.longform import stitch_wavs
+        a = tone_wav(25, amplitude=1.0)
+        b = with_silence(a, 40)
+        data, report = stitch_wavs(a, b, splice_start=20.0, overlap_seconds=5.0,
+                                   expected_duration=65.0)
+        self.assertTrue(report['head_bit_identical'])
+        self.assertEqual(samples(data)[:20 * RATE * CHANNELS],
+                         samples(a)[:20 * RATE * CHANNELS])
+        self.assertLess(report['peak'], 1.0)
+
     def test_stitch_refuses_non_48k_and_a_bad_plan(self):
         from music_studio.longform import stitch_wavs
         a = cached_tone(25)

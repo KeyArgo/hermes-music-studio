@@ -23,7 +23,7 @@ PEAKS_DEFAULT_BUCKETS = 512
 
 # Bytes per sample for the PCM widths wave can hand us. 24-bit has no array
 # type; it is decoded manually rather than refused (rare, but valid WAV).
-_WIDTHS = {1: 'b', 2: 'h', 4: 'i'}
+_WIDTHS = {1: 'B', 2: 'h', 4: 'i'}
 CACHE_VERSION = 1
 MAX_CACHED_BUCKET_COUNTS = 16
 
@@ -97,6 +97,7 @@ def _read_cache(path, size, mtime_ns):
         if not stat_module.S_ISREG(os.fstat(fd).st_mode):
             return None
         with os.fdopen(fd, 'rb') as handle:
+            fd = None
             data = json.load(handle)
         if not isinstance(data, dict) or data.get('version') != CACHE_VERSION:
             return None
@@ -108,6 +109,9 @@ def _read_cache(path, size, mtime_ns):
         return data
     except (OSError, ValueError, TypeError):
         return None
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _write_cache(path, take_id, size, mtime_ns, duration, values):

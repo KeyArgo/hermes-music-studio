@@ -1,6 +1,7 @@
 """Waveform peaks: server-side streaming, sidecar cache, range and symlink safety."""
 import io
 import os
+import stat
 import struct
 import sys
 import tempfile
@@ -45,6 +46,53 @@ def silent_wav(seconds=5.0, rate=RATE):
         wav.setparams((CHANNELS, 2, rate, 0, 'NONE', 'not compressed'))
         wav.writeframes(b'\x00\x00\x00\x00' * int(round(seconds * rate)))
     return buf.getvalue()
+
+
+def pcm8_wav(values, rate=RATE, channels=1):
+    """A WAV whose sample bytes are given verbatim (8-bit PCM is unsigned)."""
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wav:
+        wav.setparams((channels, 1, rate, 0, 'NONE', 'not compressed'))
+        wav.writeframes(bytes(values))
+    return buf.getvalue()
+
+
+class EightBitPeaksTests(unittest.TestCase):
+    def test_eight_bit_silence_decodes_as_zero(self):
+        from music_studio.peaks import compute_peaks
+        data = pcm8_wav([0x80] * 128)
+        _, peaks = compute_peaks(io.BytesIO(data), 64)
+        for bucket in peaks:
+            self.assertEqual(bucket, {'min': 0.0, 'max': 0.0, 'rms': 0.0})
+
+    def test_eight_bit_full_scale_pair_decodes_as_plus_and_minus_full_scale(self):
+        from music_studio.peaks import compute_peaks
+        data = pcm8_wav([0x00, 0xFF] * 64)
+        _, peaks = compute_peaks(io.BytesIO(data), 64)
+        for bucket in peaks:
+            self.assertAlmostEqual(bucket['min'], -1.0, places=6)
+            self.assertAlmostEqual(bucket['max'], 127 / 128.0, places=6)
+
+
+class CacheDescriptorTests(unittest.TestCase):
+    def test_non_regular_sidecar_closes_its_descriptor(self):
+        from music_studio import peaks
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'take.peaks.json'
+            path.write_bytes(b'{}')
+            fd = os.open(path, os.O_RDONLY)
+            fake = type('FakeStat', (), {'st_mode': stat.S_IFIFO})()
+            try:
+                with patch('music_studio.peaks.open_nofollow', return_value=fd), \
+                        patch('music_studio.peaks.os.fstat', return_value=fake):
+                    self.assertIsNone(peaks._read_cache(path, 1, 1))
+                with self.assertRaises(OSError):
+                    os.fstat(fd)
+            finally:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
 
 class PeaksTests(unittest.TestCase):
