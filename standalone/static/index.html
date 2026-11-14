@@ -136,6 +136,13 @@
 <button class="button secondary" type="submit">Save draft</button>
 <button class="button secondary" id="approve" type="button" disabled>Approve draft</button>
 <button class="button secondary" id="preview-chorus" type="button" disabled>▶ &nbsp; Hear the chorus</button>
+<label class="takes-choice" for="render-takes">Takes
+<select id="render-takes" aria-label="How many takes to render">
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+</select></label>
 <button class="button primary" id="render" type="button" disabled>✦ &nbsp; Build the full song</button>
 </div>
 <p id="form-message" class="message" role="status" aria-live="polite"></p>

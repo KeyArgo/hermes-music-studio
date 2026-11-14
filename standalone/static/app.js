@@ -50,6 +50,7 @@ function buttons() {
   // A chorus preview needs the draft saved, not approved: it renders four lines, and the person
   // hearing it is the approval the full render still waits for.
   if ($('preview-chorus')) $('preview-chorus').disabled = busy || !current || dirty || !ready;
+  if ($('render-takes')) $('render-takes').disabled = busy;
   $('draft-state').textContent = !current ? 'New idea' : dirty ? 'Unsaved changes' : current.approved ? 'Approved' : 'Draft saved';
 }
 function fields() {
@@ -1056,7 +1057,30 @@ $('preview-chorus').addEventListener('click', async () => {
   finally { busy = false; buttons(); }
 });
 
-$('render').addEventListener('click', async () => { if(busy || !current || dirty || !current.approved) return; busy=true; buttons(); try { const seed = crypto.getRandomValues(new Uint32Array(1))[0]; await api('/generate',{project_id:current.project_id,engine_id:form.elements.engine.value,seed}); message('Take queued. Follow its progress in your library.'); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
+// How many takes one render makes. One is the plain generate path; more asks the
+// serial batch route for the same engine, and the existing queue display labels each take.
+const takesField = $('render-takes');
+const renderTakes = () => Math.max(1, Math.min(4, Number(takesField && takesField.value) || 1));
+if (takesField) {
+  try { const saved = Number(localStorage.getItem('studio.takes')); if (saved >= 1 && saved <= 4) takesField.value = String(saved); } catch (e) {}
+  takesField.addEventListener('change', () => { try { localStorage.setItem('studio.takes', takesField.value); } catch (e) {} });
+}
+$('render').addEventListener('click', async () => {
+  if (busy || !current || dirty || !current.approved) return;
+  busy = true; buttons();
+  try {
+    const count = renderTakes(), engine_id = form.elements.engine.value;
+    if (count > 1) {
+      await api('/batch', {project_id:current.project_id, count, engine_id});
+      message(`Rendering ${count} takes, one after another. Follow their progress in your library.`);
+    } else {
+      const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+      await api('/generate', {project_id:current.project_id, engine_id, seed});
+      message('Take queued. Follow its progress in your library.');
+    }
+    await refresh();
+  } catch (err) { message(err.message, true); } finally { busy = false; buttons(); }
+});
 $('new-song').addEventListener('click', () => { if (dirty && !window.confirm('Discard unsaved changes?')) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); message('New draft.'); show('create'); });
 for (const [id, event] of [['library-search','input'], ['library-sort','change']]) {
   const node = $(id); if (node) node.addEventListener(event, () => {

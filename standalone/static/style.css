@@ -162,3 +162,7 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .doctor-row{border-top:1px solid var(--line);padding:10px 0}
 .doctor-row p{margin:0}
 .doctor-row .doctor-fix{margin:4px 0 0;color:var(--muted)}
+
+/* Takes: one compact number beside the render button, remembered between visits. */
+.takes-choice{display:flex;align-items:center;gap:8px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.takes-choice select{width:auto;padding:9px 10px;background:#2a2d26;border-color:#4a4e42;color:var(--ink)}
