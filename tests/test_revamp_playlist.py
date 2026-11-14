@@ -231,3 +231,37 @@ def test_a_folder_outside_every_library_folder_is_added(fake):
     assert posted, 'an outside folder has to be added so REVamp can index it'
     kept = {row['path'] for row in fake.folders}
     assert str(Path('/srv/music/studio')) in {str(Path(p)) for p in kept} and '/home/alex/Music' in kept
+
+
+def test_the_client_is_found_inside_the_installed_plugin(monkeypatch, tmp_path):
+    """A Windows install has no PATH entry and no ~/.local/bin.
+
+    The client ships in the REVamp plugin's own bin/ directory, so that is the
+    place to look after PATH; without it the handoff is a permanent 503 while
+    REVamp is installed and running.
+    """
+    home = tmp_path / 'hermes'
+    bin_dir = home / 'plugins' / 'revamp' / 'bin'
+    bin_dir.mkdir(parents=True)
+    client = bin_dir / 'revampctl'
+    client.write_text('def call(*a, **k):\n    return {}\n', encoding='utf-8')
+
+    monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    monkeypatch.setattr(revamp.shutil, 'which', lambda name: None)
+    assert revamp._client_path() == str(client)
+
+
+def test_the_explicit_override_wins(monkeypatch, tmp_path):
+    client = tmp_path / 'revampctl'
+    client.write_text('def call(*a, **k):\n    return {}\n', encoding='utf-8')
+    monkeypatch.setenv('HERMES_MUSIC_REVAMPCTL', str(client))
+    assert revamp._client_path() == str(client)
+
+
+def test_no_client_anywhere_is_none(monkeypatch, tmp_path):
+    monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path / 'empty'))
+    monkeypatch.setattr(revamp.shutil, 'which', lambda name: None)
+    monkeypatch.setattr(revamp, '_hermes_homes', lambda: [tmp_path / 'empty'])
+    assert revamp._client_path() is None

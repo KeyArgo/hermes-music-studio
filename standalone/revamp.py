@@ -20,10 +20,59 @@ STUDIO_PLAYLIST = 'Music Studio'
 TRACK_ID = re.compile(r'^[0-9a-f]{16}$')
 PLAYLIST_ID = re.compile(r'^[a-zA-Z0-9_-]{1,128}$')
 
+REVAMPCTL_NAME = 'revampctl'
+# The client is a Python script, not an executable: on Windows it has no
+# extension and never lands on PATH, so shutil.which('revampctl') misses it.
+REVAMPCTL_VARIANTS = ('', '.exe', '.cmd', '.bat', '.py')
+
+
+def _hermes_homes():
+    """Every plausible Hermes home, newest conventions first."""
+    seen = []
+    for value in (os.environ.get('HERMES_HOME'),
+                  str(Path.home() / '.hermes'),
+                  os.environ.get('LOCALAPPDATA') and
+                  str(Path(os.environ['LOCALAPPDATA']) / 'hermes'),
+                  os.environ.get('XDG_DATA_HOME') and
+                  str(Path(os.environ['XDG_DATA_HOME']) / 'hermes')):
+        if value and value not in seen:
+            seen.append(value)
+    return [Path(v) for v in seen]
+
+
+def _client_path():
+    """Locate REVamp's installed ``revampctl`` client, or None.
+
+    Order: an explicit override, then PATH, then the two places the client is
+    actually installed — ``~/.local/bin`` on a POSIX host and the REVamp plugin's
+    own ``bin/`` inside the Hermes home, which is where a Windows install puts it.
+    """
+    override = os.environ.get('HERMES_MUSIC_REVAMPCTL')
+    if override and Path(override).is_file():
+        return override
+
+    for name in REVAMPCTL_VARIANTS:
+        found = shutil.which(REVAMPCTL_NAME + name)
+        if found:
+            return found
+
+    roots = [Path.home() / '.local' / 'bin']
+    for home in _hermes_homes():
+        roots.append(home / 'plugins' / 'revamp' / 'bin')
+        roots.append(home / 'profiles' / 'default' / 'plugins' / 'revamp' / 'bin')
+    for root in roots:
+        for name in REVAMPCTL_VARIANTS:
+            candidate = root / (REVAMPCTL_NAME + name)
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def _call(method, path, body=None):
-    executable = os.environ.get('HERMES_MUSIC_REVAMPCTL') or shutil.which('revampctl')
+    executable = _client_path()
     if not executable:
-        executable = str(Path.home() / '.local' / 'bin' / 'revampctl')
+        raise HTTPException(503, 'REVAMP is not installed: add its revampctl client or set '
+                                 'HERMES_MUSIC_REVAMPCTL.')
     try:
         # The installed REVamp client handles its own local authentication.
         client = runpy.run_path(executable)
