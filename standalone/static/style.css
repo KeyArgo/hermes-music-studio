@@ -167,3 +167,11 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 /* Takes: one compact number beside the render button, remembered between visits. */
 .takes-choice{display:flex;align-items:center;gap:8px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
 .takes-choice select{width:auto;padding:9px 10px;background:#2a2d26;border-color:#4a4e42;color:var(--ink)}
+
+/* A confirmation that works in the desktop pane: window.confirm is a silent "no" in its frame. */
+.confirm-overlay{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:22px;background:#0b090ccc}
+.confirm-dialog{width:min(430px,100%);display:grid;gap:18px;padding:22px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 70px #000a}
+.confirm-message{margin:0;font-size:14px;line-height:1.55}
+.confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.confirm-actions .button{padding:10px 15px}
+.button.danger{background:#e08b7a;border-color:#e08b7a;color:#241614}

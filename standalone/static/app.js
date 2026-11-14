@@ -36,6 +36,48 @@ async function api(path, data, method) {
   if (!res.ok || value.success === false) throw new Error(value.detail || value.error || 'Request failed');
   return value;
 }
+// The desktop pane frames this page without allow-modals, so window.confirm() silently says no
+// there. One in-page dialog keeps every guarded action working in the pane and in a browser tab.
+function askConfirm(message, options = {}) {
+  const confirmLabel = options.confirmLabel || 'Confirm', danger = options.danger === true;
+  return new Promise(resolve => {
+    const prior = document.activeElement;
+    const overlay = el('div', '', 'confirm-overlay');
+    const dialog = el('div', '', 'confirm-dialog' + (danger ? ' confirm-danger' : ''));
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const text = el('p', String(message), 'confirm-message');
+    const actions = el('div', '', 'confirm-actions');
+    const cancel = el('button', 'Cancel', 'button secondary confirm-cancel');
+    cancel.type = 'button';
+    const confirm = el('button', confirmLabel, 'button confirm-confirm' + (danger ? ' danger' : ' primary'));
+    confirm.type = 'button';
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      if (prior && prior.isConnected && typeof prior.focus === 'function') {
+        try { prior.focus(); } catch (err) { /* the old focus target is gone; nothing to restore */ }
+      }
+      resolve(value);
+    };
+    function onKey(event) {
+      // Enter is left to the focused button (Cancel by default), so a stray Enter never deletes.
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(false); }
+    }
+    cancel.addEventListener('click', () => finish(false));
+    confirm.addEventListener('click', () => finish(true));
+    overlay.addEventListener('click', event => { if (event.target === overlay) finish(false); });
+    actions.append(cancel, confirm);
+    dialog.append(text, actions);
+    overlay.append(dialog);
+    document.body.append(overlay);
+    document.addEventListener('keydown', onKey, true);
+    cancel.focus();
+  });
+}
 function buttons() {
   form.querySelector('[type=submit]').disabled = busy;
   $('new-song').disabled = busy;
@@ -141,8 +183,8 @@ async function deletePreset() {
     message(`Deleted preset “${found.name || key}”.`);
   } catch (err) { message(err.message, true); }
 }
-function loadProject(p) {
-  if (dirty && !window.confirm('Discard unsaved changes?')) return;
+async function loadProject(p) {
+  if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return;
   current = p;
   for (const key of ['title','caption','lyrics','duration_seconds','engine']) form.elements[key].value = p[key] ?? (key === 'duration_seconds' ? 30 : '');
   if (p.engine === 'ace') form.elements.engine.value = 'ace_local';
@@ -614,7 +656,32 @@ function demoButton() {
   button.addEventListener('click', playDemo);
   return button;
 }
+let libraryRefreshPending = false;
+// The poll rebuilds the library from /status, but a rebuild would throw away an inline Rename,
+// change-words box, snippet/extend form or open More menu — and the text typed into it.
+function libraryHasOpenEditor() {
+  const container = $('library');
+  if (!container) return false;
+  if (container.contains(document.activeElement)) return true;
+  if (container.querySelector('.rename-input, .snippet-form, .extend-form, details.take-more[open]')) return true;
+  return [...container.querySelectorAll('.project-change')].some(node => !node.hidden);
+}
+function renderLibrary() {
+  if (libraryHasOpenEditor()) { libraryRefreshPending = true; return; }
+  libraryRefreshPending = false;
+  library();
+}
+function refreshLibraryWhenIdle() {
+  if (!libraryRefreshPending || libraryHasOpenEditor()) return;
+  libraryRefreshPending = false;
+  library();
+}
+// Focus and menu changes close an editor after the event, so look again once it has settled.
+for (const type of ['focusout', 'click', 'keyup']) {
+  document.addEventListener(type, () => setTimeout(refreshLibraryWhenIdle, 0));
+}
 function library() {
+  libraryRefreshPending = false;
   const container = $('library'); container.replaceChildren();
   if (!projects.length) {
     const empty = el('div','','library-empty');
@@ -679,7 +746,7 @@ function library() {
       });
     });
     const del = el('button','Delete','button secondary'); del.type='button'; del.addEventListener('click', async () => {
-      if (!confirm(`Delete \u201c${p.title || 'Untitled'}\u201d and all of its audio? This cannot be undone.`)) return;
+      if (!(await askConfirm(`Delete \u201c${p.title || 'Untitled'}\u201d and all of its audio? This cannot be undone.`, {confirmLabel:'Delete', danger:true}))) return;
       del.disabled = true;
       try { await api('/delete',{project_id:p.project_id}); libMessage('Deleted.'); await refresh(); library(); }
       catch(err){ libMessage(err.message, true); } finally { del.disabled = false; }
@@ -834,7 +901,7 @@ function library() {
         splice.addEventListener('click', async () => { try { await api('/section/splice',{project_id:p.project_id,take_id:t.section_of.take_id,candidate_take_id:t.take_id}); libMessage('Spliced: a new take of the whole song, with only that part replaced.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } });
         row.append(splice);
       }
-      const killTake = el('button','Delete take','button secondary'); killTake.type='button'; killTake.addEventListener('click', async () => { if(!confirm(`Delete take ${i+1} and its audio?`)) return; try { await api('/take/delete',{project_id:p.project_id,take_id:t.take_id}); libMessage('Take deleted.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } }); row.append(killTake);
+      const killTake = el('button','Delete take','button secondary'); killTake.type='button'; killTake.addEventListener('click', async () => { if(!(await askConfirm(`Delete take ${i+1} and its audio?`, {confirmLabel:'Delete', danger:true}))) return; try { await api('/take/delete',{project_id:p.project_id,take_id:t.take_id}); libMessage('Take deleted.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } }); row.append(killTake);
       if (t.state === 'succeeded') { const button = el('button','▶ Play'); button.type='button'; button.addEventListener('click',() => play(STUDIO.api+`/projects/${encodeURIComponent(p.project_id)}/takes/${encodeURIComponent(t.take_id)}/audio`,p.title || 'Untitled',`Take ${i+1}`,t.playable_edit_id)); row.append(button);
       const exp=el('button','Export','button secondary');exp.type='button';
       exp.addEventListener('click', async()=>{try{const folder=(($('settings-export-dir')||{}).value||'').trim();const d=await api('/export',{project_id:p.project_id,take_id:t.take_id,title:p.title||'Music Studio take',folder:folder||undefined});libMessage(`Exported to ${d.path}`);}catch(err){libMessage(err.message,true);}});
@@ -1012,7 +1079,7 @@ async function refresh() {
     engines = data.engines || []; projects = data.projects || [];
     const ready = engines.filter(e => e.available).length;
     $('engine-status').textContent = ready ? `${ready} engine${ready===1?'':'s'} ready` : 'No engine ready';
-    engineHint(); buttons(); library();
+    engineHint(); buttons(); renderLibrary();
     const live = projects.some(p => (p.takes || []).some(t => t.state === 'running' || t.state === 'queued'));
     const running = projects.some(p => (p.takes || []).some(t => t.state === 'running'));
     if (running) await loadHardware();
@@ -1100,7 +1167,7 @@ $('render').addEventListener('click', async () => {
     await refresh();
   } catch (err) { message(err.message, true); } finally { busy = false; buttons(); }
 });
-$('new-song').addEventListener('click', () => { if (dirty && !window.confirm('Discard unsaved changes?')) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); message('New draft.'); show('create'); });
+$('new-song').addEventListener('click', async () => { if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); message('New draft.'); show('create'); });
 for (const [id, event] of [['library-search','input'], ['library-sort','change']]) {
   const node = $(id); if (node) node.addEventListener(event, () => {
     if (id === 'library-sort') { try { localStorage.setItem('studio.librarySort', node.value); } catch (e) {} }
@@ -1196,7 +1263,7 @@ async function probeTarget(t, button, result) {
   } finally { button.disabled = false; }
 }
 async function deleteTarget(t) {
-  if (!window.confirm(`Delete target "${t.name}"? Drafts using it must choose another endpoint.`)) return;
+  if (!(await askConfirm(`Delete target "${t.name}"? Drafts using it must choose another endpoint.`, {confirmLabel:'Delete', danger:true}))) return;
   try {
     await api('/studio/targets/' + encodeURIComponent(t.id), undefined, 'DELETE');
     delete targetProbes[t.id];
@@ -1259,7 +1326,10 @@ $('metadata-toggle').onclick=()=>{const box=$('metadata-fields');box.hidden=!box
 $('idea-style').oninput=()=>{$('idea-style-value').value=$('idea-style').value;};
 async function loadModels() {
   try { const d=await api('/studio/models'); modelCatalog=Array.isArray(d.providers)?d.providers:[]; const select=$('idea-provider');select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);modelCatalog.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});
-    if(!modelCatalog.length)throw new Error('No configured models returned.'); if(modelCatalog.some(p=>p.slug===d.provider))select.value=d.provider; $('idea-connection').textContent='Choose a configured Hermes model.';fillModels(d.model);
+    // The host is not allowed to enumerate the owner's providers; an empty list is normal and
+    // drafting goes through the Hermes agent, so it is not a connection failure.
+    if(!modelCatalog.length){$('idea-connection').textContent='Drafting goes through Hermes; write an idea and press Discuss idea or Fill my draft.';fillModels();return;}
+    if(modelCatalog.some(p=>p.slug===d.provider))select.value=d.provider; $('idea-connection').textContent='Choose a configured Hermes model.';fillModels(d.model);
   } catch(e) { $('idea-connection').textContent='Hermes model connection unavailable. Check the Hermes installation and setup guide.'; }
 }
 function fillModels(preferred){const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
@@ -1295,23 +1365,39 @@ function paneDraft(request) {
   });
 }
 
+function applySuggestedDraft(draft) {
+  const source = draft || {};
+  for(const key of ['title','caption','lyrics','bpm','keyscale','duration_seconds']) if(source[key]!==undefined && form.elements[key])form.elements[key].value=source[key];
+  if(typeof source.instrumental==='boolean')form.elements.instrumental.checked=source.instrumental;
+  dirty=true;revision++;buttons();
+}
+
 async function idea(action) {
   const input=$('idea-input').value.trim(); if(input){conversation.push({role:'user',content:input});addIdea('user',input);$('idea-input').value='';}
   if(!conversation.some(m=>m.role==='user')){$('idea-connection').textContent='Tell me a little about the song first.';return;}
   const provider=$('idea-provider-manual').value.trim() || $('idea-provider').value, model=$('idea-model-manual').value.trim() || $('idea-model').value;
   $('idea-send').disabled=true;$('idea-apply').disabled=true;$('idea-connection').textContent='Thinking…';
   const tone=$('idea-tone').value.toLowerCase(), style=Number($('idea-style').value);
+  let replyNote = '';
   try {const d = provider && model
       ? await api('/studio/ideas',{provider,model,messages:conversation.slice(-20),action,tone,style})
       : await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n')});
-    if(action==='chat'){conversation.push({role:'assistant',content:d.content.slice(0,4000)});addIdea('assistant',d.content);}
-    else {if((form.elements.caption.value || form.elements.lyrics.value) && !window.confirm('Replace the current draft fields with the suggested draft?'))return;
-      const draft=d.draft || {};for(const key of ['title','caption','lyrics','bpm','keyscale','duration_seconds']) if(draft[key]!==undefined && form.elements[key])form.elements[key].value=draft[key];
-      if(typeof draft.instrumental==='boolean')form.elements.instrumental.checked=draft.instrumental;
-      dirty=true;revision++;buttons();message('Suggested draft added. Review and save it.');show('create');}
-    $('idea-connection').textContent = provider && model
+    if(action==='chat' && typeof d.content === 'string'){
+      conversation.push({role:'assistant',content:d.content.slice(0,4000)});addIdea('assistant',d.content);
+    } else if(action==='chat'){
+      // The pane's /studio/draft route returns only a draft, with no chat text. Fill the form
+      // from it and say so instead of throwing on the missing `content`.
+      applySuggestedDraft(d.draft);
+      replyNote = 'The Hermes agent returned a draft, not a chat reply; it is in your draft fields. Review and save it.';
+      addIdea('assistant', replyNote); message(replyNote); show('create');
+    } else {
+      if((form.elements.caption.value || form.elements.lyrics.value) && !(await askConfirm('Replace the current draft fields with the suggested draft?', {confirmLabel:'Replace'})))return;
+      applySuggestedDraft(d.draft);
+      message('Suggested draft added. Review and save it.');show('create');
+    }
+    $('idea-connection').textContent = replyNote || (provider && model
       ? 'Using ' + provider + ' / ' + model + '.'
-      : 'Drafted by the Hermes agent (its own model).';
+      : 'Drafted by the Hermes agent (its own model).');
   } catch(e) {$('idea-connection').textContent=e.message;}
   finally {$('idea-send').disabled=false;$('idea-apply').disabled=false;}
 }
@@ -1324,7 +1410,9 @@ async function fillRevampPlaylists() {
   const keep = select.value;
   try {
     const data = await api('/studio/revamp/playlists');
-    const rows = data.playlists || [];
+    // The route wraps REVamp's own reply, so the rows are data.playlists.playlists.
+    const raw = data.playlists;
+    const rows = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.playlists) ? raw.playlists : []);
     select.replaceChildren();
     const mine = el('option', 'Music Studio');
     mine.value = '';
@@ -1542,7 +1630,7 @@ async function findRenderers() {
 async function relocateLibrary(mode) {
   const path = $('library-target').value.trim();
   if (!path) { $('library-message').textContent = 'Enter a folder first.'; return; }
-  if (mode === 'move' && !confirm(`Move the library to ${path}? The old copies are deleted after the switch.`)) return;
+  if (mode === 'move' && !(await askConfirm(`Move the library to ${path}? The old copies are deleted after the switch.`, {confirmLabel:'Move', danger:true}))) return;
   try {
     const data = await api('/library/relocate', { path, mode });
     renderLibraryPath(data.library);
@@ -1552,7 +1640,7 @@ async function relocateLibrary(mode) {
 }
 async function resetLibrary() {
   try {
-    const data = await api('/library/reset');
+    const data = await api('/library/reset', {});
     renderLibraryPath(data.library);
     $('library-message').textContent = 'Using the default folder again.';
     await refresh(); library();
@@ -1771,7 +1859,7 @@ $('open-contribute').addEventListener('click', () => openLink(aboutCache && abou
 $('open-issue').addEventListener('click', () => openLink(aboutCache && aboutCache.paths && aboutCache.paths.issues));
 $('copy-diagnostics').addEventListener('click', async () => {
   try {
-    const data = await api('/about/diagnostics');
+    const data = await api('/about/diagnostics', {});
     const box = $('diagnostics-out');
     box.hidden = false;
     box.firstElementChild.textContent = data.text;
@@ -1781,8 +1869,8 @@ $('copy-diagnostics').addEventListener('click', async () => {
 });
 loadAbout().catch(err => aboutMessage(err.message, true));
 
-function closeStudio() {
-  if (!window.confirm('Close Music Studio? The window stops and the studio host shuts down. Your library and drafts stay on disk.')) return;
+async function closeStudio() {
+  if (!(await askConfirm('Close Music Studio? The window stops and the studio host shuts down. Your library and drafts stay on disk.', {confirmLabel:'Close studio', danger:true}))) return;
   const done = () => {
     document.body.replaceChildren();
     const screen = document.createElement('main');
@@ -2015,7 +2103,7 @@ if ($('version-panel')) {
   refreshVersion();
   if ($('version-check')) $('version-check').addEventListener('click', refreshVersion);
   if ($('version-update')) $('version-update').addEventListener('click', async () => {
-    if (!window.confirm('Install the newest published build now? The studio restarts when it finishes.')) return;
+    if (!(await askConfirm('Install the newest published build now? The studio restarts when it finishes.', {confirmLabel:'Install'}))) return;
     try {
       await api('/update/apply', {});
       await setupMessage('Update started.');
@@ -2025,7 +2113,7 @@ if ($('version-panel')) {
     }
   });
   if ($('version-undo')) $('version-undo').addEventListener('click', async () => {
-    if (!window.confirm('Go back to the build that was installed before the last update?')) return;
+    if (!(await askConfirm('Go back to the build that was installed before the last update?', {confirmLabel:'Undo update'}))) return;
     try {
       await api('/update/undo', {});
       await setupMessage('Rolling back.');
