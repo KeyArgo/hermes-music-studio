@@ -105,21 +105,25 @@ def stitch_wavs(a_bytes, b_bytes, *, splice_start, overlap_seconds,
             blended[frame * CHANNELS + channel] = max(-32768, min(32767, int(round(value))))
 
     head = a[:left]
-    tail = b[left + window:]
+    new = array.array('h', blended)
+    new.extend(b[left + window:])
+
+    # The head is the caller's untouched take, so never attenuate it: only the
+    # material this stitch adds may be limited. A loud source therefore keeps a
+    # bit-identical head even when the new part needs the ceiling gain.
+    new_peak = max(max(new), -min(new)) / 32768.0 if new else 0.0
+    gain = 1.0
+    if new_peak > peak_ceiling:
+        gain = peak_ceiling / new_peak
+        for index, sample in enumerate(new):
+            new[index] = max(-32768, min(32767, int(round(sample * gain))))
     out = array.array('h', head)
-    out.extend(blended)
-    out.extend(tail)
+    out.extend(new)
 
     maximum = max(out)
     minimum = min(out)
     peak_raw = maximum if maximum >= -minimum else -minimum
     peak = peak_raw / 32768.0
-    gain = 1.0
-    if peak > peak_ceiling:
-        gain = peak_ceiling / peak
-        for index, sample in enumerate(out):
-            out[index] = max(-32768, min(32767, int(round(sample * gain))))
-        peak = peak_ceiling
     clipped = out.count(32767) + out.count(-32768)
     duration = len(out) / CHANNELS / SAMPLE_RATE
     if expected_duration is not None:

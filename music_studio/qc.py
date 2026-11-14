@@ -43,7 +43,7 @@ SILENCE_FLOOR_DBFS = -120.0
 VOCAL_STATES = ('confirmed', 'not_confirmed', 'unknown')
 VOCAL_CONFIRM_RATIO = 0.3
 
-_WIDTHS = {1: 'b', 2: 'h', 4: 'i'}
+_WIDTHS = {1: 'B', 2: 'h', 4: 'i'}
 
 
 def _db(ratio):
@@ -180,6 +180,10 @@ def _write_wav(samples, params):
             wav.writeframes(b''.join(
                 int(max(-(1 << 23), min((1 << 23) - 1, value))).to_bytes(
                     3, 'little', signed=True) for value in samples))
+        elif params.sampwidth == 1:
+            # 8-bit WAV is unsigned offset-binary; our samples are signed.
+            wav.writeframes(bytes(max(0, min(255, value + 128))
+                                  for value in samples))
         else:
             wav.writeframes(struct.pack('<' + _WIDTHS[params.sampwidth] * len(samples),
                                         *samples))

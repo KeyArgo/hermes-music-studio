@@ -54,6 +54,15 @@ def wav_bytes(samples, rate=RATE, channels=1, width=2):
     return buf.getvalue()
 
 
+def pcm8_wav(values, rate=RATE, channels=1):
+    """A WAV whose sample bytes are given verbatim (8-bit PCM is unsigned)."""
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wav:
+        wav.setparams((channels, 1, rate, 0, 'NONE', 'not compressed'))
+        wav.writeframes(bytes(values))
+    return buf.getvalue()
+
+
 def sine_then_silence(music_s, total_s, amplitude=0.5, frequency=220.0, rate=RATE):
     """A tone for ``music_s`` seconds followed by digital silence."""
     music = int(round(music_s * rate))
@@ -190,6 +199,26 @@ class RenderTests(unittest.TestCase):
         plan = qc.plan_edit(qc.analyse_wav(data))
         qc.render_edit(data, plan)
         self.assertEqual(data, before)
+
+
+class EightBitPcmTests(unittest.TestCase):
+    def test_eight_bit_silence_is_measured_as_silence(self):
+        report = qc.analyse_wav(pcm8_wav([0x80] * RATE))
+        self.assertEqual(report['peak_dbfs'], qc.SILENCE_FLOOR_DBFS)
+        self.assertEqual(report['musical_end_s'], 0.0)
+        self.assertEqual(report['clipped_frames'], 0)
+
+    def test_eight_bit_full_scale_pair_reads_as_plus_and_minus_full_scale(self):
+        report = qc.analyse_wav(pcm8_wav([0x00, 0xFF] * (RATE // 2)))
+        self.assertAlmostEqual(report['peak_dbfs'], 0.0, delta=0.01)
+        self.assertEqual(report['clipped_frames'], RATE)
+
+    def test_eight_bit_samples_survive_the_edit_writer_unchanged(self):
+        raw = bytes([0x80, 0x00, 0xFF, 0x7F] * (RATE // 4))
+        edited = qc.render_edit(pcm8_wav(raw), {})
+        with wave.open(io.BytesIO(edited), 'rb') as wav:
+            self.assertEqual(wav.getsampwidth(), 1)
+            self.assertEqual(wav.readframes(wav.getnframes()), raw)
 
 
 class VocalEvidenceTests(unittest.TestCase):
