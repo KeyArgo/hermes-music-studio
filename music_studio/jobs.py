@@ -117,7 +117,7 @@ def _stat_state(pid):
         return raw.rsplit(b')', 1)[1].split()[0]
     except FileNotFoundError:
         # Linux always has /proc, so a missing stat file means the process is gone.
-        if os.name == 'nt' or sys.platform.startswith('linux'):
+        if sys.platform == 'win32' or sys.platform.startswith('linux'):
             return None
     except (OSError, IndexError, ValueError):
         return None
