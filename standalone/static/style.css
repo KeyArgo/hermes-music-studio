@@ -140,3 +140,13 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .take-badge.good{color:#b6d978;border-color:#60724a}
 .take-badge.warn{color:#e8a33d;border-color:#7a5c33}
 .take-badge.bad{color:#f0ac9b;border-color:#7a4a44}
+
+/* Presets: one compact picker on the draft, with the name asked for in place. */
+.preset-bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; }
+.preset-pick { flex: 1 1 200px; min-width: 0; margin: 0; }
+.preset-bar .sample { flex: 0 0 auto; padding: 10px 14px; font-size: 11px; }
+.preset-bar .link-button { align-self: center; }
+.preset-save-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 16px; }
+.preset-save-row input { flex: 1 1 220px; min-width: 140px; padding: 9px 10px; }
+.preset-save-row .button { padding: 9px 14px; }
+.preset-save-row .link-button { align-self: center; }
