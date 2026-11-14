@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml/badge.svg?branch=main"></a>
-  <a href="TESTING.md"><img alt="Tests" src="https://img.shields.io/badge/tests-709%20passing-2ea44f?style=flat-square"></a>
+  <a href="TESTING.md"><img alt="Tests" src="https://img.shields.io/badge/tests-713%20passing-2ea44f?style=flat-square"></a>
   <a href="https://github.com/NousResearch/hermes-agent/pull/154029"><img alt="Hermes plugin catalog: in review" src="https://img.shields.io/badge/plugin%20catalog-in%20review-f59e0b?style=flat-square"></a>
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/license-MIT-2f6bff?style=flat-square"></a>
   <a href="https://github.com/NousResearch/hermes-agent"><img alt="Hermes Agent" src="https://img.shields.io/badge/Hermes%20Agent-plugin-7c3aed?style=flat-square"></a>
@@ -260,8 +260,8 @@ node --test tests/*.mjs
 | Suite | Command | Measured result |
 |---|---|---|
 | Python | `env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q` | **632 passed, 1 skipped, 130 subtests passed** |
-| Browser-side | `node --test tests/*.mjs` | **77 passed** |
-| Total | both suites | **709 passed, 1 skipped** |
+| Browser-side | `node --test tests/*.mjs` | **81 passed** |
+| Total | both suites | **713 passed, 1 skipped** |
 
 `env -u PYTHONPATH` matters: a Hermes checkout on the path ships its own `tests` package, which wins
 over this repo's folder and makes collection fail. The full breakdown, CI commands and the exact

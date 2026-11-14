@@ -16,7 +16,7 @@ env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q
 Measured on this commit:
 
 ```
-632 passed, 1 skipped, 1 warning, 130 subtests passed in 126.46s (0:02:06)
+632 passed, 1 skipped, 1 warning, 130 subtests passed in 115.15s (0:01:55)
 ```
 
 The one skip is recorded by the suite, not a collection error. No test performs a real render.
@@ -40,8 +40,8 @@ node --test tests/*.mjs
 Measured on this commit:
 
 ```
-tests 77
-pass 77
+tests 81
+pass 81
 fail 0
 ```
 
@@ -65,10 +65,10 @@ the runner does not already have it. CI runs both suites on Linux, macOS and Win
 | Suite | Passed | Skipped |
 |---|---|---|
 | Python | 632 | 1 |
-| Browser-side | 77 | 0 |
-| **Total** | **709** | **1** |
+| Browser-side | 81 | 0 |
+| **Total** | **713** | **1** |
 
-The README's test badge uses 709. If you add or remove a test, run both suites and update this table,
+The README's test badge uses 713. If you add or remove a test, run both suites and update this table,
 the README badge and the count in `VERIFY.md` in the same commit.
 
 ## Manual checks
