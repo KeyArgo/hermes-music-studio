@@ -872,3 +872,65 @@ test('an engine that cannot generate has no Change this part control', async t =
   assert.equal([...row.querySelectorAll('button')].some(b => text(b) === 'Change this part'), false,
     'neither repaint nor section render can run on that engine');
 });
+
+// ---------------------------------------------------------------- library: take evidence badges
+// A take row may carry QC from the take-check/ASR pass. Show only what was measured; an unknown
+// value shows nothing, so a badge on screen is always a real measurement.
+const EVIDENCE = {
+  success: true, engine_available: false, engines: [],
+  projects: [{ project_id: 'p1', title: 'Evidence song', caption: 'quiet', engine: 'ace',
+    approved: true, instrumental: false, takes: [
+      { take_id: 't1', state: 'succeeded', engine_id: 'ace_local', requested_seed: 1,
+        snapshot: { instrumental: false }, qc: { vocal_presence: 'confirmed',
+          vocal_evidence: { status: 'confirmed', source: 'asr', model: 'whisper-small',
+            run_id: 'run-1', words_recognised: 3, total: 3 } } },
+      { take_id: 't2', state: 'succeeded', engine_id: 'ace_local', requested_seed: 2,
+        snapshot: { instrumental: false }, qc: { vocal_presence: 'not_confirmed',
+          vocal_evidence: { status: 'not_confirmed', source: 'asr', model: 'whisper-small',
+            run_id: 'run-2', words_recognised: 1, total: 3 } } },
+      { take_id: 't3', state: 'succeeded', engine_id: 'ace_local', requested_seed: 3,
+        snapshot: { instrumental: false }, qc: { vocal_presence: 'not_confirmed',
+          vocal_evidence: { status: 'not_confirmed', source: 'asr', model: 'whisper-small',
+            run_id: 'run-3', words_recognised: 0, total: 2 } } },
+      { take_id: 't4', state: 'succeeded', engine_id: 'ace_local', requested_seed: 4,
+        snapshot: { instrumental: true }, qc: { vocal_presence: 'unknown',
+          vocal_evidence: { status: 'unknown', source: 'none' } } },
+      { take_id: 't5', state: 'succeeded', engine_id: 'ace_local', requested_seed: 5,
+        snapshot: { instrumental: false }, qc: null },
+      { take_id: 't6', state: 'failed', engine_id: 'ace_local', requested_seed: 6,
+        snapshot: { instrumental: false }, qc: { vocal_presence: 'confirmed',
+          vocal_evidence: { status: 'confirmed', source: 'asr', model: 'whisper-small',
+            run_id: 'run-6', words_recognised: 3, total: 3 } } },
+    ] }]
+};
+
+test('succeeded takes show the words and vocal evidence that was measured', async t => {
+  const { window } = await boot({ '/api/status': EVIDENCE });
+  t.after(() => window.close());
+  const doc = window.document;
+  const rows = [...doc.querySelectorAll('#library .take')];
+  const badges = row => [...row.querySelectorAll('.take-badge')];
+  assert.equal(rows.length, 6);
+
+  assert.deepEqual(badges(rows[0]).map(text), ['words 3/3', 'vocals ✓']);
+  assert.ok(badges(rows[0])[0].classList.contains('good'), 'all words is green');
+  assert.ok(badges(rows[0])[1].classList.contains('good'));
+  assert.match(badges(rows[0])[0].title, /recognised 3 of 3 words/);
+  assert.match(badges(rows[0])[1].title, /vocal is confirmed/);
+
+  assert.deepEqual(badges(rows[1]).map(text), ['words 1/3', 'no vocals heard']);
+  assert.ok(badges(rows[1])[0].classList.contains('warn'), 'some words is amber');
+  assert.match(badges(rows[1])[1].title, /below the vocal threshold/);
+
+  assert.deepEqual(badges(rows[2]).map(text), ['words 0/2', 'no vocals heard']);
+  assert.ok(badges(rows[2])[0].classList.contains('bad'), 'zero words is red');
+
+  assert.deepEqual(badges(rows[3]).map(text), ['instrumental']);
+  assert.match(badges(rows[3])[0].title, /instrumental/);
+
+  assert.deepEqual(badges(rows[4]), [], 'nothing measured means no badge');
+  assert.deepEqual(badges(rows[5]), [], 'a failed take has no evidence to show');
+  for (const row of rows) {
+    for (const badge of badges(row)) assert.ok(badge.title, 'every badge explains what was measured');
+  }
+});
