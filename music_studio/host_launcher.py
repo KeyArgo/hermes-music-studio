@@ -143,7 +143,7 @@ def _python() -> list[str]:
             # uvicorn but without fastapi would be selected and then die on start-up, and the
             # next candidate would never be tried.
             probe = subprocess.run([*command, '-c', 'import uvicorn, fastapi, starlette'],
-                                   capture_output=True, timeout=20, env=_clean_env())
+                                   capture_output=True, timeout=20, env=_probe_env())
         except (OSError, subprocess.SubprocessError):
             continue
         if probe.returncode == 0:
@@ -165,6 +165,12 @@ _INHERITED_LEAKS = ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'CONDA_PREFIX', '
 
 def _clean_env() -> dict:
     return {key: value for key, value in os.environ.items() if key not in _INHERITED_LEAKS}
+
+
+def _probe_env() -> dict:
+    """What the interpreter probe runs with: the host's own allowlist, minus the Python-path leaks."""
+    from .childenv import studio_env
+    return {key: value for key, value in studio_env().items() if key not in _INHERITED_LEAKS}
 
 
 def _port_free(port: int) -> bool:
@@ -308,7 +314,11 @@ def ensure_host(port: int | None = None) -> dict:
         if chosen is None:
             raise RuntimeError('no free loopback port for the studio host')
         token = _token_for(root, state, fresh=True)
-        env = {**_clean_env(),
+        # An allowlist, not a copy of the gateway's environment: the host has no use for provider keys
+        # (review item 4). Only the remote engine's own declared key is passed, read through the
+        # profile-scoped secret store in this process.
+        from .childenv import studio_env
+        env = {**studio_env(),
                'HEWN_STUDIO_DATA_DIR': str(root),
                # The framed page and the pane both need it; the host requires it on every /api route.
                'HEWN_STUDIO_TOKEN': token,
@@ -329,6 +339,13 @@ def ensure_host(port: int | None = None) -> dict:
                     env[var] = str(saved[key])
         except Exception:  # pragma: no cover - settings are optional for starting the host
             pass
+        try:
+            from .engines.ace_remote import _remote_key
+            remote_key = _remote_key()
+        except Exception:  # noqa: BLE001 - an unscoped or missing key just means no remote key
+            remote_key = None
+        if remote_key:
+            env['ACE_REMOTE_API_KEY'] = remote_key
         log = open(root / LOG_FILE, 'ab', buffering=0)
         try:
             log.write(f'--- starting studio host on 127.0.0.1:{chosen} ---\n'.encode('utf-8'))

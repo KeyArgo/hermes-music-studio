@@ -88,3 +88,36 @@ def minimal_env(extra: Mapping[str, str] | None = None,
     if extra:
         env.update({str(key): str(value) for key, value in extra.items()})
     return env
+
+
+# What the studio's own host process reads, on top of the minimal set (11-14 review pass: the launcher
+# handed the host the whole Hermes environment minus five Python-path variables, so every provider key
+# reached it — review item 4 through a door the review did not point at). Names, not families, so a new
+# variable has to be added here on purpose. Anything that looks like a credential is still dropped.
+STUDIO_KEEP = (
+    "COMFYUI_URL",
+    "HERMES_HOME",
+    "HERMES_PROFILE_HOME",
+    "HERMES_MUSIC_REVAMPCTL",
+    "HEWN_FFMPEG",
+    "REVAMP_PORT",
+    "XDG_DATA_HOME",
+    "PROGRAMFILES",
+    "ProgramFiles",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+)
+STUDIO_KEEP_PREFIXES = ("MUSIC_STUDIO_",)
+
+
+def studio_env(extra: Mapping[str, str] | None = None,
+               source: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment for the studio host: the minimal set plus the studio's own named settings."""
+    src = os.environ if source is None else source
+    env = minimal_env(source=src)
+    for name, value in src.items():
+        if (name in STUDIO_KEEP or name.startswith(STUDIO_KEEP_PREFIXES)) and not _looks_secret(name):
+            env[name] = value
+    if extra:
+        env.update({str(key): str(value) for key, value in extra.items()})
+    return env

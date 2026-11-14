@@ -24,6 +24,7 @@ the identifier 'MiniMax-Music3' travels with the audio.
 """
 from __future__ import annotations
 
+from ..childenv import minimal_env
 from ..portalock import lock_ex, unlock
 import json
 import os
@@ -450,7 +451,8 @@ class MiniMaxM3ComfyEngine(Engine):
                 done = subprocess.run(
                     [self.ffmpeg, '-hide_banner', '-loglevel', 'error', '-y',
                      '-i', str(src), '-vn', '-acodec', 'pcm_s16le', str(dst)],
-                    capture_output=True, timeout=120, check=False)
+                    # ffmpeg has no use for provider keys (review item 4): the allowlisted env only.
+                    capture_output=True, timeout=120, check=False, env=minimal_env())
             except (OSError, subprocess.SubprocessError) as exc:
                 raise EngineError(f'ffmpeg failed to transcode: {exc}',
                                   engine_id=self.id) from exc

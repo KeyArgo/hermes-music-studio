@@ -146,3 +146,58 @@ def test_neither_site_copies_the_whole_environment():
     for path in ("ace_engine.py", "music_studio/service.py"):
         text = open(path, encoding="utf-8").read()
         assert "os.environ.copy()" not in text, f"{path} still hands children the whole environment"
+
+
+def test_the_studio_host_is_spawned_without_provider_keys(parent, monkeypatch, tmp_path):
+    """11-14 review pass: the launcher handed the host the whole environment minus five Python-path
+    variables, so every provider key reached it. Only the studio's own settings and its one declared
+    key (read through the scoped secret store) may cross."""
+    from music_studio import host_launcher
+
+    monkeypatch.setenv("COMFYUI_URL", "http://10.0.0.52:8188")
+    monkeypatch.setenv("REVAMP_PORT", "8114")
+    monkeypatch.setattr(host_launcher, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(host_launcher, "_python", lambda: ["python3"])
+    monkeypatch.setattr(host_launcher, "_wait_until_up", lambda *a, **k: True, raising=False)
+    monkeypatch.setattr("music_studio.engines.ace_remote._remote_key", lambda: "scoped-remote-key")
+    seen = {}
+
+    class Child:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    def fake_popen(args, **kwargs):
+        seen["env"] = kwargs["env"]
+        raise RuntimeError("stop after the spawn")
+
+    monkeypatch.setattr(host_launcher.subprocess, "Popen", fake_popen)
+    with pytest.raises(RuntimeError, match="stop after the spawn"):
+        host_launcher.ensure_host()
+    env = seen["env"]
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"):
+        assert name not in env, f"{name} reached the studio host"
+    assert env["COMFYUI_URL"] == "http://10.0.0.52:8188"
+    assert env["REVAMP_PORT"] == "8114"
+    assert env["HEWN_STUDIO_TOKEN"] and env["HEWN_STUDIO_DATA_DIR"]
+    # The remote engine's own key, from the scoped store, not from the parent's bare environment.
+    assert env["ACE_REMOTE_API_KEY"] == "scoped-remote-key"
+
+
+def test_ffmpeg_runs_without_provider_keys(parent, monkeypatch, tmp_path):
+    from music_studio.engines import minimax_m3_comfy as mm3
+
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["env"] = kwargs.get("env")
+        raise OSError("stop after the call")
+
+    monkeypatch.setattr(mm3.subprocess, "run", fake_run)
+    engine = mm3.MiniMaxM3ComfyEngine(base_url="http://127.0.0.1:1", ffmpeg="/usr/bin/ffmpeg")
+    with pytest.raises(mm3.EngineError):
+        engine._to_wav(b"fLaC....", "flac")
+    assert seen["env"] is not None, "ffmpeg inherited the whole environment"
+    for name in SECRETS:
+        assert name not in seen["env"], f"{name} reached ffmpeg"
