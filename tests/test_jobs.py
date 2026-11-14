@@ -43,6 +43,46 @@ class JobTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 Jobs(s).enqueue(p['project_id'], seed=42)
 
+    def _targeted_draft(self, root):
+        s = Store(root)
+        pid = s.create(title='A', caption='music', lyrics='words')['project_id']
+        project = s.get(pid)
+        project['comfy_target_id'] = str(uuid.uuid4())
+        project['engine'] = 'minimax_m3_comfy'
+        project['approved'] = True
+        s._save(project)
+        return s, pid
+
+    def test_a_local_engine_is_not_refused_because_the_draft_names_a_target(self):
+        """service._engine_and_target passes target=None for ACE; the pin does not apply."""
+        with tempfile.TemporaryDirectory() as root:
+            s, pid = self._targeted_draft(root)
+            take = Jobs(s).enqueue(pid, seed=1, engine_id='ace_local')
+            self.assertEqual(take['engine_id'], 'ace_local')
+
+    def test_a_local_batch_is_not_refused_because_the_draft_names_a_target(self):
+        with tempfile.TemporaryDirectory() as root:
+            s, pid = self._targeted_draft(root)
+            takes = Jobs(s).enqueue_batch(pid, 1, engine_id='ace_local')
+            self.assertEqual([take['engine_id'] for take in takes], ['ace_local'])
+
+    def test_the_comfy_engine_still_refuses_an_unpreflighted_draft_target(self):
+        with tempfile.TemporaryDirectory() as root:
+            s, pid = self._targeted_draft(root)
+            with self.assertRaisesRegex(ValueError, 'target changed'):
+                Jobs(s).enqueue(pid, seed=1, engine_id='minimax_m3_comfy')
+            with self.assertRaisesRegex(ValueError, 'target changed'):
+                Jobs(s).enqueue_batch(pid, 1, engine_id='minimax_m3_comfy')
+
+    def test_enqueue_section_rejects_non_finite_bounds(self):
+        with tempfile.TemporaryDirectory() as root:
+            jobs = Jobs(Store(root))
+            for start_s, end_s in ((float('nan'), 1.0), (0.0, float('nan')),
+                                   (0.0, float('inf')), (float('-inf'), 1.0)):
+                with self.subTest(start_s=start_s, end_s=end_s):
+                    with self.assertRaisesRegex(ValueError, 'finite'):
+                        jobs.enqueue_section('project', 'take', start_s, end_s, seed=1)
+
     def test_snapshot_is_persisted_and_busy_refuses_second_job(self):
         with tempfile.TemporaryDirectory() as root:
             s = Store(root)

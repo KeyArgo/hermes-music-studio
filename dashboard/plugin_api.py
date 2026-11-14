@@ -41,6 +41,8 @@ _STUDIO_ASSETS = {
 MAX_JSON_BODY_BYTES = 256 * 1024
 
 _CONFLICT_HINTS = ('approval', 'busy', 'stale draft', 'confirm')
+# The same cap jobs.enqueue_batch and service.versions enforce.
+MAX_BATCH_COUNT = 8
 
 
 def invoke(fn, *args, **kwargs):
@@ -185,6 +187,10 @@ def update(body: dict = Depends(json_body)):
             # The duration cap belongs to the engine this draft will render on;
             # a duration-only edit keeps the stored engine.
             validate(draft, engine=merged.get('engine'))
+            # Creating and approving both refuse an unknown ComfyUI target; an
+            # edit must too, or the bad id is stored and approval can never pass.
+            if 'comfy_target_id' in draft:
+                store._require_target(draft.get('comfy_target_id'))
             if 'engine' in draft:
                 # An engine switch is validated against the duration it keeps.
                 validate({'duration_seconds': draft.get(
@@ -681,8 +687,13 @@ def delete_take(body: dict = Depends(json_body)):
 @router.post('/versions')
 def studio_versions(body: dict = Depends(json_body)):
     """Queue N takes of the same approved draft, one seed each."""
-    return invoke(service.versions, body.get('project_id'), int(body.get('count') or 3),
-                  body.get('seed_base'))
+    count = body.get('count')
+    if count is None:
+        count = 3
+    # int() here used to turn 0 into 3 and let "two" escape as a 500.
+    if type(count) is not int or not 1 <= count <= MAX_BATCH_COUNT:
+        raise HTTPException(status_code=400, detail='count must be between 1 and 8')
+    return invoke(service.versions, body.get('project_id'), count, body.get('seed_base'))
 
 
 @router.post('/section/render')
@@ -736,7 +747,13 @@ def studio_draft(body: dict = Depends(json_body)):
         raise HTTPException(503, str(exc)) from None
     except llm_bridge.LlmTrustError as exc:
         raise HTTPException(403, str(exc)) from None
-    draft = parse_draft(content)
+    except RuntimeError as exc:
+        # An empty or unusable host reply is an upstream failure, not a crash.
+        raise HTTPException(502, str(exc)) from None
+    try:
+        draft = parse_draft(content)
+    except ValueError:
+        raise HTTPException(502, 'Model returned an invalid draft') from None
     project = None
     if body.get('create'):
         from music_studio import service

@@ -221,6 +221,22 @@ class ApiHardeningTests(unittest.TestCase):
         no_token = self.client.post('/update', json={'project_id': pid, 'draft': {'lyrics': 'three'}})
         self.assertEqual(no_token.status_code, 200)
 
+    def test_update_refuses_an_unknown_comfy_target(self):
+        pid = self.project()['project_id']
+        unknown = str(uuid.uuid4())
+        response = self.client.post('/update', json={'project_id': pid,
+                                                     'draft': {'comfy_target_id': unknown}})
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(self.store.get(pid)['comfy_target_id'])
+
+    def test_versions_rejects_a_bad_count_without_coercing_it(self):
+        pid = self.project()['project_id']
+        self.store.approve(pid)
+        for count in (0, 'two', 9, -1, 2.5, True):
+            with self.subTest(count=count):
+                response = self.client.post('/versions', json={'project_id': pid, 'count': count})
+                self.assertEqual(response.status_code, 400)
+
     def test_json_body_size_is_capped(self):
         huge = {'draft': {'title': 'x' * (512 * 1024), 'caption': 'music', 'lyrics': 'words'}}
         self.assertEqual(self.client.post('/create', json=huge).status_code, 413)
