@@ -6,7 +6,7 @@ import os
 import threading
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 _ROOT = str(Path(__file__).resolve().parent.parent)
 if _ROOT not in sys.path:
@@ -387,34 +387,82 @@ def audio_json(project_id: str, take_id: str, edit: str | None = None):
     return {'success': True, 'media_type': 'audio/wav', 'audio_base64': base64.b64encode(data).decode('ascii')}
 
 
-def _stream(audio_file, headers):
-    """Stream a take, but say how long it is.
+def _byte_range(header, size):
+    """``(start, end)`` inclusive for a single ``bytes=`` range, None for no/odd ranges, or
+    ``'unsatisfiable'``. Multi-range and suffix forms other than ``bytes=-N`` are served whole."""
+    if not header or not header.startswith('bytes=') or ',' in header:
+        return None
+    first, _, last = header[len('bytes='):].strip().partition('-')
+    try:
+        if not first:
+            length = int(last)
+            if length <= 0:
+                return None
+            return max(0, size - length), size - 1
+        start = int(first)
+        end = int(last) if last else size - 1
+    except ValueError:
+        return None
+    if start >= size:
+        return 'unsatisfiable'
+    if end < start:
+        return None
+    return start, min(end, size - 1)
+
+
+def _stream(audio_file, headers, range_header=None):
+    """Stream a take, but say how long it is, and answer byte ranges.
 
     A chunked response has no Content-Length, and a media element that cannot learn the total
     length reports ``duration === Infinity`` — which leaves the player's scrubber with a max of
     zero and nothing to drag. The size is read from the file itself, so the header is exact.
+    A browser seeks by asking ``Range: bytes=N-``; answered with the whole file as 200, the
+    player snaps back to the start whenever someone clicks the waveform or drags the bar.
     """
     headers = dict(headers)
+    size = None
     try:
         position = audio_file.tell()
         size = audio_file.seek(0, os.SEEK_END)
         audio_file.seek(position)
         headers.setdefault('Content-Length', str(size))
+        headers['Accept-Ranges'] = 'bytes'
     except (AttributeError, OSError, ValueError):
         pass
+    span = _byte_range(range_header, size) if size is not None else None
+    if span == 'unsatisfiable':
+        audio_file.close()
+        return Response(status_code=416, headers={'Content-Range': f'bytes */{size}',
+                                                  'X-Content-Type-Options': 'nosniff'})
+    remaining = None
+    status = 200
+    if span is not None:
+        start, end = span
+        audio_file.seek(start)
+        remaining = end - start + 1
+        status = 206
+        headers['Content-Length'] = str(remaining)
+        headers['Content-Range'] = f'bytes {start}-{end}/{size}'
 
     def chunks():
+        left = remaining
         with audio_file:
-            while chunk := audio_file.read(64 * 1024):
+            while left is None or left > 0:
+                chunk = audio_file.read(64 * 1024 if left is None else min(64 * 1024, left))
+                if not chunk:
+                    break
+                if left is not None:
+                    left -= len(chunk)
                 yield chunk
-    return StreamingResponse(chunks(), media_type='audio/wav', headers=headers)
+    return StreamingResponse(chunks(), status_code=status, media_type='audio/wav', headers=headers)
 
 
 @router.get('/projects/{project_id}/takes/{take_id}/audio')
-def audio(project_id: str, take_id: str, edit: str | None = None):
+def audio(project_id: str, take_id: str, request: Request, edit: str | None = None):
     audio_file = invoke(Jobs(service.store()).open_audio, project_id, take_id,
                         edit_id=edit)
-    return _stream(audio_file, {'X-Content-Type-Options': 'nosniff'})
+    return _stream(audio_file, {'X-Content-Type-Options': 'nosniff'},
+                   request.headers.get('range'))
 
 
 @router.get('/projects/{project_id}/takes/{take_id}/download')
