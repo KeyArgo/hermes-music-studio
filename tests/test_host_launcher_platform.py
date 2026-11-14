@@ -72,7 +72,7 @@ def test_the_python_beside_sys_executable_is_tried(monkeypatch):
     monkeypatch.setattr(host_launcher.sys, 'platform', 'linux')
     monkeypatch.setattr(host_launcher, '_is_windows', lambda: False)  # also on a real Windows runner
     monkeypatch.setattr(host_launcher.sys, 'executable', '/fake/venv/bin/python3.13')
-    sibling = '/fake/venv/bin/python'
+    sibling = host_launcher._hermes_python()  # the platform's own spelling of /fake/venv/bin/python
     monkeypatch.setattr(host_launcher.os.path, 'exists',
                         lambda path: path in ('/fake/venv/bin/python3.13', sibling))
     _probe_only(monkeypatch, lambda command: command[0] == sibling)

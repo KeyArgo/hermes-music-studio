@@ -397,6 +397,9 @@ class ErrorSanitizationTests(unittest.TestCase):
                 self.assertTrue(_wait_until(
                     lambda: store.get(pid)['takes'][0]['state'] in ('failed', 'succeeded')))
                 failed = store.get(pid)['takes'][0]
+                # The worker marks the take failed a moment before it exits and closes its log;
+                # Windows will not delete an open file, so let it finish before the folder goes.
+                service.stop_workers(timeout=10)
             self.assertEqual(failed['state'], 'failed')
             self.assertIn('CUDA out of memory', failed['error'])
             self.assertNotIn('/home/alex/secret', failed['error'])
