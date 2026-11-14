@@ -1332,8 +1332,15 @@ async function loadModels() {
     if(modelCatalog.some(p=>p.slug===d.provider))select.value=d.provider; $('idea-connection').textContent='Choose a configured Hermes model.';fillModels(d.model);
   } catch(e) { $('idea-connection').textContent='Hermes model connection unavailable. Check the Hermes installation and setup guide.'; }
 }
-function fillModels(preferred){const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
+// One filter over both lists: 400+ models across several providers is not something a person
+// scrolls. It matches the provider name, the model id, and 'free'.
+function ideaQuery(){const input=$('idea-filter');return (input?.value || '').trim().toLowerCase();}
+function modelMatches(p, id){const q=ideaQuery();if(!q)return true;return (id||'').toLowerCase().includes(q) || (p?.slug||'').toLowerCase().includes(q) || (p?.name||'').toLowerCase().includes(q) || (q==='free' && /(^|[-_/])free([-_/]|$)/i.test(id||''));}
+function fillProviders(preferred){const select=$('idea-provider');if(!select)return;const had=select.value;select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);const q=ideaQuery();const rows=modelCatalog.filter(p=>!q || (p.models||[]).some(m=>modelMatches(p,typeof m==='string'?m:(m.id||m.name))));rows.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});if(typeof preferred==='string' && rows.some(p=>p.slug===preferred))select.value=preferred;else if(rows.some(p=>p.slug===had))select.value=had;else if(rows.length===1)select.value=rows[0].slug;}
+function fillModels(preferred){fillProviders();const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;if(!modelMatches(p,id))return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
 $('idea-provider').onchange=()=>fillModels();
+$('idea-filter').oninput=()=>{fillProviders();fillModels();};
+$('idea-filter').onkeydown=e=>{if(e.key==='Enter' && $('idea-model').options.length>1 && !$('idea-model').value){$('idea-model').selectedIndex=1;fillModels($('idea-model').value);}};
 function addIdea(role, text){const p=el('p',text,role==='user'?'human':'assistant');$('idea-messages').append(p);$('idea-messages').scrollTop=$('idea-messages').scrollHeight;}
 // A standalone host has no model of its own: the model lives in the Hermes plugin process. When the
 // page is framed by the desktop pane, it asks the pane (postMessage) and the pane calls its own

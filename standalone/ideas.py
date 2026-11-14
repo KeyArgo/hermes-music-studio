@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from music_studio import llm_bridge
+from music_studio import llm_bridge, model_catalog
 
 router = APIRouter()
 
@@ -253,14 +253,22 @@ def _complete(body: dict[str, Any]) -> str:
 
 
 @router.get("/studio/models")
-def studio_models() -> JSONResponse:
-    """What the host will use. A plugin cannot enumerate the owner's providers any more, and should not:
-    `ctx.llm` routes to whatever Hermes is configured with."""
-    if not llm_bridge.available():
-        return JSONResponse(content={"provider": None, "model": None, "providers": [],
-                                     "detail": llm_bridge.MISSING})
-    return JSONResponse(content={"provider": None, "model": None, "providers": [],
-                                 "detail": "Hermes chooses the provider and model."})
+def studio_models(refresh: bool = False) -> JSONResponse:
+    """Every model this Hermes can reach, grouped by provider.
+
+    The picker needs the real catalogue: a fixed list would go stale, and an empty
+    one leaves the creative partner on whatever model Hermes happens to use. Each
+    provider is asked for its own models with the credential Hermes already
+    stores; a provider that cannot be listed carries its reason in ``detail`` and
+    the rest still appear. No credential ever enters this payload.
+    """
+    state = model_catalog.discover(force=refresh)
+    detail = state['detail'] if llm_bridge.available() else llm_bridge.MISSING
+    return JSONResponse(content={"provider": state.get('active_provider'),
+                                 "model": state.get('active_model'),
+                                 "providers": state['providers'],
+                                 "count": state['count'],
+                                 "detail": detail})
 
 
 @router.post("/studio/ideas")
