@@ -63,3 +63,19 @@ def test_a_splice_inherits_the_parent_takes_engine(library: Path):
 
     assert take['engine_id'] == 'minimax_m3_comfy'
     assert take['metadata']['engine_id'] == 'splice'
+
+
+def test_a_fade_inherits_the_parent_takes_engine(library: Path):
+    """Found in the same live run: a faded copy also came back with ``engine_id: null``."""
+    store = service.store()
+    project = store.create(title='Song', caption='quiet', lyrics='line', duration_seconds=12)
+    parent_id = str(uuid.uuid4())
+    (library / f'{parent_id}.wav').write_bytes(_tone(12.0))
+    project['takes'] = [{'take_id': parent_id, 'state': 'succeeded', 'requested_seed': 1,
+                         'seed': 1, 'engine_id': 'minimax_m3_comfy', 'edits': [],
+                         'audio_file': f'{parent_id}.wav'}]
+    store._save(project)
+
+    faded = service.fade_take(project["project_id"], parent_id, 1.5)["take"]
+
+    assert faded['engine_id'] == 'minimax_m3_comfy'

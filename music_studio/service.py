@@ -1172,6 +1172,7 @@ def fade_take(project_id, take_id, seconds=1.5):
         take = jobs._new_take(project, seed=int(parent.get('seed') or 0),
                               requested_seed=int(parent.get('requested_seed') or 0),
                               seed_locked=False, kind='edit', parent=parent,
+                              engine_id=parent.get('engine_id') or engine_id_for(project),
                               extra={'fade_out_seconds': float(seconds)})
         project['takes'].append(take)
         s._save(project)
