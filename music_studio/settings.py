@@ -129,7 +129,19 @@ def validate(payload: dict) -> dict:
 
 
 def write(base: Path, payload: dict) -> dict:
-    merged = validate(payload)
+    """Merge ``payload`` onto the saved settings; keys it omits keep their saved value."""
+    if not isinstance(payload, dict):
+        raise ValueError('settings must be an object')
+    current = read(base)
+    merged_input = dict(current)
+    for key, value in payload.items():
+        if key == 'minimax' and isinstance(value, dict):
+            knobs = dict(current.get('minimax') or {})
+            knobs.update(value)
+            merged_input['minimax'] = knobs
+        else:
+            merged_input[key] = value
+    merged = validate(merged_input)
     path = settings_path(base)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')

@@ -51,6 +51,26 @@ def test_settings_roundtrip_and_defaults(library):
     assert settings.read(library)['minimax']['steps'] == 12
 
 
+def test_saving_one_setting_keeps_the_ones_not_in_the_payload(library, tmp_path):
+    """The pane posts only what it changed; a partial save must not reset the rest."""
+    export_dir = str(tmp_path / 'exports')
+    service.save_settings({'export_dir': export_dir, 'scan_hosts': 'spark-a'})
+
+    saved = service.save_settings({'comfy_url': 'http://192.0.2.9:8188'})
+
+    assert saved['settings']['export_dir'] == export_dir
+    assert saved['settings']['scan_hosts'] == 'spark-a'
+    assert settings.read(library)['comfy_url'] == 'http://192.0.2.9:8188'
+
+
+def test_an_explicit_empty_setting_clears_it(library, tmp_path):
+    service.save_settings({'export_dir': str(tmp_path / 'exports')})
+
+    saved = service.save_settings({'export_dir': ''})
+
+    assert saved['settings']['export_dir'] == ''
+
+
 def test_settings_reject_values_that_would_fail_at_render_time(library):
     with pytest.raises(ValueError, match='sampler'):
         service.save_settings({'minimax': {'sampler': 'not-a-sampler'}})
@@ -147,6 +167,60 @@ def test_relocate_move_deletes_the_old_copies(library, tmp_path):
     assert (target / f"{project['project_id']}.json").is_file()
     assert not (library / f"{project['project_id']}.json").exists()
     assert (library / 'library.json').is_file()
+
+
+def test_relocate_move_keeps_a_source_when_the_destination_file_differs(library, tmp_path):
+    """A stale same-named file in the target must not let the newer source be deleted."""
+    project = _project_with_take(library)
+    name = f"{project['project_id']}.json"
+    target = tmp_path / 'moved'
+    target.mkdir()
+    stale = target / name
+    stale.write_text('{"stale": true}', encoding='utf-8')
+
+    with pytest.raises(ValueError, match='different copies'):
+        service.relocate_library(str(target), 'move')
+
+    assert (library / name).is_file()  # the newer source was not destroyed
+    assert stale.read_text(encoding='utf-8') == '{"stale": true}'
+    # and the library still points at the source, so it shows the newer song, not the stale one
+    assert service.store().root.resolve() == library.resolve()
+
+
+def test_relocate_move_deletes_a_source_file_the_destination_already_matches(library, tmp_path):
+    project = _project_with_take(library)
+    name = f"{project['project_id']}.json"
+    target = tmp_path / 'moved'
+    target.mkdir()
+    (target / name).write_bytes((library / name).read_bytes())
+
+    result = service.relocate_library(str(target), 'move')
+
+    assert not (library / name).exists()  # identical copy already there
+    assert name not in result['kept']
+
+
+def test_relocate_move_keeps_a_directory_that_was_only_partly_copied(library, tmp_path, monkeypatch):
+    import shutil
+
+    work = library / 'work'
+    work.mkdir()
+    (work / 'one.txt').write_text('one', encoding='utf-8')
+    (work / 'two.txt').write_text('two', encoding='utf-8')
+
+    def copy_only_one(source, destination, **kwargs):
+        destination = Path(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / 'one.txt').write_bytes((Path(source) / 'one.txt').read_bytes())
+        return destination
+
+    monkeypatch.setattr(shutil, 'copytree', copy_only_one)
+    target = tmp_path / 'moved'
+
+    result = service.relocate_library(str(target), 'move')
+
+    assert (work / 'two.txt').is_file()  # the incomplete copy stayed put
+    assert 'work' in result['kept']
 
 
 def test_relocate_refuses_the_current_directory(library):

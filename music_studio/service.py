@@ -791,19 +791,17 @@ def _export_ledger():
     return path, data if isinstance(data, dict) else {}
 
 
-def _same_destination(known, folder, title):
+def _same_destination(known, destination, title):
     """A reused export must be the one this request asked for.
 
     Choosing a different folder (or renaming the take) is a request for a new copy; returning the
     old path would silently export to the wrong place.
     """
-    if folder:
-        try:
-            wanted = Path(str(folder)).expanduser()
-        except (TypeError, ValueError):
+    try:
+        if Path(known['path']).parent != Path(destination):
             return False
-        if wanted.is_absolute() and Path(known['path']).parent != wanted:
-            return False
+    except (KeyError, TypeError, ValueError):
+        return False
     if title and title != (known.get('title') or ''):
         return False
     return True
@@ -815,28 +813,28 @@ def export_take(project_id, take_id, folder=None, title=None):
     A take exported before is reused while its file is still there: adding the same song to a
     second playlist must not litter the folder with copies.
     """
-    from . import export
+    from . import export, settings as _settings
 
     ledger_path, ledger = _export_ledger()
+    # The owner's export folder is the boundary; without a store root (a caller that only supplies
+    # the project) the default library folder applies.
+    _root = getattr(store(), 'root', None)
+    if _root is not None:
+        configured = str((_settings.read(_root) or {}).get('export_dir') or '').strip() or None
+    else:
+        configured = None
     key = f'{project_id}:{take_id}'
     known = ledger.get(key) or {}
-    if known.get('path') and Path(known['path']).is_file() \
-            and _same_destination(known, folder, title):
-        return {'success': True, 'path': known['path'], 'folder': str(Path(known['path']).parent),
-                'title': known.get('title') or title or 'Music Studio take', 'bytes': Path(known['path']).stat().st_size,
-                'reused': True}
+    if known.get('path'):
+        # Resolve the folder this export would write to now, so a changed Settings value cannot
+        # make the ledger hand back a path in the folder the owner has moved away from.
+        destination = export.target_folder(folder, configured=configured)
+        if Path(known['path']).is_file() and _same_destination(known, destination, title):
+            return {'success': True, 'path': known['path'], 'folder': str(Path(known['path']).parent),
+                    'title': known.get('title') or title or 'Music Studio take', 'bytes': Path(known['path']).stat().st_size,
+                    'reused': True}
     project = store().get(project_id)
     try:
-        from . import settings as _settings
-
-        # The owner's export folder is the boundary; without a store root (a caller that only supplies
-        # the project) the default library folder applies.
-        _root = getattr(store(), 'root', None)
-        configured = ''
-        if _root is not None:
-            configured = str((_settings.read(_root) or {}).get('export_dir') or '').strip() or None
-        else:
-            configured = None
         result = export.export_take(Jobs(store()), project, take_id, folder=folder, title=title,
                                     configured_folder=configured)
     except ValueError as exc:
@@ -905,12 +903,44 @@ def library_info():
 _LIBRARY_SKIP = ('engine-settings.json', 'library.json', 'studio-host.json', 'studio-host.log')
 
 
+def _files_identical(left, right):
+    """True when two files have the same size and content, without trusting the name."""
+    import hashlib
+
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+
+        def digest(path):
+            value = hashlib.sha256()
+            with open(path, 'rb') as handle:
+                while chunk := handle.read(256 * 1024):
+                    value.update(chunk)
+            return value.digest()
+
+        return digest(left) == digest(right)
+    except OSError:
+        return False
+
+
+def _tree_fully_copied(source, destination):
+    """True when every file under ``source`` has a byte-identical copy in ``destination``."""
+    for item in source.rglob('*'):
+        if item.is_dir():
+            continue
+        copy = destination / item.relative_to(source)
+        if not copy.is_file() or not _files_identical(item, copy):
+            return False
+    return True
+
+
 def relocate_library(target, mode='copy'):
     """Move or copy the library to ``target``, then point this profile at it.
 
     ``mode='copy'`` leaves the old files where they are (nothing is destroyed);
-    ``mode='move'`` deletes the copies it made after the pointer is written, and
-    the pointer file itself never moves with them.
+    ``mode='move'`` deletes only the copies it made after the pointer is written, and
+    the pointer file itself never moves with them. A source that could not be copied
+    (or whose destination is a different, older file) is kept and named in ``kept``.
     """
     import shutil
 
@@ -927,7 +957,20 @@ def relocate_library(target, mode='copy'):
     if destination == source.resolve():
         raise ValueError('that is already the library directory')
     destination.mkdir(parents=True, exist_ok=True)
+    # A same-named file with different bytes in the target would win once the pointer moves there,
+    # so the library would silently show the older version. Refuse before copying anything.
+    conflicts = sorted(
+        item.name for item in source.iterdir()
+        if item.name not in _LIBRARY_SKIP and item.name != 'library.json'
+        and not item.name.startswith('.') and item.is_file()
+        and (destination / item.name).exists() and not _files_identical(item, destination / item.name))
+    if conflicts:
+        shown = ', '.join(conflicts[:5]) + (f' and {len(conflicts) - 5} more' if len(conflicts) > 5 else '')
+        raise ValueError(f'the target folder already holds different copies of {shown}; '
+                         'choose an empty folder or move those files out first')
     copied = 0
+    kept = []
+    removable = []
     for item in source.iterdir():
         if item.name in _LIBRARY_SKIP or item.name.startswith('.'):
             continue
@@ -937,18 +980,28 @@ def relocate_library(target, mode='copy'):
         try:
             if item.is_dir():
                 shutil.copytree(item, dest, dirs_exist_ok=True)
+                if _tree_fully_copied(item, dest):
+                    removable.append(item)
+                    copied += 1
+                else:
+                    kept.append(item.name)
             elif not dest.exists():
                 shutil.copy2(item, dest)
-            copied += 1
+                removable.append(item)
+                copied += 1
+            elif _files_identical(item, dest):
+                # The same bytes are already there, so dropping the source loses nothing.
+                removable.append(item)
+            else:
+                # Never delete the only copy of the newer file just because the name matched.
+                kept.append(item.name)
         except OSError as exc:
             raise ValueError(f'could not copy {item.name}: {exc}') from None
     st.point_library_at(base, destination)
     if mode == 'move':
-        # Drop the copies that were just made. The pointer, the settings file and
-        # dotfiles live in the plugin's own directory and are never moved.
-        for item in source.iterdir():
-            if item.name in _LIBRARY_SKIP or item.name.startswith('.'):
-                continue
+        # Drop only what this call copied (or what the target already had byte for byte).
+        # The pointer, the settings file and dotfiles live in the plugin's own directory.
+        for item in removable:
             try:
                 if item.is_dir():
                     shutil.rmtree(item)
@@ -957,7 +1010,7 @@ def relocate_library(target, mode='copy'):
             except OSError:
                 pass
     payload = _library_payload()
-    return {'success': True, 'copied': copied, 'mode': mode, 'library': payload}
+    return {'success': True, 'copied': copied, 'kept': kept, 'mode': mode, 'library': payload}
 
 
 def reset_library():

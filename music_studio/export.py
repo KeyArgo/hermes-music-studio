@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 from pathlib import Path
 
 
@@ -78,6 +79,47 @@ def free_path(folder: Path, stem: str, suffix: str = '.wav') -> Path:
     return candidate
 
 
+def _publish(temp: Path, folder: Path, stem: str, suffix: str = '.wav') -> Path:
+    """Give the finished temp file a name that was still free at the moment it was claimed.
+
+    ``free_path`` alone is a check-then-write race: two exports can both see ``Song.wav`` free
+    and one then replaces the other. Linking is atomic and refuses an existing name, so the
+    name is tried again with the next number instead of overwriting anyone's file.
+    """
+    index = 1
+    while True:
+        candidate = folder / (f'{stem}{suffix}' if index == 1 else f'{stem} ({index}){suffix}')
+        try:
+            os.link(temp, candidate)
+        except FileExistsError:
+            index += 1
+            continue
+        except OSError:
+            # Some volumes (FAT, SMB) cannot hard-link. An exclusive create refuses an existing
+            # name (and a symlink) too, then we copy the finished temp into it.
+            try:
+                fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                             | getattr(os, 'O_BINARY', 0), 0o666)
+            except FileExistsError:
+                index += 1
+                continue
+            try:
+                with open(temp, 'rb') as source, os.fdopen(fd, 'wb') as target:
+                    while chunk := source.read(256 * 1024):
+                        target.write(chunk)
+            except BaseException:
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
+                raise
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        return candidate
+
+
 def export_take(jobs, project: dict, take_id: str, folder: str | None = None,
                 title: str | None = None, configured_folder: str | None = None) -> dict:
     """Write one finished take into ``folder`` and report where it went.
@@ -92,26 +134,38 @@ def export_take(jobs, project: dict, take_id: str, folder: str | None = None,
         raise ValueError('that take has not finished rendering')
     destination = target_folder(folder, configured=configured_folder)
     stem = safe_name(title or project.get('title') or 'Music Studio take')
-    path = free_path(destination, stem)
-    # Write beside the destination and rename when complete: a copy that fails halfway must not
-    # leave a truncated .wav that a player, a phone sync or a REVamp scan will happily index.
-    partial = path.with_name(path.name + '.part')
+    # Write beside the destination through a private temp name and publish it only when complete:
+    # a copy that fails halfway must not leave a truncated .wav that a player, a phone sync or a
+    # REVamp scan will happily index.
+    temp = None
     try:
-        with jobs.open_audio(project['project_id'], take_id) as source, open(partial, 'wb') as target:
-            while chunk := source.read(256 * 1024):
-                target.write(chunk)
-        os.replace(partial, path)
-    except OSError:
+        with jobs.open_audio(project['project_id'], take_id) as source:
+            handle, name = tempfile.mkstemp(dir=destination, suffix='.part')
+            temp = Path(name)
+            with os.fdopen(handle, 'wb') as target:
+                while chunk := source.read(256 * 1024):
+                    target.write(chunk)
+        # mkstemp creates 0600; an exported song is an ordinary file in the owner's music folder that
+        # their player, a media server or a phone sync may read.
         try:
-            partial.unlink()
-        except OSError:
+            os.chmod(temp, 0o644)
+        except OSError:  # pragma: no cover - a filesystem without POSIX modes
             pass
+        path = _publish(temp, destination, stem)
+    except OSError:
+        _discard(temp)
         raise ExportError(f'could not write the take into {destination}') from None
     except BaseException:
-        try:
-            partial.unlink()
-        except OSError:
-            pass
+        _discard(temp)
         raise
     return {'success': True, 'path': str(path), 'folder': str(destination),
             'title': stem, 'bytes': path.stat().st_size}
+
+
+def _discard(temp: Path | None) -> None:
+    if temp is None:
+        return
+    try:
+        temp.unlink()
+    except OSError:
+        pass

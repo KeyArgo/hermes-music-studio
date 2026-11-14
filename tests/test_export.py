@@ -123,6 +123,65 @@ def test_a_second_export_to_a_different_folder_is_a_new_copy(tmp_path, music_hom
     assert b['path'].startswith(str(second))
 
 
+def test_a_changed_export_folder_is_not_reused_from_the_ledger(tmp_path, music_home, monkeypatch):
+    """The ledger remembers a path, not the folder that is configured now."""
+    from music_studio import service, settings
+
+    data = tmp_path / 'data'
+    data.mkdir()
+    first = music_home / 'first'
+    second = music_home / 'second'
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(service, 'default_data_dir', lambda plugin_id: data)
+    monkeypatch.setattr('music_studio.export.export_take', export.export_take)
+    monkeypatch.setattr(service, 'store', lambda: type(
+        'S', (), {'root': data, 'get': lambda self, pid: project()})())
+    monkeypatch.setattr(service, 'Jobs', lambda store: Jobs())
+
+    settings.write(data, {'export_dir': str(first)})
+    one = service.export_take('11111111-1111-1111-1111-111111111111',
+                              '22222222-2222-2222-2222-222222222222')
+    assert Path(one['path']).parent == first
+
+    settings.write(data, {'export_dir': str(second)})
+    two = service.export_take('11111111-1111-1111-1111-111111111111',
+                              '22222222-2222-2222-2222-222222222222')
+    assert Path(two['path']).parent == second
+    assert not two.get('reused')
+
+
+def test_export_does_not_write_through_a_part_symlink(tmp_path, music_home):
+    victim = tmp_path / 'victim.bin'
+    victim.write_bytes(b'do not touch')
+    link = music_home / 'Cursor Blink.wav.part'
+    try:
+        link.symlink_to(victim)
+    except (OSError, NotImplementedError):
+        pytest.skip('this filesystem cannot make symlinks')
+
+    result = export.export_take(Jobs(), project(), '22222222-2222-2222-2222-222222222222',
+                                folder=str(music_home))
+
+    assert victim.read_bytes() == b'do not touch'
+    assert Path(result['path']).read_bytes() == b'RIFF-fake-wave'
+
+
+def test_an_export_never_overwrites_a_file_that_claimed_the_name(tmp_path, music_home, monkeypatch):
+    """Another export can take the free name after it is chosen; this one must step aside."""
+    target = music_home / 'Cursor Blink.wav'
+    target.write_bytes(b'earlier export')
+    monkeypatch.setattr(export, 'free_path',
+                        lambda folder, stem, suffix='.wav': target)
+
+    result = export.export_take(Jobs(), project(), '22222222-2222-2222-2222-222222222222',
+                                folder=str(music_home))
+
+    assert target.read_bytes() == b'earlier export'
+    assert Path(result['path']) != target
+    assert Path(result['path']).name == 'Cursor Blink (2).wav'
+
+
 def test_a_failed_copy_leaves_no_half_written_file(tmp_path, music_home, monkeypatch):
     from music_studio import export
 
