@@ -101,7 +101,11 @@ def demo_meta():
     """The shipped demo take's metadata; served with no engine installed."""
     if not demo.available():
         raise HTTPException(status_code=404, detail='demo take not found')
-    return demo.payload()
+    payload = demo.payload()
+    if 'peak_dbfs' not in payload:
+        from music_studio import qc
+        payload['peak_dbfs'] = qc.analyse_wav(demo.audio_path().read_bytes())['peak_dbfs']
+    return payload
 
 
 @router.get('/demo/audio')

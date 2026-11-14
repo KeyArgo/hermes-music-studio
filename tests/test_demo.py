@@ -42,6 +42,17 @@ def test_demo_routes():
     assert len(audio.content) == demo.audio_path().stat().st_size
 
 
+def test_demo_route_reports_the_takes_peak():
+    from music_studio import qc
+    app = FastAPI()
+    app.include_router(router)
+    body = TestClient(app).get('/demo').json()
+    measured = qc.analyse_wav(demo.audio_path().read_bytes())
+    assert body['word_recovery'] == '3/3'
+    assert body['peak_dbfs'] == measured['peak_dbfs']
+    assert -10 < body['peak_dbfs'] < 0
+
+
 def test_demo_audio_json_is_the_desktop_shape():
     import base64
     app = FastAPI()
