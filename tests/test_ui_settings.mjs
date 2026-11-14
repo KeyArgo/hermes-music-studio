@@ -153,6 +153,12 @@ async function boot(overrides = {}, options = {}) {
 }
 
 const text = node => (node && node.textContent) || '';
+const confirmInPage = async window => {
+  const button = window.document.querySelector('.confirm-dialog .confirm-confirm');
+  assert.ok(button, 'the action asks in the page, not through window.confirm');
+  button.click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+};
 
 test('the render-settings panel fills from /settings', async t => {
   const { window } = await boot();
@@ -225,11 +231,11 @@ test('library cards offer duplicate and delete, and deleting a take calls the ta
   assert.ok(calls.some(c => c.path === '/api/duplicate' && c.body.project_id === 'p1'));
 
   removeTake.click();
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await confirmInPage(window);
   assert.ok(calls.some(c => c.path === '/api/take/delete' && c.body.take_id === 't1'));
 
   remove.click();
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await confirmInPage(window);
   assert.ok(calls.some(c => c.path === '/api/delete' && c.body.project_id === 'p1'));
 });
 
@@ -309,7 +315,8 @@ test('closing the studio posts the close and says the studio stopped', async t =
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('close-studio').click();
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await confirmInPage(window);
+  await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(calls.some(c => c.path === '/api/host/close'), 'the page asks the host to close');
   assert.match(text(doc.body), /Studio closed\./);
   assert.match(text(doc.body), /library is untouched/);
@@ -362,7 +369,8 @@ test('closing the studio tells the Hermes pane, so the frame goes away', async t
   const sent = [];
   Object.defineProperty(window, 'parent', { value: { postMessage: m => sent.push(m) }, configurable: true });
   doc.getElementById('close-studio').click();
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await confirmInPage(window);
+  await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(sent.some(m => m && m.type === 'hermes-music-studio:closed'), 'the pane is told to close');
   assert.ok(calls.some(c => c.path === '/api/host/close'));
 });
