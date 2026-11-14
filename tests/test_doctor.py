@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / 'tests'))
 
 from music_studio import service  # noqa: E402
 from music_studio.engines import (Capabilities, Engine, EngineStatus,  # noqa: E402
-                                  HealthCheck, Limits, Registry)
+                                  HealthCheck, Limits, Registry, default_engines)
 
 
 class DoctorEngine(Engine):
@@ -128,6 +128,14 @@ class DoctorShapeTests(DoctorTestCase):
             DoctorEngine('stub_ok'),
             DoctorEngine('stub_boom', health_raises=OSError('gone')))
         self.assertEqual([row['fix'] for row in rows], [None, None])
+
+    def test_every_registered_engine_has_a_plain_language_fix(self):
+        engine_ids = [engine.id for engine in default_engines()]
+        self.assertTrue(engine_ids)
+        for engine_id in engine_ids:
+            fix = service.FIXES.get(engine_id)
+            self.assertIsInstance(fix, str, engine_id)
+            self.assertTrue(fix.strip(), engine_id)
 
 
 if __name__ == '__main__':
