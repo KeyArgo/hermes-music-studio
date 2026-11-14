@@ -433,7 +433,10 @@
 <button id="player-forward" class="transport" type="button" aria-label="Forward 10 seconds">10 ↻</button>
 <div class="player-scrub">
 <span id="player-elapsed" class="player-time">0:00</span>
+<div id="player-track" class="player-track">
+<canvas id="player-wave" class="player-wave" height="48" aria-hidden="true" hidden></canvas>
 <input id="player-seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Playback position">
+</div>
 <span id="player-total" class="player-time">0:00</span>
 </div>
 <label class="player-volume" for="player-volume"><span>Volume</span>

@@ -154,7 +154,96 @@ async function playDemo(event) {
     if (button) button.disabled = false;
   }
 }
-function play(url, title, detail) {
+// ---------------------------------------------------------------- waveform strip
+// The peaks route already exists server-side; the footer asks it once per take and draws the
+// buckets on a small canvas. If it is unavailable the range input is still the whole control.
+const PEAK_BUCKETS = 256;
+const peakCache = new Map();
+let wave = null, waveSequence = 0, waveDragging = false;
+
+function takeRef(url) {
+  const hit = /\/projects\/([^/?#]+)\/takes\/([^/?#]+)\//.exec(String(url || ''));
+  return hit ? { project: decodeURIComponent(hit[1]), take: decodeURIComponent(hit[2]) } : null;
+}
+function hideWave() {
+  wave = null;
+  const canvas = $('player-wave'), track = $('player-track');
+  if (canvas) canvas.hidden = true;
+  if (track) track.classList.remove('has-wave');
+}
+function drawWave() {
+  const canvas = $('player-wave'), track = $('player-track');
+  if (!canvas || !wave || !wave.values || !wave.values.length) return;
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return;
+  const width = Math.max(1, Math.round(canvas.clientWidth || (track && track.clientWidth) || 0));
+  const height = 48;
+  const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const styles = getComputedStyle(document.documentElement);
+  const accent = styles.getPropertyValue('--accent').trim() || '#d8e89f';
+  const muted = styles.getPropertyValue('--muted').trim() || '#999e90';
+  const audio = $('player');
+  const span = wave.duration || (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0);
+  const progress = span > 0 ? Math.max(0, Math.min(1, (audio.currentTime || 0) / span)) : 0;
+  const played = progress * width, mid = height / 2, maxAmp = height / 2 - 3;
+  const step = width / wave.values.length;
+  for (let i = 0; i < wave.values.length; i++) {
+    const bucket = wave.values[i] || {};
+    const amp = Math.max(Math.abs(Number(bucket.max) || 0), Math.abs(Number(bucket.min) || 0));
+    const bar = Math.max(1, Math.min(maxAmp, amp * maxAmp));
+    const x = i * step;
+    ctx.fillStyle = x < played ? accent : muted;
+    ctx.fillRect(x, mid - bar, Math.max(1, step - 0.5), bar * 2);
+  }
+  ctx.fillStyle = accent;
+  ctx.fillRect(Math.max(0, Math.min(width - 1, played)), 0, 1, height);
+}
+function showWave() {
+  const canvas = $('player-wave'), track = $('player-track');
+  if (!canvas || !track || !wave || !wave.values || !wave.values.length) return;
+  canvas.hidden = false;
+  track.classList.add('has-wave');
+  drawWave();
+}
+function seekWave(event) {
+  const canvas = $('player-wave'), audio = $('player');
+  if (!canvas || !wave) return;
+  const span = wave.duration || (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0);
+  if (!span) return;
+  const rect = canvas.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, ((event.clientX || 0) - (rect.left || 0)) / (rect.width || canvas.clientWidth || 1)));
+  audio.currentTime = ratio * span;
+  const seek = $('player-seek');
+  if (Number(seek.max) < span) seek.max = String(span);
+  seek.value = String(audio.currentTime);
+  $('player-elapsed').textContent = clock(audio.currentTime);
+  drawWave();
+}
+function setWaveTake(url, editId) {
+  const ref = takeRef(url);
+  const sequence = ++waveSequence;
+  hideWave();
+  if (!ref) return;
+  const key = `${ref.project}/${ref.take}${editId ? '@' + editId : ''}`;
+  const cached = peakCache.get(key);
+  if (cached) { wave = { key, values: cached.values, duration: cached.duration }; showWave(); return; }
+  const query = `?buckets=${PEAK_BUCKETS}` + (editId ? '&edit=' + encodeURIComponent(editId) : '');
+  api(`/projects/${encodeURIComponent(ref.project)}/takes/${encodeURIComponent(ref.take)}/peaks${query}`)
+    .then(data => {
+      if (sequence !== waveSequence) return;
+      if (!Array.isArray(data.peaks) || !data.peaks.length) return;
+      const entry = { values: data.peaks, duration: Number(data.duration_seconds) || 0 };
+      peakCache.set(key, entry);
+      wave = { key, values: entry.values, duration: entry.duration };
+      showWave();
+    })
+    .catch(() => { /* the plain seek bar is the fallback, not an error screen */ });
+}
+function play(url, title, detail, editId) {
   const audio = $('player');
   audio.src = mediaUrl(url);
   audio.load();
@@ -165,6 +254,7 @@ function play(url, title, detail) {
   $('player-seek').max = '0';
   $('player-elapsed').textContent = '0:00';
   $('player-total').textContent = '0:00';
+  setWaveTake(url, editId);
   audio.play().catch(error => playerProblem(
     error && error.name === 'NotAllowedError'
       ? 'Press play once — the browser will not start audio on its own.'
@@ -187,8 +277,38 @@ function wirePlayer() {
     const at = Number(event.target.value);
     if (Number.isFinite(at)) audio.currentTime = at;
     $('player-elapsed').textContent = clock(audio.currentTime);
+    drawWave();
   });
   $('player-volume').addEventListener('input', event => playerVolume(Number(event.target.value)));
+  // The canvas is a seek surface, but the range input stays the keyboard control. Pointer capture
+  // keeps a drag alive when the pointer leaves the 48px strip.
+  const waveCanvas = $('player-wave');
+  if (waveCanvas) {
+    waveCanvas.addEventListener('pointerdown', event => {
+      if (!wave) return;
+      waveDragging = true;
+      if (waveCanvas.setPointerCapture) { try { waveCanvas.setPointerCapture(event.pointerId); } catch (err) { /* not every engine */ } }
+      seekWave(event);
+      event.preventDefault();
+    });
+    waveCanvas.addEventListener('pointermove', event => { if (waveDragging) seekWave(event); });
+    const endWaveDrag = () => { waveDragging = false; };
+    waveCanvas.addEventListener('pointerup', endWaveDrag);
+    waveCanvas.addEventListener('pointercancel', endWaveDrag);
+    window.addEventListener('pointerup', endWaveDrag);
+  }
+  window.addEventListener('resize', drawWave);
+  if (window.matchMedia) {
+    try {
+      const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+      if (scheme.addEventListener) scheme.addEventListener('change', drawWave);
+      else if (scheme.addListener) scheme.addListener(drawWave);
+    } catch (err) { /* a theme query is an enhancement */ }
+  }
+  if (window.MutationObserver) {
+    new MutationObserver(drawWave).observe(document.documentElement,
+      { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+  }
   // The scrubber's range comes from the take's length. When a server streams without saying how
   // long the file is, a media element reports Infinity and the range has nothing to drag — so ask
   // the browser to resolve it, and if it cannot, say so instead of showing a dead bar.
@@ -222,6 +342,7 @@ function wirePlayer() {
   audio.addEventListener('timeupdate', () => {
     if (!document.activeElement || document.activeElement.id !== 'player-seek') $('player-seek').value = String(audio.currentTime || 0);
     $('player-elapsed').textContent = clock(audio.currentTime);
+    drawWave();
   });
   // A media element fires 'error' when the bytes cannot be fetched or decoded; silence there is
   // exactly the dead-button symptom this product keeps being judged on.
@@ -561,7 +682,7 @@ function library() {
         row.append(splice);
       }
       const killTake = el('button','Delete take','button secondary'); killTake.type='button'; killTake.addEventListener('click', async () => { if(!confirm(`Delete take ${i+1} and its audio?`)) return; try { await api('/take/delete',{project_id:p.project_id,take_id:t.take_id}); libMessage('Take deleted.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } }); row.append(killTake);
-      if (t.state === 'succeeded') { const button = el('button','▶ Play'); button.type='button'; button.addEventListener('click',() => play(STUDIO.api+`/projects/${encodeURIComponent(p.project_id)}/takes/${encodeURIComponent(t.take_id)}/audio`,p.title || 'Untitled',`Take ${i+1}`)); row.append(button);
+      if (t.state === 'succeeded') { const button = el('button','▶ Play'); button.type='button'; button.addEventListener('click',() => play(STUDIO.api+`/projects/${encodeURIComponent(p.project_id)}/takes/${encodeURIComponent(t.take_id)}/audio`,p.title || 'Untitled',`Take ${i+1}`,t.playable_edit_id)); row.append(button);
       const exp=el('button','Export','button secondary');exp.type='button';
       exp.addEventListener('click', async()=>{try{const folder=(($('settings-export-dir')||{}).value||'').trim();const d=await api('/export',{project_id:p.project_id,take_id:t.take_id,title:p.title||'Music Studio take',folder:folder||undefined});libMessage(`Exported to ${d.path}`);}catch(err){libMessage(err.message,true);}});
       row.append(exp);
