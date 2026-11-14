@@ -249,6 +249,8 @@ def test_the_client_is_found_inside_the_installed_plugin(monkeypatch, tmp_path):
     monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
     monkeypatch.setenv('HERMES_HOME', str(home))
     monkeypatch.setattr(revamp.shutil, 'which', lambda name: None)
+    # Never the real ~/.local/bin: a developer box with REVamp installed has a client there.
+    monkeypatch.setattr(revamp.Path, 'home', classmethod(lambda cls: tmp_path / 'no-home'))
     assert revamp._client_path() == str(client)
 
 
@@ -263,5 +265,7 @@ def test_no_client_anywhere_is_none(monkeypatch, tmp_path):
     monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
     monkeypatch.setenv('HERMES_HOME', str(tmp_path / 'empty'))
     monkeypatch.setattr(revamp.shutil, 'which', lambda name: None)
+    # Never the real ~/.local/bin: a developer box with REVamp installed has a client there.
+    monkeypatch.setattr(revamp.Path, 'home', classmethod(lambda cls: tmp_path / 'no-home'))
     monkeypatch.setattr(revamp, '_hermes_homes', lambda: [tmp_path / 'empty'])
     assert revamp._client_path() is None

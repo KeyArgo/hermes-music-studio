@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/brand/stamp.svg" alt="Music Studio stamp" width="88" height="88"></p>
+<p align="center"><img src="assets/brand/banner.png" alt="Music Studio: describe a song, Hermes drafts it with you, then renders it on your own machine" width="100%"></p>
 
 <h1 align="center">Hermes Music Studio</h1>
 

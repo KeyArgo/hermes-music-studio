@@ -175,3 +175,6 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .confirm-actions .button{padding:10px 15px}
 .button.danger{background:#e08b7a;border-color:#e08b7a;color:#241614}
+
+/* Brand icon (assets/brand/icon.svg) in place of the old letter mark. */
+svg.brandmark{display:block;width:40px;height:40px;background:none;border-radius:0;flex:none}
