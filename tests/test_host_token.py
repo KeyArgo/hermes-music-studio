@@ -84,6 +84,20 @@ def test_a_wrong_token_is_refused(client):
     assert client.get("/api/projects", headers={"X-Studio-Token": "nope"}).status_code == 401
 
 
+def test_a_non_ascii_token_is_refused_with_401_not_500(client):
+    """hmac.compare_digest raises TypeError on a non-ASCII str, so the middleware 500ed."""
+    raw = TestClient(client.app, base_url="http://127.0.0.1:8775", raise_server_exceptions=False)
+    response = raw.get("/api/projects?token=caf%C3%A9")
+    assert response.status_code == 401
+
+
+def test_a_malformed_origin_is_refused_as_cross_site(client):
+    """urlsplit('http://[::1') raises ValueError; a bad Origin must be a 403, not a 500."""
+    raw = TestClient(client.app, base_url="http://127.0.0.1:8775", raise_server_exceptions=False)
+    response = raw.post("/api/settings", json={}, headers={"origin": "http://[::1"})
+    assert response.status_code == 403
+
+
 def test_the_health_probe_needs_the_token_like_every_other_api_route(client):
     """Review item 3 asked for the token on every /api/* request, health included.
 

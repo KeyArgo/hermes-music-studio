@@ -46,6 +46,22 @@ class FakeLlm:
         return self.reply
 
 
+def _draft_client(monkeypatch, tmp_path, complete):
+    """The plugin route with a model that returns whatever ``complete`` does."""
+    monkeypatch.setenv('HEWN_STUDIO_DATA_DIR', str(tmp_path / 'studio'))
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from dashboard.plugin_api import router
+    from music_studio import llm_bridge
+
+    monkeypatch.setattr(llm_bridge, 'available', lambda: True)
+    monkeypatch.setattr(llm_bridge, 'complete', complete)
+    app = FastAPI()
+    app.include_router(router, prefix='/api')
+    # A bare 500 is what these bugs look like; keep it a response so the test can see it.
+    return TestClient(app, base_url='http://127.0.0.1', raise_server_exceptions=False)
+
+
 def test_the_host_process_says_where_drafting_lives_instead_of_a_bare_503():
     """A real second process: no ctx.llm there, and the answer has to be actionable."""
     code = textwrap.dedent(
@@ -113,6 +129,23 @@ def test_the_plugin_route_says_plainly_when_no_model_is_bound(tmp_path, monkeypa
                                                               json={'prompt': 'anything'})
     assert answer.status_code == 503
     assert 'pane' in answer.json()['detail']
+
+
+def test_the_plugin_route_returns_502_when_the_model_reply_is_not_json(monkeypatch, tmp_path):
+    client = _draft_client(monkeypatch, tmp_path, lambda *args, **kwargs: 'not a draft')
+    answer = client.post('/api/studio/draft', json={'prompt': 'a night drive'})
+    assert answer.status_code == 502
+    assert answer.json() == {'detail': 'Model returned an invalid draft'}
+
+
+def test_the_plugin_route_returns_502_when_the_model_reply_is_empty(monkeypatch, tmp_path):
+    def empty(*args, **kwargs):
+        raise RuntimeError('Hermes returned an empty response')
+
+    client = _draft_client(monkeypatch, tmp_path, empty)
+    answer = client.post('/api/studio/draft', json={'prompt': 'a night drive'})
+    assert answer.status_code == 502
+    assert answer.json() == {'detail': 'Hermes returned an empty response'}
 
 
 def test_the_tool_can_draft_and_open_the_project_with_it(monkeypatch, tmp_path):

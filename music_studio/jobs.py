@@ -3,6 +3,7 @@ import copy
 import io
 import json
 import logging
+import math
 import os
 import random
 import signal
@@ -181,6 +182,21 @@ class Jobs:
         if any(t['state'] in ('queued', 'running') for x in self.store.all() for t in x['takes']):
             raise ValueError('GPU busy')
 
+    def _check_target(self, project, engine_id, target):
+        """Refuse a target that changed since preflight, where that pin applies.
+
+        For a non-ComfyUI engine the service deliberately passes ``target=None``
+        even when the draft names a target: the pin says nothing about that
+        engine, so a mismatch is not a reason to refuse. The ComfyUI engine
+        still has to refuse an unpreflighted draft target.
+        """
+        named = project.get('comfy_target_id')
+        if target is not None:
+            if named != target['id']:
+                raise ValueError('draft target changed since preflight')
+        elif named is not None and engine_id == 'minimax_m3_comfy':
+            raise ValueError('draft target changed since preflight')
+
     def _new_take(self, project, *, seed, requested_seed, seed_locked,
                   batch_id=None, queue_position=None, kind='generate', parent=None,
                   extra=None, duration_override=None, engine_id=None, target=None):
@@ -247,9 +263,7 @@ class Jobs:
             raise ValueError('lock_seed must be a boolean')
         with self.store.locked():
             p = self.store.get(project_id)
-            expected_target_id = target['id'] if target is not None else None
-            if p.get('comfy_target_id') != expected_target_id:
-                raise ValueError('draft target changed since preflight')
+            self._check_target(p, engine_id, target)
             if not p['approved']:
                 raise ValueError('draft requires approval')
             validate_ready(p)
@@ -278,9 +292,7 @@ class Jobs:
             raise ValueError('invalid seed_base')
         with self.store.locked():
             p = self.store.get(project_id)
-            expected_target_id = target['id'] if target is not None else None
-            if p.get('comfy_target_id') != expected_target_id:
-                raise ValueError('draft target changed since preflight')
+            self._check_target(p, engine_id, target)
             if not p['approved']:
                 raise ValueError('draft requires approval')
             validate_ready(p)
@@ -325,6 +337,9 @@ class Jobs:
         if type(seed) is not int or not 0 <= seed <= 2**32 - 1:
             raise ValueError('invalid seed')
         start_s, end_s = round(float(start_s), 3), round(float(end_s), 3)
+        # NaN/inf pass every range comparison below and would be stored as bounds.
+        if not math.isfinite(start_s) or not math.isfinite(end_s):
+            raise ValueError('section start_s and end_s must be finite')
         if caption is not None and (not isinstance(caption, str) or not caption.strip()
                                     or len(caption) > 512):
             raise ValueError('caption must contain 1-512 characters')

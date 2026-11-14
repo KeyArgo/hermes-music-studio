@@ -78,7 +78,9 @@ async def same_origin(request: Request, call_next):
     expected = os.environ.get('HEWN_STUDIO_TOKEN', '').strip()
     path = request.url.path
     supplied = request.headers.get('x-studio-token') or request.query_params.get('token') or ''
-    authorized = bool(expected) and hmac.compare_digest(supplied, expected)
+    # compare_digest refuses non-ASCII str; compare bytes so any token input is a plain 401.
+    authorized = bool(expected) and hmac.compare_digest(supplied.encode('utf-8'),
+                                                        expected.encode('utf-8'))
 
     # A preflight carries no token header (the browser asks before it may send one), so it is answered
     # from the origin alone and carries no data.
@@ -104,7 +106,12 @@ async def same_origin(request: Request, call_next):
         if request.headers.get('sec-fetch-site', '').lower() == 'cross-site':
             return _with_cors(JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
         if origin:
-            parsed = urlsplit(origin)
+            try:
+                parsed = urlsplit(origin)
+            except ValueError:
+                # A malformed Origin is not a same-site request; refuse it as cross-site.
+                return _with_cors(
+                    JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
             expected = request.headers.get('host', '').lower()
             if parsed.scheme != request.url.scheme or parsed.netloc.lower() != expected:
                 return _with_cors(JSONResponse({'detail': 'cross-site request rejected'}, status_code=403), request)
