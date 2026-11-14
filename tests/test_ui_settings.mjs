@@ -934,3 +934,58 @@ test('succeeded takes show the words and vocal evidence that was measured', asyn
     for (const badge of badges(row)) assert.ok(badge.title, 'every badge explains what was measured');
   }
 });
+
+// A take's lineage is a short, muted link to the take it was made from. The number is the same
+// 1-based position the row label uses, and the link brings the parent into view.
+const LINEAGE = {
+  success: true, engine_available: false, engines: [],
+  projects: [{ project_id: 'p1', title: 'Lineage song', caption: 'quiet', engine: 'ace',
+    approved: true, takes: [
+      { take_id: 't1', state: 'succeeded', engine_id: 'ace_local', requested_seed: 1, kind: 'generate' },
+      { take_id: 't2', state: 'succeeded', engine_id: 'ace_local', requested_seed: 2,
+        kind: 'repaint', parent_take_id: 't1', lineage: ['t1'] },
+      { take_id: 't3', state: 'succeeded', engine_id: 'ace_local', requested_seed: 3,
+        kind: 'section', parent_take_id: 't2', lineage: ['t1', 't2'] }
+    ] }]
+};
+
+test('a child take says which take it came from, and the link highlights that parent row', async t => {
+  const { window } = await boot({ '/api/status': LINEAGE });
+  t.after(() => window.close());
+  const doc = window.document;
+  const links = [...doc.querySelectorAll('#library .take-lineage')];
+  assert.deepEqual(links.map(text), ['from take 1 · repaint', 'from take 2 · section']);
+  assert.match(links[0].className, /take-lineage/);
+  assert.equal(doc.querySelectorAll('#library .take-lineage').length, 2,
+    'a take with no parent gets no lineage link');
+  assert.equal(links[0].closest('.take-more'), null, 'the lineage link stays on the row, not under More');
+
+  links[0].click();
+  const parent = doc.querySelector('#library [data-take="t1"]');
+  assert.ok(parent.classList.contains('take-highlight'), 'the parent row is highlighted');
+});
+
+// The doctor row keeps the engine's own failure detail and puts the code-based next step
+// underneath it, so the pane never has to invent a command.
+const DOCTOR = {
+  success: true,
+  engines: [
+    { id: 'ace_local', label: 'ACE-Step 1.5 (local GPU)', ready: false, state: 'unavailable',
+      detail: 'source missing', checks: [], fix: 'Set the ACE-Step runtime and source folders in Compute.' },
+    { id: 'minimax_m3_comfy', label: 'MiniMax Music 3 (ComfyUI)', ready: true, state: 'ready',
+      detail: 'nodes present', checks: [], fix: 'Install ffmpeg if ComfyUI outputs FLAC.' }
+  ]
+};
+
+test('the compute pane shows each engine doctor row and its fix beneath it', async t => {
+  const { window } = await boot({ '/api/doctor': DOCTOR });
+  t.after(() => window.close());
+  const doc = window.document;
+  const aceRow = doc.querySelector('#engine-doctor [data-engine="ace_local"]');
+  const miniRow = doc.querySelector('#engine-doctor [data-engine="minimax_m3_comfy"]');
+  assert.ok(aceRow && miniRow, 'one doctor row per engine');
+  assert.match(text(aceRow), /ACE-Step 1\.5 \(local GPU\) · unavailable: source missing/);
+  assert.match(text(aceRow), /Set the ACE-Step runtime and source folders in Compute/);
+  assert.match(text(miniRow), /MiniMax Music 3 \(ComfyUI\) · ready: nodes present/);
+  assert.match(text(miniRow), /Install ffmpeg if ComfyUI outputs FLAC/);
+});

@@ -136,3 +136,16 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .take-badge.good{color:#b6d978;border-color:#60724a}
 .take-badge.warn{color:#e8a33d;border-color:#7a5c33}
 .take-badge.bad{color:#f0ac9b;border-color:#7a4a44}
+
+/* Lineage: a quiet link from a take to the take it was made from. The parent
+   row gets a temporary outline while the link scrolls it into view. */
+.take .take-lineage{border:0;background:transparent;color:var(--muted);padding:0;margin-left:2px;font-size:11px;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.take .take-lineage:hover{color:var(--ink)}
+.take-highlight{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+
+/* Engine doctor: one row per engine, with the plain-language fix beneath it. */
+.doctor-list{display:grid;gap:0;margin:16px 0 0}
+.doctor-list .kicker{margin:0 0 4px}
+.doctor-row{border-top:1px solid var(--line);padding:10px 0}
+.doctor-row p{margin:0}
+.doctor-row .doctor-fix{margin:4px 0 0;color:var(--muted)}

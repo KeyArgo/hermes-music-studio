@@ -112,11 +112,18 @@ def _engine_status(reg, engine):
     return engine.id
 
 
-# Per-engine fix hints for the doctor. only add a command verified on a real machine
+# Per-engine next steps for the doctor: plain words from what the code actually
+# reads. Only add a shell command here once it has been verified on a real machine.
 FIXES: dict[str, str | None] = {
-    'ace_local': None,
-    'ace_remote': None,
-    'minimax_m3_comfy': None,
+    'ace_local': ('Set the ACE-Step runtime and source folders in Compute '
+                  '(Settings -> Compute), or export ACE_RUNTIME_DIR and '
+                  'ACE_SOURCE_DIR. Needs an NVIDIA GPU (or Apple MPS, unverified).'),
+    'ace_remote': ('If you run an ACE-Step server, set its URL in Compute or export '
+                   'ACE_REMOTE_URL, and set ACE_REMOTE_API_KEY if it needs a key; '
+                   'otherwise use the local engine.'),
+    'minimax_m3_comfy': ('Start ComfyUI with the MiniMax Music 3 nodes and set its URL '
+                         'in Compute (or export COMFYUI_URL); install ffmpeg '
+                         '(winget install ffmpeg / brew install ffmpeg) if it outputs FLAC.'),
 }
 
 
@@ -124,8 +131,8 @@ def doctor(reg=None):
     """Explain every registered engine's setup; never raises.
 
     One row per engine: whether it may render (``ready``), the engine's own
-    state word and detail, its per-check breakdown, and a verified fix command
-    when one exists. A health probe that blows up becomes that engine's row
+    state word and detail, its per-check breakdown, and a plain-language next
+    step when the code knows one. A health probe that blows up becomes that engine's row
     (state ``error``) and the rest are still reported.
     """
     reg = reg or registry()

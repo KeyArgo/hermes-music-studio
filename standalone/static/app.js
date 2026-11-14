@@ -600,12 +600,29 @@ function library() {
     }
     const takes = p.takes || [];
     if (!takes.length) card.append(el('p','No takes yet.'));
-    takes.forEach((t, i) => { const row = el('div','','take'); let detail = `Take ${i+1} · ${t.engine_id || p.engine || 'engine'} · ${t.state || 'unknown'} · seed ${t.requested_seed ?? t.seed ?? '—'}`;
+    takes.forEach((t, i) => { const row = el('div','','take'); row.dataset.take = t.take_id; let detail = `Take ${i+1} · ${t.engine_id || p.engine || 'engine'} · ${t.state || 'unknown'} · seed ${t.requested_seed ?? t.seed ?? '—'}`;
       const targetLabel = takeTargetLabel(t);
       if (targetLabel) detail += ` · ${targetLabel}`;
       if (t.state === 'running') detail += ` · estimated ${Number(t.progress) || 0}% · estimated ETA ${formatEta(t.eta_seconds)}`;
       else if (t.state === 'queued') detail += ` · queued${t.queue_position ? ` (#${t.queue_position})` : ''}`;
       const label = el('span', detail); row.append(label);
+      if (t.parent_take_id) {
+        const parentIndex = takes.findIndex(item => item.take_id === t.parent_take_id);
+        if (parentIndex >= 0) {
+          const lineage = el('button', `from take ${parentIndex + 1} · ${t.kind || 'generate'}`, 'take-lineage');
+          lineage.type = 'button';
+          lineage.title = `Made from take ${parentIndex + 1} — show that take`;
+          lineage.addEventListener('click', () => {
+            const parentRow = [...card.querySelectorAll('.take')].find(node => node.dataset.take === t.parent_take_id);
+            if (!parentRow) return;
+            if (typeof parentRow.scrollIntoView === 'function') parentRow.scrollIntoView({behavior: 'smooth', block: 'center'});
+            parentRow.classList.add('take-highlight');
+            clearTimeout(parentRow.__highlightTimer);
+            parentRow.__highlightTimer = window.setTimeout(() => parentRow.classList.remove('take-highlight'), 1600);
+          });
+          row.append(lineage);
+        }
+      }
       if (t.state === 'succeeded') {
         const evidence = takeEvidenceBadges(t, p);
         if (evidence.length) {
@@ -718,10 +735,11 @@ const LIBRARY_ORDERS = {
   title: (a, b) => String(a.title || 'Untitled').localeCompare(String(b.title || 'Untitled')),
   takes: (a, b) => (b.takes || []).length - (a.takes || []).length,
 };
-// Play and Export stay on the row; every other take action moves into a "More" menu. The buttons
-// are moved, not rebuilt, so each keeps exactly the handler it was made with.
+// Play, Export and the lineage link stay on the row; every other take action moves into a "More"
+// menu. The buttons are moved, not rebuilt, so each keeps exactly the handler it was made with.
 function tidyTakeRow(row) {
-  const keep = b => /Play$/.test(b.textContent.trim()) || b.textContent.trim() === 'Export';
+  const keep = b => /Play$/.test(b.textContent.trim()) || b.textContent.trim() === 'Export'
+    || b.classList.contains('take-lineage');
   const extra = [...row.children].filter(n => n.tagName === 'BUTTON' && !keep(n));
   if (extra.length < 2) return;
   const more = el('details', '', 'take-more'), summary = el('summary', 'More ▾'), menu = el('div', '', 'take-menu');
@@ -1282,6 +1300,40 @@ async function saveSettings(event) {
     $('settings-message').textContent = 'Saved. The next render uses these values.';
   } catch (err) { $('settings-message').textContent = err.message; }
 }
+// The doctor's per-engine next step belongs under that engine's own row, not in
+// a generic error banner: the health detail names what failed, the fix says what
+// to set. One list, no extra buttons.
+function ensureDoctorBox() {
+  let box = $('engine-doctor');
+  if (box) return box;
+  const panel = $('setup-panel');
+  if (!panel) return null;
+  box = el('div', '', 'doctor-list');
+  box.id = 'engine-doctor';
+  const message = $('setup-message');
+  panel.insertBefore(box, message || null);
+  return box;
+}
+function drawDoctor(rows) {
+  const box = ensureDoctorBox();
+  if (!box) return;
+  box.replaceChildren(el('p', 'Engine doctor', 'kicker'));
+  if (!rows.length) { box.append(el('p', 'No engines registered.', 'hint')); return; }
+  rows.forEach(row => {
+    const item = el('div', '', 'doctor-row');
+    item.dataset.engine = row.id;
+    item.append(el('p', `${row.ready ? '✓' : '✗'} ${row.label || row.id} · ${row.state || 'unknown'}${row.detail ? ': ' + row.detail : ''}`,
+      row.ready ? 'hint' : 'hint error'));
+    if (row.fix) item.append(el('p', row.fix, 'hint doctor-fix'));
+    box.append(item);
+  });
+}
+async function loadDoctor() {
+  const box = ensureDoctorBox();
+  if (!box) return;
+  try { drawDoctor((await api('/doctor')).engines || []); }
+  catch (err) { box.replaceChildren(el('p', 'Engine checks unavailable: ' + err.message, 'hint error')); }
+}
 function renderChecks(result) {
   const list = $('settings-checks'); list.replaceChildren();
   const card = el('article', '', 'project');
@@ -1347,8 +1399,9 @@ if ($('discover-renderers')) $('discover-renderers').addEventListener('click', f
 $('library-copy').addEventListener('click', () => relocateLibrary('copy'));
 $('library-move').addEventListener('click', () => relocateLibrary('move'));
 $('library-reset').addEventListener('click', resetLibrary);
-$('nav-compute').addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); });
+$('nav-compute').addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); loadDoctor(); });
 loadSettings().catch(err => { const node = $('settings-message'); if (node) node.textContent = err.message; });
+loadDoctor();
 
 // Change eight seconds without touching the rest of the song. Every control is on the row: three
 // typed dialogs (`window.prompt`) used to stand between the person and the edit, which is why "it is
