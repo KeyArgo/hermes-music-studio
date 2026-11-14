@@ -52,6 +52,13 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .player .transport:hover { border-color: #7f8b66; }
 .player-scrub { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 160px; }
 .player-time { font-variant-numeric: tabular-nums; font-size: 11px; color: #999e90; min-width: 38px; text-align: center; }
+.player-track { position: relative; display: flex; align-items: flex-end; flex: 1; min-width: 80px; }
+.player-wave { display: block; width: 100%; height: 48px; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18); cursor: pointer; touch-action: none; }
+.player-wave[hidden] { display: none; }
+.player-track.has-wave { height: 48px; }
+.player-track.has-wave #player-seek { position: absolute; left: 0; right: 0; bottom: 0;
+  width: 100%; margin: 0; z-index: 1; }
 #player-seek { flex: 1; min-width: 80px; accent-color: var(--accent); height: 18px; }
 .player-volume { display: flex; align-items: center; gap: 8px; color: #999e90; font-size: 11px;
   width: 132px; margin: 0; font-weight: 500; }
