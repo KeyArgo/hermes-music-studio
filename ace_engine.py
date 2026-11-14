@@ -143,7 +143,14 @@ def _kill_process_group(proc):
 # An absolute path anywhere in ACE output is noise the user cannot act on (and
 # leaks server layout). Reduce every path to its basename before it is stored.
 _ABS_PATH = re.compile(r'/[^\s\'"()<>:;,]+(?:/[^\s\'"()<>:;,]+)*')
+# Windows paths (drive and UNC) are just as leaky, and a Windows ACE install will print them.
+_WIN_ABS_PATH = re.compile(r'(?:(?<![A-Za-z0-9])[A-Za-z]:[\\/]|\\\\)[^\s\'"()<>:;,]*')
+_PATH_BREAK = re.compile(r'[\\/]')
 MAX_ERROR_CHARS = 200
+
+
+def _basename(match):
+    return _PATH_BREAK.split(match.group(0).rstrip('\\/'))[-1]
 
 
 def _summarize_failure(text, returncode):
@@ -156,7 +163,8 @@ def _summarize_failure(text, returncode):
     """
     lines = [line.strip() for line in str(text).strip().splitlines() if line.strip()]
     detail = lines[-1] if lines else 'no output'
-    detail = _ABS_PATH.sub(lambda m: m.group(0).rsplit('/', 1)[-1], detail)
+    detail = _WIN_ABS_PATH.sub(_basename, detail)
+    detail = _ABS_PATH.sub(_basename, detail)
     if len(detail) > MAX_ERROR_CHARS:
         detail = detail[:MAX_ERROR_CHARS - 1].rstrip() + '…'
     return f'ACE worker failed ({returncode}): {detail}'

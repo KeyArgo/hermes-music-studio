@@ -13,6 +13,7 @@ import tempfile
 import time
 import uuid
 import wave
+from .childenv import minimal_env
 from .store import (EXTEND_MAX_OVERLAP_SECONDS, EXTEND_MAX_SECONDS,
                     EXTEND_MIN_SECONDS, EXTEND_SOURCE_MIN_SECONDS, FIELDS,
                     REPAINT_MAX_SECONDS, REPAINT_MIN_SECONDS, TOTAL_MAX_SECONDS,
@@ -77,7 +78,8 @@ def _macos_start_time(pid):
     """Process start time as printed by ps (no /proc on macOS), or None."""
     try:
         out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(int(pid))],
-                             capture_output=True, timeout=5).stdout.strip()
+                             capture_output=True, timeout=5,
+                             env=minimal_env()).stdout.strip()
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
     try:
@@ -120,7 +122,7 @@ def _stat_state(pid):
         return None
     try:
         out = subprocess.run(['ps', '-o', 'stat=', '-p', str(int(pid))], capture_output=True,
-                             timeout=5).stdout.strip()
+                             timeout=5, env=minimal_env()).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
     return out[:1] or None

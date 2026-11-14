@@ -15,6 +15,8 @@ import platform
 import subprocess
 import sys
 
+from music_studio.childenv import minimal_env
+
 TIMEOUT_SECONDS = 2.0
 GPU_FIELDS = ('index', 'uuid', 'name', 'memory_total_mb', 'memory_used_mb',
               'utilization_percent')
@@ -24,8 +26,10 @@ NO_NVIDIA_GPU = 'no NVIDIA GPU found'
 
 def _run(args):
     try:
+        # nvidia-smi has no use for a provider key (review item 4): allowlisted env only.
         return subprocess.run(args, capture_output=True, text=True,
-                              timeout=TIMEOUT_SECONDS, check=False), None
+                              timeout=TIMEOUT_SECONDS, check=False,
+                              env=minimal_env()), None
     except FileNotFoundError:
         return None, NO_NVIDIA_GPU
     except subprocess.TimeoutExpired:

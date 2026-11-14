@@ -486,7 +486,17 @@ def _spawn_worker(s, project_id, take_id):
     # Review item 4: the render worker gets an allowlist, not a copy of the Hermes environment.
     from .childenv import minimal_env
 
-    env = minimal_env()
+    extra = {}
+    # The allowlist drops ACE_REMOTE_API_KEY because it looks like a secret, but a remote ACE render
+    # needs it. Read it through the profile-scoped store here and hand the worker only that one key.
+    try:
+        from .engines.ace_remote import _remote_key
+        remote_key = _remote_key()
+    except Exception:  # noqa: BLE001 - a missing or unscoped key just means no remote key
+        remote_key = None
+    if remote_key:
+        extra['ACE_REMOTE_API_KEY'] = remote_key
+    env = minimal_env(extra)
     env['PYTHONPATH'] = os.pathsep.join(p for p in (str(_ROOT), env.get('PYTHONPATH', '')) if p)
     args = [sys.executable, '-m', 'music_studio.worker',
             '--data-dir', str(s.root), '--project', project_id, '--take', take_id]
