@@ -165,6 +165,8 @@ def test_revamp_can_reference_finished_studio_take(tmp_path, monkeypatch):
     assert response.status_code==200, response.text
     assert response.json()['requires_studio_running'] is True
     item=calls[-1][2]['items'][0]
-    assert item['playback']['url'].endswith('/takes/'+take_id+'/audio')
+    # Signed for this one take: REVamp's player never holds the studio token (tests/test_signed_audio.py).
+    assert item['playback']['url'].split('?', 1)[0].endswith('/takes/'+take_id+'/audio')
+    assert '?sig=' in item['playback']['url']
     audio=c.get('/api/projects/'+project['project_id']+'/takes/'+take_id+'/audio',headers={'origin':'http://127.0.0.1:8114'})
     assert audio.headers['access-control-allow-origin']=='http://127.0.0.1:8114'
