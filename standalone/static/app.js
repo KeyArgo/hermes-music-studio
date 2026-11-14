@@ -606,6 +606,14 @@ function library() {
       if (t.state === 'running') detail += ` · estimated ${Number(t.progress) || 0}% · estimated ETA ${formatEta(t.eta_seconds)}`;
       else if (t.state === 'queued') detail += ` · queued${t.queue_position ? ` (#${t.queue_position})` : ''}`;
       const label = el('span', detail); row.append(label);
+      if (t.state === 'succeeded') {
+        const evidence = takeEvidenceBadges(t, p);
+        if (evidence.length) {
+          const wrap = el('span', '', 'take-evidence');
+          wrap.append(...evidence);
+          row.append(wrap);
+        }
+      }
       const takeCaps = takeCapabilities(t.engine_id || p.engine);
       const engineName = takeCaps ? (takeCaps.engine.label || takeCaps.engine.id)
         : (t.engine_id || p.engine || 'this engine');
@@ -739,6 +747,44 @@ function takeTargetLabel(take) {
   if (id) return `target ${targetName(id)}`;
   if ((take.engine_id || '') === 'minimax_m3_comfy') return 'target default endpoint';
   return '';
+}
+// What the take-check/ASR pass actually measured, and nothing else: an unknown value gets no
+// badge at all. The words come from qc.vocal_evidence only when a real ASR run wrote it.
+function takeEvidenceBadges(take, project) {
+  const badges = [];
+  const evidence = (take.qc || {}).vocal_evidence || {};
+  const asr = evidence.source === 'asr'
+    && Number.isInteger(evidence.words_recognised) && Number.isInteger(evidence.total)
+    && evidence.total > 0 && evidence.words_recognised >= 0
+    && evidence.words_recognised <= evidence.total;
+  if (asr) {
+    const words = `${evidence.words_recognised}/${evidence.total}`;
+    const tone = evidence.words_recognised === evidence.total ? 'good'
+      : evidence.words_recognised > 0 ? 'warn' : 'bad';
+    const badge = el('span', `words ${words}`, `take-badge ${tone}`);
+    badge.title = `Take check: the ASR pass recognised ${evidence.words_recognised} of ${evidence.total} words in this take.`;
+    badges.push(badge);
+  }
+  const snapshot = take.snapshot || {};
+  const instrumental = snapshot.instrumental !== undefined ? snapshot.instrumental : project.instrumental;
+  let vocal = null;
+  if (instrumental === true) {
+    vocal = {text: 'instrumental', tone: '', title: 'This take was rendered as instrumental, so no vocal was requested.'};
+  } else if (evidence.status === 'confirmed') {
+    vocal = {text: 'vocals ✓', tone: 'good',
+      title: asr ? `Take check: the ASR pass recognised ${evidence.words_recognised}/${evidence.total} words, so a vocal is confirmed.`
+        : 'Take check: an ASR pass confirmed a vocal in this take.'};
+  } else if (evidence.status === 'not_confirmed') {
+    vocal = {text: 'no vocals heard', tone: 'warn',
+      title: asr ? `Take check: the ASR pass recognised ${evidence.words_recognised}/${evidence.total} words, below the vocal threshold.`
+        : 'Take check: an ASR pass did not confirm a vocal in this take.'};
+  }
+  if (vocal) {
+    const badge = el('span', vocal.text, `take-badge${vocal.tone ? ' ' + vocal.tone : ''}`);
+    badge.title = vocal.title;
+    badges.push(badge);
+  }
+  return badges;
 }
 function normalizeEngineId(id) { return id === 'ace' ? 'ace_local' : id; }
 function engineFor(id) {

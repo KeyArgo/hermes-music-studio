@@ -129,3 +129,10 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .demo-facts{color:var(--muted)}
 .library-empty{display:grid;gap:10px;justify-items:start;padding:22px;border:1px dashed var(--line);border-radius:14px}
 .library-empty p{margin:0}
+/* Take-card evidence: the measurements a take carries, quiet enough to scan. An absent
+   measurement shows no badge, so a badge on screen always means a real ASR/take-check value. */
+.take>.take-evidence{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px}
+.take-badge{border:1px solid #4a4e42;border-radius:999px;padding:2px 8px;font-size:10px;line-height:1.6;color:var(--muted);background:transparent;white-space:nowrap}
+.take-badge.good{color:#b6d978;border-color:#60724a}
+.take-badge.warn{color:#e8a33d;border-color:#7a5c33}
+.take-badge.bad{color:#f0ac9b;border-color:#7a4a44}
