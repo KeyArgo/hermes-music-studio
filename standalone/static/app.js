@@ -218,6 +218,19 @@ function showDemoFacts(meta) {
   const facts = demoFacts(meta);
   document.querySelectorAll('.demo-facts').forEach(node => { node.textContent = facts; });
 }
+function demoTitle(meta) {
+  const named = meta && (meta.title || meta.name);
+  if (typeof named === 'string' && named.trim()) return named.trim();
+  const caption = meta && typeof meta.caption === 'string' ? meta.caption.trim() : '';
+  if (caption) {
+    const words = caption.split(/[,;.]/)[0].trim().split(/\s+/).filter(Boolean).slice(0, 6);
+    if (words.length) {
+      const phrase = words.join(' ');
+      return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+    }
+  }
+  return 'Demo song';
+}
 async function playDemo(event) {
   const button = event && event.currentTarget;
   if (button) button.disabled = true;
@@ -226,7 +239,7 @@ async function playDemo(event) {
     showDemoFacts(meta);
     const caption = meta.caption || 'A real take made with this studio.';
     const facts = demoFacts(meta);
-    play(STUDIO.api + '/demo/audio', meta.title || 'Demo song', facts ? `${caption} · ${facts}` : caption);
+    play(STUDIO.api + '/demo/audio', demoTitle(meta), facts ? `${caption} · ${facts}` : caption);
   } catch (err) {
     playerProblem('Could not load the demo: ' + err.message);
   } finally {
@@ -234,14 +247,16 @@ async function playDemo(event) {
   }
 }
 // ---------------------------------------------------------------- waveform strip
-// The peaks route already exists server-side; the footer asks it once per take and draws the
-// buckets on a small canvas. If it is unavailable the range input is still the whole control.
+// The peaks route already exists server-side; the footer asks it once per take (and once for the
+// demo) and draws the buckets on a small canvas. If it is unavailable the range input is the control.
 const PEAK_BUCKETS = 256;
 const peakCache = new Map();
 let wave = null, waveSequence = 0, waveDragging = false;
 
 function takeRef(url) {
-  const hit = /\/projects\/([^/?#]+)\/takes\/([^/?#]+)\//.exec(String(url || ''));
+  const raw = String(url || '');
+  if (/\/demo\/audio(?:[?#]|$)/.test(raw)) return { demo: true };
+  const hit = /\/projects\/([^/?#]+)\/takes\/([^/?#]+)\//.exec(raw);
   return hit ? { project: decodeURIComponent(hit[1]), take: decodeURIComponent(hit[2]) } : null;
 }
 function hideWave() {
@@ -307,11 +322,13 @@ function setWaveTake(url, editId) {
   const sequence = ++waveSequence;
   hideWave();
   if (!ref) return;
-  const key = `${ref.project}/${ref.take}${editId ? '@' + editId : ''}`;
+  const key = ref.demo ? 'demo' : `${ref.project}/${ref.take}${editId ? '@' + editId : ''}`;
   const cached = peakCache.get(key);
   if (cached) { wave = { key, values: cached.values, duration: cached.duration }; showWave(); return; }
-  const query = `?buckets=${PEAK_BUCKETS}` + (editId ? '&edit=' + encodeURIComponent(editId) : '');
-  api(`/projects/${encodeURIComponent(ref.project)}/takes/${encodeURIComponent(ref.take)}/peaks${query}`)
+  const query = `?buckets=${PEAK_BUCKETS}` + (editId && !ref.demo ? '&edit=' + encodeURIComponent(editId) : '');
+  const path = ref.demo ? `/demo/peaks${query}`
+    : `/projects/${encodeURIComponent(ref.project)}/takes/${encodeURIComponent(ref.take)}/peaks${query}`;
+  api(path)
     .then(data => {
       if (sequence !== waveSequence) return;
       if (!Array.isArray(data.peaks) || !data.peaks.length) return;
