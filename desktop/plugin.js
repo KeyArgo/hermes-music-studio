@@ -96,7 +96,7 @@ export function Studio({ ctx }) {
     if (typeof ctx?.notify === 'function') {
       ctx.notify({ kind: 'error', message: `This Hermes build cannot open a browser tab. Open ${target}` })
     }
-  }, [ctx, host.url])
+  }, [ctx, host.url, host.token])
 
   // The framed studio says when it has closed itself, and asks when it needs a browser tab opened;
   // the pane then leaves the route rather than framing a dead host. A blank frame that still says
