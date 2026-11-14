@@ -1543,7 +1543,11 @@ async function loadSettings() {
 }
 async function saveSettings(event) {
   event.preventDefault();
+  // Every field in this form is saved: scan hosts and the export folder sat in the form but were
+  // never sent, so they could not be saved from here at all.
   const body = { comfy_url: $('settings-comfy-url').value.trim(),
+    ...($('settings-scan-hosts') ? { scan_hosts: $('settings-scan-hosts').value.trim() } : {}),
+    ...($('settings-export-dir') ? { export_dir: $('settings-export-dir').value.trim() } : {}),
     minimax: { steps: Number($('settings-steps').value), cfg: Number($('settings-cfg').value),
       cfg_scale: Number($('settings-cfg-scale').value), top_k: Number($('settings-top-k').value),
       sampler: $('settings-sampler').value, scheduler: $('settings-scheduler').value } };

@@ -166,6 +166,20 @@ test('reset library and diagnostics use POST, as their routes require', async t 
   assert.equal(diagnostics.method, 'POST', 'the diagnostics route is POST-only');
 });
 
+test('saving the Compute form sends the export folder and scan hosts it shows', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
+  doc.getElementById('settings-export-dir').value = '/home/someone/Music/Mine';
+  doc.getElementById('settings-scan-hosts').value = 'studio-pc';
+  doc.getElementById('settings-form').dispatchEvent(new booted.window.Event('submit', { bubbles: true, cancelable: true }));
+  await pause();
+  const saved = booted.calls.filter(c => c.path === '/api/settings' && c.method === 'POST').pop();
+  assert.ok(saved, 'the form posted the settings');
+  assert.equal(saved.body.export_dir, '/home/someone/Music/Mine');
+  assert.equal(saved.body.scan_hosts, 'studio-pc');
+});
+
 test('a polling refresh keeps an open inline Rename input and its text', async t => {
   const booted = await boot();
   t.after(() => booted.window.close());
