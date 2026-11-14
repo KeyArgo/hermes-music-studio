@@ -116,3 +116,9 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .take-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:grid;gap:4px;min-width:190px;padding:8px;background:#211d23;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 40px #0006}
 .take-menu button{text-align:left;border-radius:7px!important}
 .library-empties{justify-self:start}
+
+.demo-callout{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 18px}
+.demo-callout .sample{padding:9px 14px}
+.demo-facts{color:var(--muted)}
+.library-empty{display:grid;gap:10px;justify-items:start;padding:22px;border:1px dashed var(--line);border-radius:14px}
+.library-empty p{margin:0}

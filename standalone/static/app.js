@@ -117,6 +117,43 @@ function playerProblem(message) {
   note.textContent = message;
   note.classList.add('error');
 }
+let demoCard = null;
+async function demoMeta() {
+  if (!demoCard) demoCard = await api('/demo');
+  return demoCard;
+}
+function demoPeak(meta) {
+  const value = meta && (meta.peak_dbfs ?? (meta.qc && meta.qc.peak_dbfs) ?? meta.peak);
+  if (value === undefined || value === null || value === '') return '';
+  const peak = Number(value);
+  return Number.isFinite(peak) ? `${peak.toFixed(1)} dBFS` : String(value);
+}
+function demoFacts(meta) {
+  const facts = [];
+  if (meta && meta.word_recovery) facts.push(`words recovered ${meta.word_recovery}`);
+  const peak = demoPeak(meta);
+  if (peak) facts.push(`peak ${peak}`);
+  return facts.join(' · ');
+}
+function showDemoFacts(meta) {
+  const facts = demoFacts(meta);
+  document.querySelectorAll('.demo-facts').forEach(node => { node.textContent = facts; });
+}
+async function playDemo(event) {
+  const button = event && event.currentTarget;
+  if (button) button.disabled = true;
+  try {
+    const meta = await demoMeta();
+    showDemoFacts(meta);
+    const caption = meta.caption || 'A real take made with this studio.';
+    const facts = demoFacts(meta);
+    play(STUDIO.api + '/demo/audio', meta.title || 'Demo song', facts ? `${caption} · ${facts}` : caption);
+  } catch (err) {
+    playerProblem('Could not load the demo: ' + err.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
 function play(url, title, detail) {
   const audio = $('player');
   audio.src = mediaUrl(url);
@@ -353,9 +390,28 @@ async function follow(p, panel) {
   tick();
 }
 
+function demoButton() {
+  const button = el('button','Hear a demo song','button secondary demo-button');
+  button.type = 'button';
+  button.addEventListener('click', playDemo);
+  return button;
+}
 function library() {
   const container = $('library'); container.replaceChildren();
-  if (!projects.length) { container.append(el('p','No drafts yet. Create a song to see it here.')); return; }
+  if (!projects.length) {
+    const empty = el('div','','library-empty');
+    empty.append(el('p','No drafts yet. Create a song to see it here.'));
+    const call = el('div','','demo-callout');
+    call.append(demoButton(), el('span','','hint demo-facts'));
+    const note = el('p','','hint');
+    note.append(document.createTextNode('The demo is a real take made with this studio; set up an engine on the '));
+    const compute = el('button','Compute','link-button'); compute.type = 'button';
+    compute.addEventListener('click', () => show('compute'));
+    note.append(compute, document.createTextNode(' page to make your own.'));
+    empty.append(call, note);
+    container.append(empty);
+    return;
+  }
   const inScope = projects.filter(p => !libraryFilter || belongsTo(p,libraryFilter));
   const query = (($('library-search') || {}).value || '').trim().toLowerCase();
   const order = (($('library-sort') || {}).value) || 'newest';
@@ -1002,7 +1058,7 @@ if ($('revamp-create')) $('revamp-create').addEventListener('click', async () =>
   } catch (err) { $('revamp-status').textContent = err.message; }
 });
 $('nav-listen').onclick=()=>{show('listen');loadRevamp();};
-$('play-sample').onclick=()=>play(STUDIO.api+'/studio/sample','Afterglow','Instrumental · ACE-Step 1.5');
+if ($('play-sample')) $('play-sample').addEventListener('click', playDemo);
 // The old playlist picker is gone: a take goes to the studio's own REVamp list.
 $('manage-targets').onclick=async()=>{show('compute');await refreshTargets();await loadHardware(true);};
 $('target-form').addEventListener('submit', async e => {
