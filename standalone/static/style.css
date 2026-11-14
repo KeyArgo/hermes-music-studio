@@ -108,6 +108,10 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .snippet-form .snippet-words { flex: 1 1 220px; min-width: 160px; }
 .snippet-form select { max-width: 220px; }
 
+/* Extend: the same one-line form, sitting under the take it will continue. */
+.extend-form .extend-seconds { width: 84px; }
+.extend-form .extend-words { flex: 1 1 220px; min-width: 160px; }
+
 /* One icon set for the rail: same size, same stroke, colour follows the text. */
 .nav-icon{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 

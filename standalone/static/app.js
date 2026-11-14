@@ -683,6 +683,18 @@ function library() {
         const fade = el('button','Fade out','button secondary'); fade.type='button';
         fade.addEventListener('click', async () => { try { await api('/fade',{project_id:p.project_id,take_id:t.take_id,seconds:1.5}); libMessage('Added a faded copy as a new take.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } });
         row.append(fade);
+        // An engine that declares continuation=false cannot extend, so the menu says so plainly
+        // instead of offering a button that the server would refuse.
+        const extend = el('button', canExtend ? 'Extend…' : `Extend (not on ${engineName})`, 'button secondary');
+        extend.type = 'button';
+        if (canExtend) {
+          extend.title = 'Add 10–60 seconds to the end as a new take';
+          extend.addEventListener('click', () => extendRow(p, t, row));
+        } else {
+          extend.disabled = true;
+          extend.title = `${engineName} cannot extend a take (continuation is not supported by this engine).`;
+        }
+        row.append(extend);
       }
       if (t.section_of && t.section_of.take_id) {
         const splice = el('button','Splice into song','button primary'); splice.type='button';
@@ -1349,6 +1361,38 @@ $('library-move').addEventListener('click', () => relocateLibrary('move'));
 $('library-reset').addEventListener('click', resetLibrary);
 $('nav-compute').addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); });
 loadSettings().catch(err => { const node = $('settings-message'); if (node) node.textContent = err.message; });
+
+// Add more song after a take that already succeeded. The backend owns the overlap and out-paint;
+// the pane only asks how many seconds and, optionally, what should happen next. The limits mirror
+// EXTEND_MIN_SECONDS/EXTEND_MAX_SECONDS in music_studio/store.py.
+function extendRow(project, take, row) {
+  if (row.querySelector('.extend-form')) return;      // one form per take, not a stack of them
+  const form = el('div', '', 'snippet-form extend-form');
+  const seconds = el('input'); seconds.type = 'number'; seconds.min = '10'; seconds.max = '60';
+  seconds.step = '1'; seconds.value = '30'; seconds.className = 'extend-seconds';
+  seconds.placeholder = 'seconds'; seconds.title = 'How many seconds to add (10–60)';
+  const words = el('input'); words.type = 'text'; words.className = 'extend-words';
+  words.placeholder = 'what happens next (optional): a long fade, an outro';
+  const go = el('button', 'Extend the take', 'button secondary'); go.type = 'button';
+
+  go.addEventListener('click', async () => {
+    const add = Number(seconds.value);
+    if (!Number.isInteger(add) || add < 10 || add > 60) {
+      libMessage('Add a whole number of seconds from 10 to 60.', true); return;
+    }
+    const caption = (words.value || '').trim();
+    go.disabled = true;
+    try {
+      await api('/extend', { project_id: project.project_id, take_id: take.take_id,
+        extend_seconds: add, ...(caption ? { caption } : {}) });
+      libMessage(`Extending by ${add}s. The new take appears above as it renders.`);
+      await refresh(); library();
+    } catch (err) { libMessage(err.message, true); } finally { go.disabled = false; }
+  });
+
+  form.append(seconds, words, go);
+  row.append(form);
+}
 
 // Change eight seconds without touching the rest of the song. Every control is on the row: three
 // typed dialogs (`window.prompt`) used to stand between the person and the edit, which is why "it is

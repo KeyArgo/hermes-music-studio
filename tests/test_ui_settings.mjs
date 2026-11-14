@@ -873,6 +873,60 @@ test('an engine that cannot generate has no Change this part control', async t =
     'neither repaint nor section render can run on that engine');
 });
 
+test('a take the engine can extend offers Extend under More and posts the seconds', async t => {
+  const { window, calls } = await boot({
+    '/api/extend': { success: true, take: { take_id: 'e1', state: 'queued' } },
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const row = takeRow(doc, 'ace_local');
+  const more = row.querySelector('details.take-more');
+  assert.ok(more, 'a More menu exists');
+  const extend = [...more.querySelectorAll('button')].find(b => text(b) === 'Extend…');
+  assert.ok(extend, 'Extend sits under More');
+  assert.equal(extend.disabled, false);
+
+  extend.click();
+  const form = row.querySelector('.extend-form');
+  assert.ok(form, 'the inline form opens');
+  const seconds = form.querySelector('.extend-seconds');
+  assert.equal(seconds.value, '30', 'defaults to 30 seconds');
+  assert.equal(seconds.min, '10');
+  assert.equal(seconds.max, '60');
+  seconds.value = '40';
+  form.querySelector('.extend-words').value = 'a long outro';
+  [...form.querySelectorAll('button')].find(b => text(b) === 'Extend the take').click();
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.deepEqual(calls.filter(c => c.path === '/api/extend').pop().body,
+    { project_id: 'p1', take_id: 't1', extend_seconds: 40, caption: 'a long outro' });
+  assert.match(text(doc.getElementById('library-status')), /Extending by 40s/);
+});
+
+test('an engine without continuation offers a disabled Extend and the reason', async t => {
+  const { window, calls } = await boot({
+    '/api/status': capabilityStatus([
+      { take_id: 't1', state: 'succeeded', engine_id: 'minimax_m3_comfy', requested_seed: 7,
+        audio_seconds: 40 }]),
+    '/api/extend': { success: true, take: { take_id: 'e1', state: 'queued' } },
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const row = takeRow(doc, 'minimax_m3_comfy');
+  const more = row.querySelector('details.take-more');
+  assert.ok(more, 'a More menu exists');
+  const extend = [...more.querySelectorAll('button')].find(b => /^Extend \(not on /.test(text(b)));
+  assert.ok(extend, 'the disabled Extend is in the menu');
+  assert.equal(extend.disabled, true);
+  assert.match(text(extend), /MiniMax Music 3 \(ComfyUI\)/);
+  assert.match(extend.title, /cannot extend/i);
+
+  extend.click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(row.querySelector('.extend-form'), null, 'no form opens');
+  assert.ok(!calls.some(c => c.path === '/api/extend'), 'nothing is posted');
+});
+
 // ---------------------------------------------------------------- library: take evidence badges
 // A take row may carry QC from the take-check/ASR pass. Show only what was measured; an unknown
 // value shows nothing, so a badge on screen is always a real measurement.
