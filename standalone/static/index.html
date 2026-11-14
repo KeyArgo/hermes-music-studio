@@ -70,6 +70,17 @@
 <button id="new-song" class="sample" type="button">＋ New song</button> <span id="draft-state" class="pill">New idea</span>
 </div>
 </div>
+<div class="preset-bar">
+<label class="preset-pick"><span>Presets</span><select id="preset-select" aria-label="Presets"><option value="">Choose a preset…</option></select></label>
+<button id="preset-save" class="sample" type="button">Save as preset</button>
+<button id="preset-delete" class="link-button" type="button" hidden>Delete preset</button>
+</div>
+<div id="preset-save-row" class="preset-save-row" hidden>
+<label class="sr-only" for="preset-name">Preset name</label>
+<input id="preset-name" maxlength="64" placeholder="Preset name" autocomplete="off">
+<button id="preset-save-confirm" class="button secondary" type="button">Save</button>
+<button id="preset-save-cancel" class="link-button" type="button">Cancel</button>
+</div>
 <label>Song title <input name="title" maxlength="120" placeholder="Give it a name"></label>
 <label>Sound &amp; style <textarea name="caption" maxlength="512" required placeholder="Warm acoustic folk, close vocals, a little tape hiss…"></textarea><small>Describe the mood, instruments, and energy.</small></label>
 <label>Lyrics <textarea name="lyrics" maxlength="4096" class="lyrics" placeholder="Write a verse, a chorus, or a story…"></textarea></label>

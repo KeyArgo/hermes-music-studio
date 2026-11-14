@@ -61,6 +61,85 @@ function fields() {
     minimax_guidance: engine === 'minimax_m3_comfy' ? Number(form.elements.minimax_guidance.value) : null,
     comfy_target_id: engine === 'minimax_m3_comfy' ? (form.elements.comfy_target_id.value || null) : null};
 }
+let presets = [], presetId = '';
+function presetKey(preset) { return preset.preset_id != null ? preset.preset_id : preset.name; }
+function builtinPreset(preset) { return !!preset && (preset.builtin === true || preset.built_in === true); }
+function updatePresetDelete() {
+  const found = presets.find(p => String(presetKey(p)) === String(presetId));
+  $('preset-delete').hidden = !found || builtinPreset(found);
+}
+function renderPresets() {
+  const select = $('preset-select');
+  select.replaceChildren();
+  const blank = el('option', 'Choose a preset…');
+  blank.value = '';
+  select.append(blank);
+  for (const preset of presets) {
+    const option = el('option', preset.name || presetKey(preset));
+    option.value = String(presetKey(preset));
+    select.append(option);
+  }
+  const known = presets.some(p => String(presetKey(p)) === String(presetId));
+  select.value = known ? String(presetId) : '';
+  presetId = select.value;
+  updatePresetDelete();
+}
+async function loadPresets() {
+  try {
+    const data = await api('/presets');
+    presets = Array.isArray(data.presets) ? data.presets : [];
+    renderPresets();
+  } catch (err) {
+    presets = []; presetId = '';
+    renderPresets();
+    $('preset-select').title = 'Presets are unavailable right now.';
+  }
+}
+function applyPreset(id) {
+  const found = presets.find(p => String(presetKey(p)) === String(id));
+  if (!found) return;
+  presetId = String(id);
+  const source = found.draft || found.params || found;
+  const caption = source.caption != null ? source.caption : source.style;
+  let changed = false;
+  if (typeof caption === 'string') { form.elements.caption.value = caption; changed = true; }
+  if (typeof source.instrumental === 'boolean') { form.elements.instrumental.checked = source.instrumental; changed = true; }
+  if (source.bpm !== undefined && source.bpm !== null && source.bpm !== '') { form.elements.bpm.value = source.bpm; changed = true; }
+  if (typeof source.keyscale === 'string' && source.keyscale) { form.elements.keyscale.value = source.keyscale; changed = true; }
+  if (typeof source.vocal_language === 'string' && source.vocal_language) { form.elements.vocal_language.value = source.vocal_language; changed = true; }
+  if (source.duration_seconds !== undefined && source.duration_seconds !== null && source.duration_seconds !== '') { form.elements.duration_seconds.value = source.duration_seconds; changed = true; }
+  if (changed) { dirty = true; revision++; buttons(); }
+  updatePresetDelete();
+  message(`Applied preset “${found.name || presetKey(found)}”. Save the draft to keep it.`);
+}
+async function savePreset() {
+  const name = $('preset-name').value.trim();
+  if (!name) { message('Name the preset first.', true); $('preset-name').focus(); return; }
+  const draft = fields();
+  try {
+    const data = await api('/presets', {name, caption: draft.caption, bpm: draft.bpm,
+      keyscale: draft.keyscale, vocal_language: draft.vocal_language, instrumental: draft.instrumental});
+    presets = Array.isArray(data.presets) ? data.presets : presets;
+    presetId = name;
+    $('preset-save-row').hidden = true;
+    $('preset-name').value = '';
+    renderPresets();
+    message(`Saved preset “${name}”.`);
+  } catch (err) { message(err.message, true); }
+}
+async function deletePreset() {
+  const found = presets.find(p => String(presetKey(p)) === String(presetId));
+  if (!found) { message('Choose a preset to delete.', true); return; }
+  if (builtinPreset(found)) { message('Built-in presets cannot be deleted.', true); return; }
+  const key = presetKey(found);
+  try {
+    const data = await api('/presets/' + encodeURIComponent(key), undefined, 'DELETE');
+    presets = Array.isArray(data.presets) ? data.presets : presets.filter(p => String(presetKey(p)) !== String(key));
+    presetId = '';
+    renderPresets();
+    message(`Deleted preset “${found.name || key}”.`);
+  } catch (err) { message(err.message, true); }
+}
 function loadProject(p) {
   if (dirty && !window.confirm('Discard unsaved changes?')) return;
   current = p;
@@ -878,6 +957,20 @@ async function refresh() {
   } finally { refreshing = false; }
 }
 form.addEventListener('input',() => {dirty=true; revision++; buttons();});
+$('preset-select').addEventListener('change', e => {
+  presetId = e.target.value;
+  if (presetId) applyPreset(presetId); else updatePresetDelete();
+});
+$('preset-save').addEventListener('click', () => {
+  const row = $('preset-save-row');
+  row.hidden = !row.hidden;
+  if (!row.hidden) { $('preset-name').value = ''; $('preset-name').focus(); }
+});
+$('preset-save-confirm').addEventListener('click', savePreset);
+$('preset-save-cancel').addEventListener('click', () => { $('preset-save-row').hidden = true; $('preset-name').value = ''; });
+$('preset-name').addEventListener('input', e => e.stopPropagation());
+$('preset-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); savePreset(); } });
+$('preset-delete').addEventListener('click', deletePreset);
 form.elements.engine.addEventListener('change',engineHint);
 form.elements.comfy_target_id.addEventListener('change',()=>{targetProbes={};engineHint();buttons();});
 form.elements.minimax_guidance.addEventListener('input',()=>{$('minimax-guidance-value').value=form.elements.minimax_guidance.value;});
@@ -1244,7 +1337,7 @@ $('target-form').addEventListener('submit', async e => {
   }
 });
 $('hardware-refresh').onclick=refreshHardware;
-refreshTargets(); refresh(); refreshWorkspaces(); loadModels();
+refreshTargets(); refresh(); refreshWorkspaces(); loadModels(); loadPresets();
 
 
 // -- render settings and library folder ------------------------------------
