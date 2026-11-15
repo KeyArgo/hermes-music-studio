@@ -31,7 +31,7 @@ jobs:
             exit 0
           fi
           python -m pip install --quiet --disable-pip-version-check imageio-ffmpeg
-          python -c "import os, shutil, imageio_ffmpeg, pathlib; d = pathlib.Path(os.environ['HOME']) / '.local/bin'; d.mkdir(parents=True, exist_ok=True); t = d / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'); shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), t); os.chmod(t, 0o755); print('installed', t)"
+          python -c "import os, shutil, imageio_ffmpeg, pathlib; d = pathlib.Path.home() / '.local/bin'; d.mkdir(parents=True, exist_ok=True); t = d / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'); shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), t); os.chmod(t, 0o755); print('installed', t)"
           # Windows needs the .exe name to find it on PATH, and a native path in GITHUB_PATH.
           bin="$HOME/.local/bin"; [ "$RUNNER_OS" = Windows ] && bin=$(cygpath -w "$bin")
           echo "$bin" >> "$GITHUB_PATH"

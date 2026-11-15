@@ -143,6 +143,19 @@ def _dev_suffix() -> str:
     return f"-dev.{_dev_base() + int(count)}" if count.isdigit() else "-dev"
 
 
+def _release_is_tagged(release: str) -> bool:
+    """True when ``v<release>`` or ``<release>`` exists as a tag in the repo."""
+    return bool(_git("tag", "--list", f"v{release}", release).splitlines())
+
+
+def _bump_patch(release: str) -> str:
+    """``1.0.0`` -> ``1.0.1``; anything that is not a plain ``X.Y.Z`` is returned unchanged."""
+    parts = release.split(".")
+    if len(parts) == 3 and all(part.isdigit() for part in parts):
+        return f"{parts[0]}.{parts[1]}.{int(parts[2]) + 1}"
+    return release
+
+
 def as_dict() -> dict:
     """Everything a status line, a bug report or a support question needs."""
     build = _find_build_info()
@@ -162,7 +175,10 @@ def as_dict() -> dict:
         version = release
         # Without git or a commit there is nothing to compare, so the manifest is all we can say.
         if release != "unknown" and "-" not in release and commit and not _is_release(release, commit):
-            version = release + _dev_suffix()
+            # Dev builds must sort after the release they follow: once v1.0.0 is tagged, a plain
+            # "1.0.0-dev.N" reads older than 1.0.0, so start the patch one higher.
+            base = _bump_patch(release) if _release_is_tagged(release) else release
+            version = base + _dev_suffix()
     return {
         "version": version,
         "release": release,
