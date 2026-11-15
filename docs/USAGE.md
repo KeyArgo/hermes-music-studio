@@ -47,20 +47,20 @@ approving the full song.
 
 ### Creative partner
 
-The right-hand panel talks to a configured Hermes provider and model. It lists the models Hermes
-knows, sends the conversation and your tone/style influence, and shows a suggested draft. **Fill my
-draft** copies the suggestion into the form; it does not save or approve it. Model use may incur the
-provider's ordinary charges. With no Hermes model available, the panel says so and the rest of the
-studio still works.
+The right-hand panel talks to the model Hermes is currently using. There is no public list-models API
+for plugins, so the panel does not enumerate providers or models: it sends the conversation and your
+tone/style influence to Hermes' active model and shows a suggested draft. **Fill my draft** copies the
+suggestion into the form; it does not save or approve it. Model use may incur the provider's ordinary
+charges. With no Hermes model available, the panel says so and the rest of the studio still works.
 
 ### Cover art
 
 Upload a PNG, JPEG or WebP up to 2 MiB, or generate one with your configured Hermes image provider.
 Cover art arrives two ways, both without the studio spending model credits itself: upload a PNG, JPEG or
 WebP (2 MiB) in the project, or ask the assistant for a picture and let it save the file it makes as the
-cover (`set_cover`). The studio only accepts an image from the studio folder, Downloads, Pictures or the
-temp directory, and it reads the bytes rather than the extension. The cover is stored with the project and
-shown in the library.
+cover (`set_cover`). The studio only accepts an image from the studio folder, the temp directory or
+Hermes' own image cache (``<hermes home>/cache/images``), and it reads the bytes rather than the
+extension. The cover is stored with the project and shown in the library.
 
 ## Library
 

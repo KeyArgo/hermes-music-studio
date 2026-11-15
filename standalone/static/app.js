@@ -1955,7 +1955,6 @@ async function loadAbout() {
   const states = {
     running: 'REVamp is running on this machine.',
     installed: 'REVamp is installed here but not running.',
-    'mcp-only': 'REVamp is wired as an MCP server only — install the plugin to get the player.',
     absent: 'REVamp is not installed here yet.'
   };
   $('revamp-state').textContent = states[data.revamp.state] || String(data.revamp.state);

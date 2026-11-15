@@ -24,10 +24,16 @@ def default_data_dir(plugin_id):
     try:
         from plugins.plugin_storage import plugin_data_dir as hermes_plugin_data_dir
     except ImportError:
-        # Running outside Hermes (a clone, a test run): the same location convention, resolved
-        # locally, so the package and its tests work without the host installed.
-        base = Path(os.environ.get('HERMES_HOME') or (Path.home() / '.hermes'))
-        path = base / 'plugin-data' / plugin_id
+        # Running outside Hermes (a clone, a test run): the host's public helper names the one
+        # home. Without the host package there is no safe guess — say what to set.
+        try:
+            from hermes_constants import get_hermes_home
+        except ImportError as exc:
+            raise RuntimeError(
+                'Music Studio cannot find its data directory: set HEWN_STUDIO_DATA_DIR, or run '
+                'inside Hermes where hermes_constants.get_hermes_home() is available.'
+            ) from exc
+        path = Path(get_hermes_home()) / 'plugin-data' / plugin_id
         path.mkdir(parents=True, exist_ok=True)
         return path
     return hermes_plugin_data_dir(plugin_id)

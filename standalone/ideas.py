@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from music_studio import llm_bridge, model_catalog
+from music_studio import llm_bridge
 
 router = APIRouter()
 
@@ -230,12 +230,14 @@ def build_request(
 
 
 def _complete(body: dict[str, Any]) -> str:
-    """Draft through the host's LLM facade, and say what is missing when there is no host."""
+    """Draft through the host's LLM facade, and say what is missing when there is no host.
+
+    There is no public list-models API, so the host's active model is the only honest choice:
+    no provider or model override is sent.
+    """
     try:
         return llm_bridge.complete(
             body["messages"],
-            provider=body.get("provider") or None,
-            model=body.get("model") or None,
             max_tokens=int(body.get("max_tokens") or 1200),
             temperature=float(body.get("temperature") or 0.7),
         )
@@ -254,21 +256,14 @@ def _complete(body: dict[str, Any]) -> str:
 
 @router.get("/studio/models")
 def studio_models(refresh: bool = False) -> JSONResponse:
-    """Every model this Hermes can reach, grouped by provider.
+    """The model picker is empty: Hermes has no public list-models API.
 
-    The picker needs the real catalogue: a fixed list would go stale, and an empty
-    one leaves the creative partner on whatever model Hermes happens to use. Each
-    provider is asked for its own models with the credential Hermes already
-    stores; a provider that cannot be listed carries its reason in ``detail`` and
-    the rest still appear. No credential ever enters this payload.
+    A plugin cannot enumerate the owner's providers or models, so drafting uses
+    Hermes' active model. The route stays so an older page still gets a valid,
+    empty answer instead of an error.
     """
-    state = model_catalog.discover(force=refresh)
-    detail = state['detail'] if llm_bridge.available() else llm_bridge.MISSING
-    return JSONResponse(content={"provider": state.get('active_provider'),
-                                 "model": state.get('active_model'),
-                                 "providers": state['providers'],
-                                 "count": state['count'],
-                                 "detail": detail})
+    return JSONResponse(content={"providers": [], "count": 0,
+                                 "provider": None, "model": None})
 
 
 @router.post("/studio/ideas")

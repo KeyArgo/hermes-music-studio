@@ -18,7 +18,7 @@ enforced by the store, not by the caller.
 | `draft` | object | for create/update | Draft fields: `title`, `caption`, `lyrics`, `duration_seconds`, `instrumental`, `engine`, `bpm`, `keyscale`, `vocal_language`, `sections`, `minimax_guidance`, `comfy_target_id` |
 | `seed` | integer | no | Render seed; omitted means a random seed |
 | `updated_at` | string | for approve | The draft version the person reviewed |
-| `image_path` | string | `set_cover` | Absolute path to a PNG/JPEG/WebP under 2 MiB, inside the studio folder, Downloads, Pictures or temp |
+| `image_path` | string | `set_cover` | Absolute path to a PNG/JPEG/WebP under 2 MiB, inside the studio folder, temp or Hermes' image cache |
 | `engines` | array of string | no | `compare`: engine ids in order; defaults to every ready engine |
 | `instruction` | string | for change | Plain words, e.g. "add a fiddle" |
 | `start_s`, `end_s` | number | for snippet | Range in the parent take |
@@ -190,7 +190,7 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` | The studio page |
-| GET | `/api/studio/models`; POST `/api/studio/ideas` | Hermes model catalog and creative partner |
+| GET | `/api/studio/models`; POST `/api/studio/ideas` | Empty model list (no public list-models API); creative partner uses Hermes' active model |
 | GET/POST | `/api/studio/workspaces` | List/create workspaces |
 | POST | `/api/studio/assign` | Assign a project to a workspace |
 | GET/POST | `/api/studio/covers/{project_id}` | Read or upload cover art (no generation route) |

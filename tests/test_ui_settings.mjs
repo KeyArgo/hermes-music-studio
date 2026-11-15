@@ -77,7 +77,7 @@ async function boot(overrides = {}, options = {}) {
           contribute: 'https://github.com/KeyArgo/hermes-music-studio-dev/blob/HEAD/CONTRIBUTING.md',
           issues: 'https://github.com/KeyArgo/hermes-music-studio-dev/issues/new' },
         revamp: { tagline: 'The listening side of the studio.', install: 'hermes plugins install revamp',
-          requires: 'Hermes Agent 0.22.5 or newer.', state: 'mcp-only',
+          requires: 'Hermes Agent 0.22.5 or newer.', state: 'installed',
           repo: 'https://github.com/KeyArgo/hermes-revamp' } },
       '/api/about/diagnostics': { success: true, text: 'Music Studio 0.2.5\nPlatform: Linux\nLibrary: /music/lib' },
       '/api/update': { ok: true, installed: { version: '1.0.0-dev.235', commit: '4cbe561e' + '0'.repeat(32),
@@ -282,7 +282,7 @@ test('about panel plugs REVamp and copies a diagnostics report', async t => {
   const doc = window.document;
 
   assert.equal(doc.getElementById('revamp-install').textContent, 'hermes plugins install revamp');
-  assert.match(text(doc.getElementById('revamp-state')), /MCP server only/i);
+  assert.match(text(doc.getElementById('revamp-state')), /installed here but not running/i);
   assert.match(text(doc.getElementById('contribute-note')), /private/i);
   assert.equal(doc.getElementById('tests-command').textContent, 'python3.13 -m pytest tests -q');
 

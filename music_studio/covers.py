@@ -2,9 +2,9 @@
 
 Review item 1 asked for cover art kept, but "done the public way": the agent makes the image with its own
 `image_generate` tool and hands the *file* to the studio, which is why `set_cover` takes a path rather than
-a prompt. A path from a model is untrusted input, so the accepted places are the ones an image can
-plausibly arrive in — the studio's own data folder, the owner's Downloads and Pictures, and the temp
-directory — and the bytes must really be the image type they claim to be.
+a prompt. A path from a model is untrusted input, so the accepted places are the ones an image plausibly
+arrives in — the studio's own data folder, the temp directory, and Hermes' own image cache under
+``<hermes home>/cache/images`` — and the bytes must really be the image type they claim to be.
 """
 
 from __future__ import annotations
@@ -72,38 +72,24 @@ def read_cover(root, project_id: str) -> tuple[str, bytes] | None:
 
 
 def hermes_home() -> Path | None:
-    """The running profile's own folder, if this process is inside Hermes.
+    """The running profile's own folder, from Hermes' public helper.
 
     `image_generate` writes what the agent asked for under the profile (`cache/images`), which is the
-    most likely place a cover path comes from — and it was the one place the studio refused. The
-    public seam is the profile root: an environment variable first, then Hermes' own helper when the
-    package is importable. Nothing here guesses a path.
+    most likely place a cover path comes from. The public seam is ``hermes_constants.get_hermes_home``;
+    when the host package is not importable there is no profile to accept from.
     """
-    raw = os.environ.get('HERMES_HOME') or os.environ.get('HERMES_PROFILE_HOME')
-    if raw:
-        return Path(raw).expanduser()
-    for module, name in (('agent.home', 'hermes_home'), ('agent.paths', 'hermes_home')):
-        try:
-            import importlib
-
-            helper = getattr(importlib.import_module(module), name, None)
-            if callable(helper):
-                return Path(helper()).expanduser()
-        except Exception:
-            continue
-    return None
+    from .hermes_home import active_home
+    return active_home()
 
 
-def allowed_roots(root, home: Path | None = None, temp: Path | None = None) -> list[Path]:
-    """Where an agent-supplied image may come from: the studio, the owner's image folders, temp, and
-    the profile's own image cache (where `image_generate` puts what the agent made)."""
-    home = Path(home or Path.home())
+def allowed_roots(root, temp: Path | None = None) -> list[Path]:
+    """Where an agent-supplied image may come from: the studio, temp, and Hermes' image cache
+    (where `image_generate` puts what the agent made)."""
     temp = Path(temp or tempfile.gettempdir())
-    roots = [Path(root), home / 'Downloads', home / 'Pictures', home / 'Desktop', temp]
+    roots = [Path(root), temp]
     profile = hermes_home()
     if profile:
-        roots += [profile / 'cache' / 'images', profile / 'cache' / 'generated',
-                  profile / 'images']
+        roots.append(profile / 'cache' / 'images')
     unique, seen = [], set()
     for candidate in roots:
         resolved = candidate.expanduser().resolve()
@@ -113,8 +99,7 @@ def allowed_roots(root, home: Path | None = None, temp: Path | None = None) -> l
     return unique
 
 
-def cover_from_file(root, project_id: str, raw_path: str, home: Path | None = None,
-                    temp: Path | None = None) -> dict:
+def cover_from_file(root, project_id: str, raw_path: str, temp: Path | None = None) -> dict:
     """Copy an image the agent made into the project's cover slot.
 
     The path is resolved first (``..`` and symlinks are followed once, before the check) and must land
@@ -129,10 +114,10 @@ def cover_from_file(root, project_id: str, raw_path: str, home: Path | None = No
     if path.is_symlink():
         raise CoverError('image_path must be a real file, not a link')
     resolved = path.resolve()
-    roots = allowed_roots(root, home=home, temp=temp)
+    roots = allowed_roots(root, temp=temp)
     if not any(resolved == candidate or candidate in resolved.parents for candidate in roots):
-        raise CoverError('image_path must be inside the studio folder, Downloads, Pictures, the temp '
-                         "directory, or Hermes' own image cache")
+        raise CoverError('image_path must be inside the studio folder, the temp directory, or '
+                         "Hermes' own image cache")
     if not resolved.is_file():
         raise CoverError('image_path does not exist')
     try:

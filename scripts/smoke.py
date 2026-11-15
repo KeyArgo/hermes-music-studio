@@ -30,16 +30,36 @@ problems: list[str] = []
 notes: list[str] = []
 
 
+def default_data_dir():
+    """The studio's data root: an explicit override, the host's storage, or Hermes' own home."""
+    import os
+    from pathlib import Path
+
+    override = os.environ.get("HEWN_STUDIO_DATA_DIR")
+    if override:
+        return Path(override).expanduser()
+    try:
+        from plugins.plugin_storage import plugin_data_dir
+    except ImportError:
+        try:
+            from hermes_constants import get_hermes_home
+        except ImportError as exc:
+            raise RuntimeError(
+                "Music Studio cannot find its data directory: set HEWN_STUDIO_DATA_DIR, or run "
+                "inside Hermes where hermes_constants.get_hermes_home() is available."
+            ) from exc
+        return Path(get_hermes_home()) / "plugin-data" / "hermes-music-studio"
+    return Path(plugin_data_dir("hermes-music-studio"))
+
+
 def studio_token() -> str:
     """The host refuses /api without its token; a shell check carries it the way the pane does."""
     import os
-    from pathlib import Path
 
     token = (os.environ.get("HEWN_STUDIO_TOKEN") or "").strip()
     if token:
         return token
-    root = Path(os.environ.get("HEWN_STUDIO_DATA_DIR")
-                or Path.home() / ".hermes" / "plugin-data" / "hermes-music-studio")
+    root = default_data_dir()
     try:
         return str(json.loads((root / "studio-host.json").read_text()).get("token") or "")
     except Exception:

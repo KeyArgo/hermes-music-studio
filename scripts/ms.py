@@ -28,8 +28,28 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_PORT = 8775
-DATA_DIR = Path(os.environ.get('HEWN_STUDIO_DATA_DIR')
-                or Path.home() / '.hermes' / 'plugin-data' / 'hermes-music-studio')
+
+
+def _default_data_dir() -> Path:
+    """The studio's data root: an explicit override, the host's storage, or Hermes' own home."""
+    override = os.environ.get('HEWN_STUDIO_DATA_DIR')
+    if override:
+        return Path(override).expanduser()
+    try:
+        from plugins.plugin_storage import plugin_data_dir
+    except ImportError:
+        try:
+            from hermes_constants import get_hermes_home
+        except ImportError as exc:
+            raise RuntimeError(
+                'Music Studio cannot find its data directory: set HEWN_STUDIO_DATA_DIR, or run '
+                'inside Hermes where hermes_constants.get_hermes_home() is available.'
+            ) from exc
+        return Path(get_hermes_home()) / 'plugin-data' / 'hermes-music-studio'
+    return Path(plugin_data_dir('hermes-music-studio'))
+
+
+DATA_DIR = _default_data_dir()
 
 
 def discover_base():

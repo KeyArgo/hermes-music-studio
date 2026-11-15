@@ -47,7 +47,8 @@ SCHEMA = {
             'image_path': {'type': 'string', 'description':
                            'Absolute path to an image file to use as the cover (PNG, JPEG or WebP, '
                            'under 2 MiB). Make the image with your own image tool first, then pass its '
-                           'path; the file must be in the studio folder, Downloads, Pictures or temp.'},
+                           'path; the file must be in the studio folder, temp, or Hermes\' own image '
+                           'cache.'},
             'engines': {'type': 'array', 'items': {'type': 'string'},
                         'description': 'For compare: engine ids, in order. Defaults to every ready engine.'},
             'instruction': {'type': 'string',

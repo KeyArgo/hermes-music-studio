@@ -27,17 +27,10 @@ REVAMPCTL_VARIANTS = ('', '.exe', '.cmd', '.bat', '.py')
 
 
 def _hermes_homes():
-    """Every plausible Hermes home, newest conventions first."""
-    seen = []
-    for value in (os.environ.get('HERMES_HOME'),
-                  str(Path.home() / '.hermes'),
-                  os.environ.get('LOCALAPPDATA') and
-                  str(Path(os.environ['LOCALAPPDATA']) / 'hermes'),
-                  os.environ.get('XDG_DATA_HOME') and
-                  str(Path(os.environ['XDG_DATA_HOME']) / 'hermes')):
-        if value and value not in seen:
-            seen.append(value)
-    return [Path(v) for v in seen]
+    """The running Hermes home, from Hermes' own public helper."""
+    from music_studio.hermes_home import active_home
+    home = active_home()
+    return [home] if home else []
 
 
 def _client_path():
@@ -59,7 +52,6 @@ def _client_path():
     roots = [Path.home() / '.local' / 'bin']
     for home in _hermes_homes():
         roots.append(home / 'plugins' / 'revamp' / 'bin')
-        roots.append(home / 'profiles' / 'default' / 'plugins' / 'revamp' / 'bin')
     for root in roots:
         for name in REVAMPCTL_VARIANTS:
             candidate = root / (REVAMPCTL_NAME + name)

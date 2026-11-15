@@ -70,6 +70,7 @@ class WorkerProcessTests(unittest.TestCase):
         # plain interpreter the package lives on PYTHONPATH, not in a .pth file.
         inherited = [p for p in os.environ.get('PYTHONPATH', '').split(os.pathsep) if p]
         child_env = {**os.environ,
+                     'HEWN_STUDIO_DATA_DIR': str(self.store.root),
                      'PYTHONPATH': os.pathsep.join([str(ROOT), *inherited])}
         return subprocess.run([sys.executable, '-c', script], capture_output=True,
                               text=True, timeout=30, env=child_env)

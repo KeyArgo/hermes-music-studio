@@ -11,10 +11,11 @@ All notable changes to Music Studio are recorded here. The format follows
 - **Drafting goes through the host's own LLM.** `standalone/hermes_worker.py` is gone: it spawned
   `hermes --print-runtime-command`, imported core modules, built an `AIAgent` from resolved provider
   credentials and called the private image tool. `music_studio/llm_bridge.py` now calls
-  `ctx.llm.complete`, and a provider/model override is honoured only when the owner has trusted the
-  plugin with one (`plugins.entries.<id>.llm.allow_provider_override`). Cover *generation* is removed;
+  `ctx.llm.complete` with no provider/model override, because Hermes has no public list-models API:
+  the picker is empty and drafting uses Hermes' active model. Cover *generation* is removed;
   `set_cover` accepts an image file the agent made (PNG/JPEG/WebP, 2 MiB, inside the studio folder,
-  Downloads, Pictures or temp). A public image-generation call from Hermes is the missing piece.
+  temp, or `<hermes home>/cache/images`). A public image-generation call from Hermes is the missing
+  piece.
 - **The pane uses the plugin SDK, not the desktop's bridge.** The state-file fallback through
   `window.hermesDesktop.readFileText` is deleted (`ctx.rest('/studio/host')` is the only discovery
   path), links open through `ctx.os.openExternal`, the framed page asks the pane over `postMessage`

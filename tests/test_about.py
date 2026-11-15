@@ -26,7 +26,8 @@ def test_about_reports_version_links_and_revamp(library):
     revamp = data['revamp']
     assert revamp['install'] == 'hermes plugins install revamp'
     assert revamp['repo'].endswith('/hermes-revamp')
-    assert revamp['state'] in ('running', 'installed', 'mcp-only', 'absent')
+    assert revamp['state'] in ('running', 'installed', 'absent')
+    assert 'wired_as_mcp' not in revamp
 
 
 def test_diagnostics_contains_the_machines_own_facts(library):

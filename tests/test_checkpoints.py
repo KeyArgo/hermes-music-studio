@@ -134,7 +134,8 @@ class CoverSourceTests(unittest.TestCase):
 
     `image_generate` writes under the profile (`cache/images`), and `set_cover` refused everything
     outside the studio, Downloads, Pictures, Desktop and temp — so the one file an agent actually made
-    was rejected.
+    was rejected. The allowed places are now the studio, temp, and that cache, resolved through
+    Hermes' public helper.
     """
 
     def setUp(self):

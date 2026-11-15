@@ -21,12 +21,10 @@ the same root allows access to the same project files.
 
 - Choose Simple or Custom; Custom exposes tempo, key, vocal language, and
   MiniMax music guidance. Save and approve a draft before rendering.
-- The creative partner lists configured Hermes providers and models. It uses
-  Hermes's own runtime and credentials, with agent tools and memory disabled.
-  Model use may incur the provider's ordinary charges. `hermes` must be on
-  `PATH` or at `~/.local/bin/hermes`; `HERMES_MUSIC_HERMES_COMMAND` can name
-  another launcher. If the Hermes source is elsewhere, set
-  `HERMES_MUSIC_HERMES_REPO` to its checkout.
+- The creative partner uses the model Hermes is currently using. There is no
+  public list-models API for plugins, so it does not list providers or models;
+  drafting goes through the Hermes pane's `ctx.llm`. Model use may incur the
+  provider's ordinary charges.
 - Tone and style influence in the idea panel shape the text draft. In Custom
   mode, MiniMax's separate guidance slider controls its text-encoder CFG from
   0.5 to 3.0 and is saved with the take. ACE-Step turbo does not support that

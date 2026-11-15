@@ -8,8 +8,23 @@ The environment variable is set for every test here, so a fixture that wants to 
 behaviour must delete it explicitly (`monkeypatch.delenv('HEWN_STUDIO_TOKEN')`).
 """
 import os
+import sys
+import types
+from pathlib import Path
 
 import pytest
+
+try:  # the host package is not installed when this checkout runs on its own
+    import hermes_constants  # noqa: F401
+except ImportError:  # pragma: no cover - the normal test environment
+    _constants = types.ModuleType('hermes_constants')
+
+    def _get_hermes_home():
+        override = os.environ.get('HERMES_HOME') or os.environ.get('HERMES_PROFILE_HOME')
+        return Path(override) if override else Path.home() / '.hermes'
+
+    _constants.get_hermes_home = _get_hermes_home
+    sys.modules.setdefault('hermes_constants', _constants)
 
 TEST_TOKEN = 'test-token-abc123'
 

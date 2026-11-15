@@ -163,10 +163,6 @@ def _python() -> list[str]:
 _INHERITED_LEAKS = ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONSTARTUP')
 
 
-def _clean_env() -> dict:
-    return {key: value for key, value in os.environ.items() if key not in _INHERITED_LEAKS}
-
-
 def _probe_env() -> dict:
     """What the interpreter probe runs with: the host's own allowlist, minus the Python-path leaks."""
     from .childenv import studio_env
@@ -328,6 +324,13 @@ def ensure_host(port: int | None = None) -> dict:
                # detached host outlives the app that started it (measured: 58 MB, forever).
                'HEWN_STUDIO_PARENT_PID': str(os.getpid()),
                'PYTHONUNBUFFERED': '1'}
+        # The host may not import hermes_constants, so it gets the active profile's home from the
+        # public helper here, in Hermes' own process. Without it a default-profile host (no
+        # HERMES_HOME in the shell) could not find REVamp or the profile's image cache.
+        from .hermes_home import active_home
+        home = active_home()
+        if home is not None:
+            env['HERMES_HOME'] = str(home)
         # Machine-specific engine paths come from the person's own settings, never from the code.
         try:
             from . import settings as studio_settings

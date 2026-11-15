@@ -49,26 +49,22 @@ def _port_open(port: int, host: str = '127.0.0.1', timeout: float = 0.4) -> bool
 
 
 def revamp_status() -> dict:
-    """Is REVamp running here, installed as a plugin, or only wired as an MCP server?"""
-    home = Path.home() / '.hermes'
-    installed = any((home / 'plugins').glob('revamp*')) or any(
-        (home / 'desktop-plugins').glob('revamp*'))
-    wired = False
-    try:
-        wired = 'revampctl' in (home / 'config.yaml').read_text(encoding='utf-8', errors='replace')
-    except OSError:
-        wired = False
+    """Is REVamp running here, or installed beside this plugin?
+
+    The home comes from Hermes' own public helper, never from a guessed path or the owner's config file.
+    """
+    from .hermes_home import active_home
+    home = active_home()
+    installed = home is not None and (any((home / 'plugins').glob('revamp*')) or any(
+        (home / 'desktop-plugins').glob('revamp*')))
     running = _port_open(REVAMP['port'])
     if running:
         state = 'running'
     elif installed:
         state = 'installed'
-    elif wired:
-        state = 'mcp-only'
     else:
         state = 'absent'
-    return {'installed': installed, 'wired_as_mcp': wired, 'running': running, **REVAMP,
-            'state': state}
+    return {'installed': installed, 'running': running, **REVAMP, 'state': state}
 
 
 def _version() -> str:
