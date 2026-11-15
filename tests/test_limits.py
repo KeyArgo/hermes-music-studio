@@ -144,6 +144,16 @@ class EngineDurationCapTests(unittest.TestCase):
         self.assertEqual(ace_engine.estimate_render_seconds(DURATION_MAX_SECONDS),
                          estimate_render_seconds(DURATION_MAX_SECONDS))
 
+    def test_the_wav_cap_covers_the_longest_legal_render(self):
+        # An extend may run to TOTAL_MAX_SECONDS, and the worker writes 48 kHz
+        # 16-bit stereo (the format the long-form stitcher requires). The old
+        # fixed 100 MiB cap rejected a 10-minute render after the GPU had
+        # already produced it.
+        from music_studio.longform import CHANNELS, SAMPLE_RATE, SAMPLE_WIDTH
+        longest_render = ace_engine.TOTAL_MAX_SECONDS * SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
+        self.assertGreater(longest_render, 100 * 1024 * 1024)
+        self.assertGreaterEqual(ace_engine.MAX_WAV_BYTES, longest_render)
+
 
 class LimitsPayloadTests(unittest.TestCase):
     def setUp(self):

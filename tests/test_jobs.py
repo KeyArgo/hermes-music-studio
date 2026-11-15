@@ -74,6 +74,21 @@ class JobTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'target changed'):
                 Jobs(s).enqueue_batch(pid, 1, engine_id='minimax_m3_comfy')
 
+    def test_enqueue_section_inherits_the_parents_pinned_target(self):
+        with tempfile.TemporaryDirectory() as root:
+            s, pid = self._targeted_draft(root)
+            target = {'id': s.get(pid)['comfy_target_id'],
+                      'name': 'Living room box', 'url': 'http://192.0.2.52:8188'}
+            jobs = Jobs(s)
+            parent = jobs.enqueue(pid, seed=1, engine_id='minimax_m3_comfy', target=target)
+            jobs.start(pid, parent['take_id'], pid=os.getpid())
+            jobs.succeed(pid, parent['take_id'], _tone(seconds=3),
+                         metadata={'engine_id': 'minimax_m3_comfy'})
+            child = jobs.enqueue_section(pid, parent['take_id'], 0.5, 2.0, seed=2)
+            self.assertEqual(child['snapshot']['comfy_target_id'], target['id'])
+            self.assertEqual(child['snapshot']['comfy_target_url'], target['url'])
+            self.assertEqual(child['snapshot']['comfy_target_name'], target['name'])
+
     def test_enqueue_section_rejects_non_finite_bounds(self):
         with tempfile.TemporaryDirectory() as root:
             jobs = Jobs(Store(root))

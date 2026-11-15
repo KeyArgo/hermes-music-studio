@@ -353,9 +353,12 @@ class Jobs:
                 raise ValueError('the section must sit inside the take')
             length = round(end_s - start_s, 3)
             self._assert_gpu_free()
+            # A section is rendered from the parent take, so it belongs to the
+            # endpoint the parent was preflighted against, not a live default.
+            target = _pinned_target(parent.get('snapshot') or {})
             take = self._new_take(project, seed=seed, requested_seed=seed, seed_locked=True,
                                   kind='section', parent=parent, duration_override=length,
-                                  engine_id=engine_id or parent.get('engine_id'),
+                                  engine_id=engine_id or parent.get('engine_id'), target=target,
                                   extra={'range_start_s': start_s, 'range_end_s': end_s,
                                          'section_of': {'project_id': project_id,
                                                         'take_id': parent_take_id,

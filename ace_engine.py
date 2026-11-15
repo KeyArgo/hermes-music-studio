@@ -67,6 +67,17 @@ EXTEND_MAX_OVERLAP_SECONDS = 8.0
 EXTEND_SOURCE_MIN_SECONDS = 20
 TOTAL_MAX_SECONDS = 600
 
+# The worker writes 48 kHz, 16-bit stereo, the same layout the long-form
+# stitcher requires. An extend can legally reach TOTAL_MAX_SECONDS, so the byte
+# cap must admit that render; the old fixed 100 MiB rejected a 10-minute render
+# after the GPU had already produced it. The extra 10 % leaves room for WAV
+# chunks without letting an unbounded file through.
+WAV_SAMPLE_RATE = 48000
+WAV_CHANNELS = 2
+WAV_SAMPLE_WIDTH = 2
+MAX_WAV_BYTES = int(TOTAL_MAX_SECONDS * WAV_SAMPLE_RATE * WAV_CHANNELS
+                    * WAV_SAMPLE_WIDTH * 1.1) + 4096
+
 # Wall-clock model, same coefficients as music_studio.store (whole render,
 # including model load), fitted to the contended-GPU observation: 553.5 s for a
 # 180 s take through the plugin path while another render shared the GPU.
@@ -262,8 +273,8 @@ def _wav_info(data):
     """Header facts for a WAV blob, or ValueError. Never trusts a claimed duration."""
     if not isinstance(data, (bytes, bytearray)) or not data:
         raise ValueError('source audio must be non-empty WAV bytes')
-    if len(data) > 100 * 1024 * 1024:
-        raise ValueError('source audio exceeds 100 MiB')
+    if len(data) > MAX_WAV_BYTES:
+        raise ValueError(f'source audio exceeds {MAX_WAV_BYTES // (1024 * 1024)} MiB')
     try:
         with wave.open(io.BytesIO(bytes(data)), 'rb') as wav:
             frames = wav.getnframes()
@@ -343,7 +354,7 @@ def _render(*, job_input, output_dir, timeout_seconds, expected_seconds,
                 text = (job / 'worker.log').read_text(errors='replace')
                 raise RuntimeError(_summarize_failure(text, returncode))
             path = job / 'output.wav'
-            if not path.is_file() or path.is_symlink() or path.stat().st_size > 100 * 1024 * 1024:
+            if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_WAV_BYTES:
                 raise RuntimeError('ACE worker returned no valid WAV')
             try:
                 with wave.open(str(path), 'rb') as wav:

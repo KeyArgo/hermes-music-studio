@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import time
 
+# Windows has no blocking msvcrt lock, so the retry loop has to give up on its
+# own. A stale lock is a bug to report, not a reason to wedge the worker forever.
+LOCK_TIMEOUT_SECONDS = 120.0
+
 try:  # POSIX
     import fcntl
 except ImportError:  # Windows
@@ -21,6 +25,7 @@ def lock_ex(handle, blocking: bool = True) -> None:
         fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
         return
     handle.seek(0)
+    deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
     while True:
         try:
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -28,6 +33,11 @@ def lock_ex(handle, blocking: bool = True) -> None:
         except OSError as exc:
             if not blocking:
                 raise BlockingIOError(str(exc)) from exc
+            if time.monotonic() >= deadline:
+                name = getattr(handle, 'name', '<unnamed>')
+                raise TimeoutError(
+                    f'timed out after {LOCK_TIMEOUT_SECONDS:g} s waiting for lock {name}'
+                ) from exc
             time.sleep(0.05)
 
 
