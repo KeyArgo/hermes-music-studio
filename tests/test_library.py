@@ -112,6 +112,14 @@ def test_endpoint_probe_reports_an_unreachable_server_without_raising(library):
 
 
 # -- file management -------------------------------------------------------
+def test_the_export_ledger_is_not_counted_as_a_project(library):
+    """``exports.json`` shares the library folder with the projects; it is bookkeeping, not a song."""
+    _project_with_take(library)
+    (library / 'exports.json').write_text('{}', encoding='utf-8')
+
+    assert service.library_info()['projects'] == 1
+
+
 def test_duplicate_project_copies_takes_and_audio(library):
     original = _project_with_take(library)
     take_id = original['takes'][0]['take_id']

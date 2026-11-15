@@ -47,7 +47,7 @@ def plugin_data_dir(plugin_id):
     return base
 
 from .store import (DEFAULT_ENGINE_ID, Store, estimate_render_seconds, limits,
-                    sections_for)
+                    sections_for, valid_id)
 from .jobs import Jobs
 from .engines import (CapabilityUnsupported, EngineUnavailable, MiniMaxM3ComfyEngine,
                       Registry, resolve_id)
@@ -882,12 +882,18 @@ def test_endpoint(url=None):
 
 
 def _library_payload():
-    from . import settings as st
-
     base = default_data_dir(PLUGIN_ID)
     active = plugin_data_dir(PLUGIN_ID)
-    projects = [p for p in active.glob('*.json')
-                if p.stem not in (st.SETTINGS_FILE.replace('.json', ''), 'library', 'studio-host')]
+    # Only UUID-named files are project records. The settings, the library
+    # pointer, the export ledger and the peaks sidecars all share this folder,
+    # so counting every .json would report them as songs.
+    projects = []
+    for path in active.glob('*.json'):
+        try:
+            valid_id(path.stem)
+        except ValueError:
+            continue
+        projects.append(path)
     audio = list(active.glob('*.wav'))
     total = 0
     for path in active.glob('*'):
@@ -1113,7 +1119,7 @@ def delete_take(project_id, take_id):
                 except ValueError:
                     pass
         project['takes'] = takes[:index] + takes[index + 1:]
-        s._save(project)
+        s.save_take(project)
     return {'success': True, 'project': project, 'deleted_take_id': take_id}
 
 
@@ -1203,7 +1209,7 @@ def splice_section(project_id, take_id, candidate_take_id, fade_ms=40):
                                      'range_start_s': span['start_s'],
                                      'range_end_s': span['end_s']})
         project['takes'].append(take)
-        s._save(project)
+        s.save_take(project)
     jobs.start(project_id, take['take_id'], os.getpid())
     metadata = {'engine_id': 'splice', 'engine_label': 'Section splice (local edit)',
                 'parent_take_id': take_id,
@@ -1238,7 +1244,7 @@ def fade_take(project_id, take_id, seconds=1.5):
                               engine_id=parent.get('engine_id') or engine_id_for(project),
                               extra={'fade_out_seconds': float(seconds)})
         project['takes'].append(take)
-        s._save(project)
+        s.save_take(project)
     jobs.start(project_id, take['take_id'], os.getpid())
     metadata = {'engine_id': 'edit', 'engine_label': 'Local edit (fade out)',
                 'parent_take_id': take_id, 'fade_out_seconds': float(seconds),

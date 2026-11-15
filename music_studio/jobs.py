@@ -273,7 +273,7 @@ class Jobs:
             take = self._new_take(p, seed=seed, requested_seed=seed, seed_locked=lock_seed,
                                   engine_id=engine_id, target=target)
             p['takes'].append(take)
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def enqueue_batch(self, project_id, count, seed_base=None, engine_id=None, target=None):
@@ -306,7 +306,7 @@ class Jobs:
                                     target=target)
                      for index in range(count)]
             p['takes'].extend(takes)
-            self.store._save(p)
+            self.store.save_take(p)
             return takes
 
     def _succeeded_parent(self, project, parent_take_id):
@@ -364,7 +364,7 @@ class Jobs:
                 take['snapshot']['caption'] = caption
                 take['snapshot']['sections'] = []
             project['takes'].append(take)
-            self.store._save(project)
+            self.store.save_take(project)
             return take
 
     def enqueue_repaint(self, project_id, parent_take_id, start_s, end_s, seed,
@@ -420,7 +420,7 @@ class Jobs:
             take['snapshot']['caption'] = effective_caption
             take['snapshot']['lyrics'] = effective_lyrics
             project['takes'].append(take)
-            self.store._save(project)
+            self.store.save_take(project)
             return copy.deepcopy(take)
 
     def enqueue_extension(self, project_id, parent_take_id, extend_seconds, seed,
@@ -474,7 +474,7 @@ class Jobs:
             take['snapshot']['caption'] = effective_caption
             take['snapshot']['lyrics'] = effective_lyrics
             project['takes'].append(take)
-            self.store._save(project)
+            self.store.save_take(project)
             return copy.deepcopy(take)
 
     def next_queued(self, project_id, batch_id):
@@ -499,7 +499,7 @@ class Jobs:
                     take.update(state='cancelled', finished_at=time.time())
                     cancelled += 1
             if cancelled:
-                self.store._save(p)
+                self.store.save_take(p)
             return cancelled
 
     def _take(self, project, take_id):
@@ -519,7 +519,7 @@ class Jobs:
             if take['state'] not in ('queued', 'running'):
                 raise ValueError('invalid transition')
             take.update(pid=pid, pid_start=_stat_start_time(pid))
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def attach_render(self, project_id, take_id, pid):
@@ -538,7 +538,7 @@ class Jobs:
             if take['state'] != 'running':
                 raise ValueError('invalid transition')
             take.update(ace_pid=pid, ace_pid_start=_stat_start_time(pid))
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def _reap_render(self, take):
@@ -569,7 +569,7 @@ class Jobs:
                             started_at=take.get('started_at') or time.time(), progress=0)
             elif not (take['state'] == 'running' and take.get('pid') == pid):
                 raise ValueError('take not claimable')
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def start(self, project_id, take_id, pid=None):
@@ -585,7 +585,7 @@ class Jobs:
                 if type(pid) is not int or pid <= 0:
                     raise ValueError('invalid pid')
                 take.update(pid=pid, pid_start=_stat_start_time(pid))
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def progress(self, project_id, take_id, *, started_at=None, progress=None):
@@ -605,7 +605,7 @@ class Jobs:
                 take['started_at'] = started_at
             if progress is not None:
                 take['progress'] = progress
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def fail(self, project_id, take_id, error):
@@ -617,7 +617,7 @@ class Jobs:
             if take['state'] != 'running':
                 raise ValueError('invalid transition')
             take.update(state='failed', error=error, finished_at=time.time())
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def abort(self, project_id, take_id, error):
@@ -630,7 +630,7 @@ class Jobs:
             if take['state'] not in ('queued', 'running'):
                 raise ValueError('invalid transition')
             take.update(state='failed', error=error, audio_file=None, finished_at=time.time())
-            self.store._save(p)
+            self.store.save_take(p)
             return take
 
     def succeed(self, project_id, take_id, data, metadata=None, qc_record=None, edit=None):
@@ -710,7 +710,7 @@ class Jobs:
                     take.setdefault('edits', []).append(edit_record)
                     take['playable_edit_id'] = edit_record['edit_id']
                 try:
-                    self.store._save(p)
+                    self.store.save_take(p)
                 except BaseException:
                     if edit_record is not None:
                         try:
@@ -738,7 +738,7 @@ class Jobs:
             if take['state'] != 'succeeded':
                 raise ValueError('invalid transition')
             take['qc'] = clean
-            self.store._save(p)
+            self.store.save_take(p)
             return take['qc']
 
     def _write_edit(self, take_id, raw, plan, report, edited):
@@ -831,7 +831,7 @@ class Jobs:
                 # carries its own length so neither is mistaken for the other.
                 take['qc'] = take.get('qc') or take_qc(report,
                                                        requested_s=report['file_s'])
-                self.store._save(p)
+                self.store.save_take(p)
             except BaseException:
                 # A record that cannot be saved must not leave its WAV behind.
                 try:
@@ -914,7 +914,7 @@ class Jobs:
                     reconciled += 1
                     changed = True
                 if changed:
-                    self.store._save(p)
+                    self.store.save_take(p)
         return reconciled
 
     def recover(self, *, grace_seconds=SPAWN_GRACE_SECONDS):
@@ -983,5 +983,5 @@ class Jobs:
                         count += 1
                         changed = True
                 if changed:
-                    self.store._save(p)
+                    self.store.save_take(p)
             return count

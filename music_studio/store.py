@@ -534,6 +534,16 @@ class Store:
             projects.append(project)
         return projects
 
+    def save_take(self, project):
+        """Save a take change without moving the draft's version token.
+
+        ``updated_at`` is how the page spots a draft edited by someone else. A
+        take moving through queued, running or succeeded is not an edit to the
+        draft, so bumping ``updated_at`` here would make the person's own open
+        draft look stale while a render runs.
+        """
+        self._save(project, bump=False)
+
     def _save(self, project, *, bump=True):
         target = self.root / (valid_id(project['project_id']) + '.json')
         # Strictly increasing: a token minted before a save can never collide

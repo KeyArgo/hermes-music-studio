@@ -489,8 +489,8 @@ class WorkerGateTests(unittest.TestCase):
         observed = []
         original = self.store._save
 
-        def spy(project):
-            original(project)
+        def spy(project, **kwargs):
+            original(project, **kwargs)
             for take in self.store.get(project['project_id'])['takes']:
                 if take['state'] == 'succeeded':
                     observed.append((take['take_id'],

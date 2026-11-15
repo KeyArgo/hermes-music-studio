@@ -126,6 +126,6 @@ platform APIs rather than `/proc`.
 
 ## macOS
 
-CI runs both suites on macOS. Real-hardware use has been on Linux, and local ACE-Step rendering on
-macOS is untested. Worker recovery reads `/proc` start times on Linux and falls back to `ps` on macOS,
+CI runs both suites on macOS, but macOS has had no hands-on test yet. Worker recovery reads `/proc`
+start times on Linux and falls back to `ps` on macOS,
 so that path is less proven there. The README states this rather than claiming parity.
