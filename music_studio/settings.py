@@ -36,6 +36,8 @@ DEFAULTS = {
     'ace_source_dir': '',
     # An ACE-Step HTTP server (any host running acestep.api_server). Empty means "none configured".
     'ace_remote_url': '',
+    # The one hosted endpoint: ``{url, model, saved_at, key_env}``. Its key is in Hermes, never here.
+    'ace_remote': {'url': '', 'model': '', 'saved_at': '', 'key_env': ''},
     'minimax': {
         'steps': 30,
         'cfg': 4.0,
@@ -67,12 +69,18 @@ def settings_path(base: Path) -> Path:
 def _merge(raw: dict) -> dict:
     out = {'comfy_url': DEFAULTS['comfy_url'], 'scan_hosts': DEFAULTS['scan_hosts'],
            'export_dir': DEFAULTS['export_dir'],
+           'ace_remote': dict(DEFAULTS['ace_remote']),
            'minimax': dict(DEFAULTS['minimax'])}
     if isinstance(raw.get('comfy_url'), str):
         out['comfy_url'] = raw['comfy_url']
     for key in ('ace_runtime_dir', 'ace_source_dir', 'ace_remote_url'):
         if isinstance(raw.get(key), str):
             out[key] = raw[key]
+    raw_ace = raw.get('ace_remote')
+    if isinstance(raw_ace, dict):
+        for key in DEFAULTS['ace_remote']:
+            if isinstance(raw_ace.get(key), str):
+                out['ace_remote'][key] = raw_ace[key]
     if isinstance(raw.get('scan_hosts'), str):
         out['scan_hosts'] = raw['scan_hosts']
     if isinstance(raw.get('export_dir'), str):
@@ -139,6 +147,10 @@ def write(base: Path, payload: dict) -> dict:
             knobs = dict(current.get('minimax') or {})
             knobs.update(value)
             merged_input['minimax'] = knobs
+        elif key == 'ace_remote' and isinstance(value, dict):
+            entry = dict(current.get('ace_remote') or {})
+            entry.update(value)
+            merged_input['ace_remote'] = entry
         else:
             merged_input[key] = value
     merged = validate(merged_input)

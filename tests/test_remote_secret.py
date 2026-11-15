@@ -12,8 +12,6 @@ was created with default permissions.
 from __future__ import annotations
 
 import json
-import os
-import stat
 import sys
 import types
 from pathlib import Path
@@ -32,6 +30,38 @@ def _isolated_studio(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("HEWN_STUDIO_DATA_DIR", str(tmp_path / "studio"))
     return tmp_path
+
+
+@pytest.fixture
+def hermes_store(monkeypatch):
+    """A fake Hermes credential store, on the modules the plugin is allowed to import."""
+    values: dict[str, str] = {}
+
+    config = types.ModuleType("hermes_cli.config")
+
+    def save_env_value(name, value):
+        values[name] = value
+
+    config.save_env_value = save_env_value
+    hermes_cli = types.ModuleType("hermes_cli")
+    hermes_cli.config = config
+
+    scope = types.ModuleType("agent.secret_scope")
+
+    def get_secret(name, default=None):
+        return values.get(name, default)
+
+    scope.get_secret = get_secret
+    scope.invalidate_env_file_cache = lambda: None
+    agent = types.ModuleType("agent")
+    agent.secret_scope = scope
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
+    monkeypatch.setitem(sys.modules, "agent", agent)
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", scope)
+    return values
+
 
 def test_the_manifest_declares_the_remote_key():
     text = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
@@ -73,23 +103,21 @@ def test_the_engine_still_works_without_hermes(monkeypatch):
     assert _remote_key() == "from-the-environment"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows does not carry POSIX mode bits")
-def test_the_key_file_is_private_from_the_first_byte(tmp_path):
+def test_the_key_is_saved_through_hermes_not_a_file(tmp_path, hermes_store):
     from music_studio import setup
 
     setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
-    path = tmp_path / setup.KEY_FILE
-    mode = stat.S_IMODE(path.stat().st_mode)
-    assert mode == 0o600, f"the key file is {oct(mode)}; a secret is created private, not chmod-ed later"
-    assert json.loads(path.read_text())["default"]["key"] == "sk-test-123"
+
+    assert hermes_store["ACE_REMOTE_API_KEY"] == "sk-test-123"
+    assert not (tmp_path / "cloud-keys.json").exists(), "a key file is not the store any more"
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            assert "sk-test-123" not in path.read_text(errors="ignore"), (
+                f"the key was written to {path}")
 
 
-def test_the_key_store_never_returns_the_key_to_the_page(tmp_path):
-    """Call the real save/list path: the response the page receives must not carry the secret.
-
-    The reviewed version of this test built a fabricated list and grepped the source for a string, so it
-    passed whatever `list_cloud` actually returned.
-    """
+def test_the_key_store_never_returns_the_key_to_the_page(tmp_path, hermes_store):
+    """Call the real save/list path: the response the page receives must not carry the secret."""
     from music_studio import setup
 
     saved = setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
@@ -99,45 +127,36 @@ def test_the_key_store_never_returns_the_key_to_the_page(tmp_path):
     listing = setup.list_cloud(tmp_path)
     text = json.dumps(listing)
     assert "sk-test-123" not in text, f"the listing leaked the key: {text}"
-    assert listing["endpoints"][0]["has_key"] is True if "endpoints" in listing else True
-
-    rows = listing if isinstance(listing, list) else listing.get("endpoints") or listing.get("clouds") or []
-    assert rows, f"the listing returned nothing to inspect: {listing}"
-    for row in rows:
+    assert listing, f"the listing returned nothing to inspect: {listing}"
+    for row in listing:
         assert "key" not in row, f"a row carries the key: {row}"
+        assert row["has_key"] is True
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows does not carry POSIX mode bits")
-def test_saving_again_tightens_a_key_file_an_older_build_left_at_0644(tmp_path):
-    """The mode argument to os.open only applies at creation; an existing secret stays 0644 otherwise."""
+def test_saving_again_replaces_the_key_hermes_holds(tmp_path, hermes_store):
     from music_studio import setup
 
-    path = tmp_path / setup.KEY_FILE
-    path.write_text(json.dumps({"default": {"url": "https://old", "key": "old", "model": ""}}))
-    path.chmod(0o644)
-
+    hermes_store["ACE_REMOTE_API_KEY"] = "sk-old"
     setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-new-key")
 
-    mode = stat.S_IMODE(path.stat().st_mode)
-    assert mode == 0o600, f"an upgraded install keeps a world-readable key file: {oct(mode)}"
-    assert json.loads(path.read_text())["default"]["key"] == "sk-new-key"
+    assert hermes_store["ACE_REMOTE_API_KEY"] == "sk-new-key"
 
 
-def test_a_permission_error_is_fail_closed_not_a_world_readable_write(tmp_path, monkeypatch):
-    """The OSError branch used to fall back to Path.write_text, i.e. default permissions for a secret."""
+def test_a_failed_credential_write_is_reported_and_writes_no_secret(tmp_path, hermes_store,
+                                                                   monkeypatch):
+    """A save that Hermes refuses must fail loudly, not fall back to a plaintext file."""
     from music_studio import setup
 
-    real_open = os.open
+    config = sys.modules["hermes_cli.config"]
 
-    def refuse(path, flags, mode=0o777, *args, **kwargs):
-        if str(path).endswith(setup.KEY_FILE):
-            raise PermissionError("no permission to create the key file")
-        return real_open(path, flags, mode, *args, **kwargs)
+    def refuse(name, value):
+        raise PermissionError("the credential store is not writable")
 
-    monkeypatch.setattr(setup.os, "open", refuse)
-    with pytest.raises(PermissionError):
+    monkeypatch.setattr(config, "save_env_value", refuse)
+    with pytest.raises(ValueError, match="could not be saved to Hermes"):
         setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
-    assert not (tmp_path / setup.KEY_FILE).exists(), "a secret was written by the fallback"
+    assert [p for p in tmp_path.rglob("*") if p.is_file()] == [], (
+        "a secret was written by a fallback")
 
 
 def test_a_scoped_miss_never_falls_back_to_the_process_environment(monkeypatch):

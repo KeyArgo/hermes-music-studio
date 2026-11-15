@@ -29,9 +29,10 @@ local shell access, a modified plugin install, or control of the configured engi
 scope only where they cross a boundary the product claims to enforce.
 
 The studio stores project JSON and WAV files under the plugin data directory you chose. It does not
-send telemetry, and it does not change passwords or credentials. Network calls go only to endpoints
-you configure (ComfyUI, an optional ACE remote server, REVamp on loopback, and the Hermes provider or
-Hugging Face when you press the corresponding button).
+send telemetry and does not change passwords. The one credential it writes is the hosted API key you
+enter, saved through Hermes' own credential store; the plugin never writes a key to its data
+directory. Network calls go only to endpoints you configure (ComfyUI, an optional ACE remote server,
+REVamp on loopback, and the Hermes provider or Hugging Face when you press the corresponding button).
 
 Reports about model output quality, the ACE-Step or MiniMax models themselves, ComfyUI, ffmpeg or the
 Hermes host should go to those projects.

@@ -274,7 +274,7 @@ answers `audio unavailable`.
 | `music_studio/settings.py` | Read, validate and write `engine-settings.json` |
 | `music_studio/network.py` | Named ComfyUI targets and URL validation |
 | `music_studio/discovery.py` | Find a renderer on saved/loopback/LAN hosts |
-| `music_studio/setup.py` | Probe ComfyUI/ACE, plan and download HF weights, store cloud keys |
+| `music_studio/setup.py` | Probe ComfyUI/ACE, plan and download HF weights, store the hosted endpoint (the key goes to Hermes) |
 | `music_studio/sample.py`, `demo.py` | The shipped instrumental sample and the demo take card |
 | `music_studio/about.py`, `version_stamp.py`, `updates.py` | Build identity, diagnostics and update notice |
 | `music_studio/host.py`, `host_launcher.py`, `lifecycle.py` | Loopback host, port choice and idle/parent watchdog |

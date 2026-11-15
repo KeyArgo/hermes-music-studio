@@ -14,7 +14,7 @@ Nothing here renders audio. Every function answers `{ok, checks, detail}` in the
 Compute screen already renders for `/settings/test`, so a failure names the check that failed.
 """
 import json
-import os
+import logging
 import shutil
 import threading
 import time
@@ -224,76 +224,142 @@ def copy_into_comfy(folder, data_dir):
 
 # -- path 3: a hosted API ------------------------------------------------
 
-KEY_FILE = 'cloud-keys.json'
+# The hosted API is the remote ACE-Step engine. Its endpoint lives in the studio settings and its key
+# lives in Hermes' credential store, so a render and the Setup panel read the same two things.
+CLOUD_KEY_ENV = 'ACE_REMOTE_API_KEY'
+# Only the one-time migration may name the old file. Nothing writes it, and no key is ever read from it
+# after migration.
+LEGACY_KEY_FILE = 'cloud-keys.json'
+LEGACY_MESSAGE = 're-enter your hosted key in Setup'
 
 
-def _key_path(data_dir):
-    return Path(data_dir) / KEY_FILE
+def _stored_endpoint(data_dir):
+    from . import settings
+
+    saved = settings.read(Path(data_dir))
+    entry = saved.get('ace_remote') if isinstance(saved.get('ace_remote'), dict) else {}
+    return {'url': entry.get('url') or saved.get('ace_remote_url') or '',
+            'model': entry.get('model') or '',
+            'saved_at': entry.get('saved_at') or '',
+            'key_env': entry.get('key_env') or CLOUD_KEY_ENV}
 
 
-def _write_private(path: Path, text: str) -> None:
-    """Write a small secret file with owner-only permissions from the first byte.
+def _store_endpoint(data_dir, url, model):
+    """Save the endpoint beside the other studio settings; the key is not part of it."""
+    from . import settings
 
-    Review item 6: `write_text` then `chmod` leaves a window where the key is readable by anyone, and a
-    crash inside that window leaves it readable for good.
+    base = normalise_url(url)
+    entry = {'url': base, 'model': (model or '').strip(),
+             'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+             'key_env': CLOUD_KEY_ENV}
+    settings.write(Path(data_dir), {'ace_remote': entry, 'ace_remote_url': base})
+    return entry
+
+
+def migrate_legacy_keys(data_dir):
+    """Move a key from the old plaintext file into Hermes, once.
+
+    Returns a message for the UI when the file cannot be migrated safely. The file is left untouched
+    in that case: a key is only deleted after it has been read back from the credential store.
     """
-    # Fail closed. The old code answered an OSError by writing the file with default permissions,
-    # which for a key store is worse than refusing: it leaves the secret readable by everyone.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    path = Path(data_dir) / LEGACY_KEY_FILE
+    if not path.is_file():
+        return None
     try:
-        if hasattr(os, 'fchmod'):
-            # The mode argument only applies when the file is created; an existing key file from an
-            # older install keeps its 0644 bits without this.
-            os.fchmod(fd, 0o600)
-    except BaseException:
-        os.close(fd)
-        raise
-    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-        handle.write(text)
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return LEGACY_MESSAGE
+    if not isinstance(data, dict):
+        return LEGACY_MESSAGE
+    keyed = [(name, entry) for name, entry in data.items()
+             if isinstance(entry, dict) and str(entry.get('key') or '').strip()]
+    # One hosted endpoint is supported. Several saved keys cannot be chosen between without guessing.
+    if len(keyed) != 1:
+        return LEGACY_MESSAGE
+    _name, entry = keyed[0]
+    legacy_key = str(entry['key']).strip()
+    try:
+        base = normalise_url(entry.get('url'))
+    except Exception:
+        return LEGACY_MESSAGE
+    from .hermes_secrets import read_secret, save_secret
+
+    existing = read_secret(CLOUD_KEY_ENV)
+    if existing and existing != legacy_key:
+        # Hermes already holds a different key. Which one is right is the owner's call, so neither is
+        # discarded: the old file stays until they re-enter the key they want in Setup.
+        return LEGACY_MESSAGE
+    if not existing:
+        try:
+            saved = save_secret(CLOUD_KEY_ENV, legacy_key)
+        except ValueError:
+            return LEGACY_MESSAGE
+        if not saved or read_secret(CLOUD_KEY_ENV) != legacy_key:
+            return LEGACY_MESSAGE
+    try:
+        _store_endpoint(data_dir, base, entry.get('model') or '')
+    except Exception:
+        return LEGACY_MESSAGE
+    try:
+        path.unlink()
+    except OSError:
+        return LEGACY_MESSAGE
+    logging.getLogger(__name__).info(
+        'migrated the hosted API key from %s into Hermes credentials', LEGACY_KEY_FILE)
+    return None
 
 
 def save_cloud(data_dir, name, url, key, model=''):
-    """Store a hosted endpoint and its key. The key never leaves this file for the page."""
+    """Save the hosted endpoint and put its key only in Hermes' credential store."""
+    message = migrate_legacy_keys(data_dir)
     base = normalise_url(url)
     if not (key or '').strip():
         raise ValueError('an API key is required for a hosted endpoint')
-    path = _key_path(data_dir)
-    data = {}
-    if path.is_file():
+    from .hermes_secrets import SAVE_FAILED, save_secret
+
+    if not save_secret(CLOUD_KEY_ENV, key.strip()):
+        raise ValueError(SAVE_FAILED)
+    entry = _store_endpoint(data_dir, base, model)
+    result = {'ok': True, 'name': name or 'default', 'url': entry['url'], 'has_key': True}
+    legacy = Path(data_dir) / LEGACY_KEY_FILE
+    if message and legacy.is_file():
+        # The owner just entered the key they want, and Hermes has confirmed it: the old plaintext
+        # copy that migration could not resolve is no longer needed.
         try:
-            data = json.loads(path.read_text())
-        except Exception:
-            data = {}
-    data[name or 'default'] = {'url': base, 'key': key.strip(), 'model': (model or '').strip(),
-                               'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S')}
-    # Review item 6: create the file 0600 in the first place. Writing it world-readable and chmod-ing
-    # afterwards leaves a window (and a crash leaves the window open for good).
-    _write_private(path, json.dumps(data, indent=2))
-    return {'ok': True, 'name': name or 'default', 'url': base, 'has_key': True}
+            legacy.unlink()
+            message = None
+        except OSError:
+            pass
+    if message:
+        result['message'] = message
+    return result
 
 
 def list_cloud(data_dir):
-    path = _key_path(data_dir)
-    if not path.is_file():
+    """The one hosted endpoint, never its key — only whether Hermes holds one."""
+    migrate_legacy_keys(data_dir)
+    entry = _stored_endpoint(data_dir)
+    if not entry['url']:
         return []
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
-        return []
-    return [{'name': name, 'url': entry.get('url'), 'model': entry.get('model'),
-             'has_key': bool(entry.get('key'))} for name, entry in data.items()]
+    from .hermes_secrets import read_secret
+
+    return [{'name': 'default', 'url': entry['url'], 'model': entry['model'],
+             'has_key': bool(read_secret(CLOUD_KEY_ENV))}]
 
 
 def probe_cloud(data_dir, name='default'):
-    """One small authenticated request: does this endpoint answer with the key we hold?"""
-    path = _key_path(data_dir)
-    if not path.is_file():
+    """One small authenticated request: does this endpoint answer with the key Hermes holds?"""
+    message = migrate_legacy_keys(data_dir)
+    entry = _stored_endpoint(data_dir)
+    if not entry['url']:
         raise ValueError('no hosted endpoint has been saved yet')
-    entry = json.loads(path.read_text()).get(name)
-    if not entry:
-        raise ValueError(f'no hosted endpoint called {name}')
+    from .hermes_secrets import read_secret
+
+    key = read_secret(CLOUD_KEY_ENV)
+    if not key:
+        raise ValueError('the hosted endpoint has no key in Hermes; enter it in Setup')
     url = entry['url']
-    headers = {'Authorization': f"Bearer {entry['key']}"}
+    headers = {'Authorization': f'Bearer {key}'}
     checks = []
     endpoint = url + ('/models' if not url.endswith('/models') else '')
     try:
@@ -305,14 +371,17 @@ def probe_cloud(data_dir, name='default'):
             checks.append(_check('model list', bool(names), ', '.join(names) or 'empty list'))
         except Exception:
             checks.append(_check('model list', True, 'answered, not a model listing'))
-        return {'ok': True, 'url': url, 'checks': checks,
-                'detail': 'the endpoint accepted the key'}
+        result = {'ok': True, 'url': url, 'checks': checks,
+                  'detail': 'the endpoint accepted the key'}
     except urllib.error.HTTPError as exc:
         detail = 'the key was refused' if exc.code in (401, 403) else f'HTTP {exc.code}'
-        return {'ok': False, 'url': url,
-                'checks': [_check('endpoint answers', False, detail)],
-                'detail': f'{url} refused the request: {detail}'}
+        result = {'ok': False, 'url': url,
+                  'checks': [_check('endpoint answers', False, detail)],
+                  'detail': f'{url} refused the request: {detail}'}
     except Exception as exc:
-        return {'ok': False, 'url': url,
-                'checks': [_check('endpoint answers', False, exc)],
-                'detail': f'nothing answered at {url}: {exc}'}
+        result = {'ok': False, 'url': url,
+                  'checks': [_check('endpoint answers', False, exc)],
+                  'detail': f'nothing answered at {url}: {exc}'}
+    if message:
+        result['message'] = message
+    return result

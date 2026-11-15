@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -147,19 +148,53 @@ class HuggingFacePlanTests(unittest.TestCase):
 
 
 class CloudTests(unittest.TestCase):
-    def test_a_key_is_stored_beside_the_endpoint_and_never_listed(self):
+    def setUp(self):
+        from unittest.mock import patch
+
+        self.credentials = {}
+        credentials = self.credentials
+
+        config = types.ModuleType('hermes_cli.config')
+
+        def save_env_value(name, value):
+            credentials[name] = value
+
+        config.save_env_value = save_env_value
+        hermes_cli = types.ModuleType('hermes_cli')
+        hermes_cli.config = config
+
+        scope = types.ModuleType('agent.secret_scope')
+
+        def get_secret(name, default=None):
+            return credentials.get(name, default)
+
+        scope.get_secret = get_secret
+        scope.invalidate_env_file_cache = lambda: None
+        agent = types.ModuleType('agent')
+        agent.secret_scope = scope
+
+        patcher = patch.dict(sys.modules, {
+            'hermes_cli': hermes_cli, 'hermes_cli.config': config,
+            'agent': agent, 'agent.secret_scope': scope,
+        })
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_key_is_stored_in_hermes_and_never_listed(self):
         with tempfile.TemporaryDirectory() as tmp:
             saved = setup.save_cloud(tmp, 'default', 'https://api.example.com/v1', 'sk-test-123')
             self.assertTrue(saved['ok'])
+            self.assertEqual(self.credentials['ACE_REMOTE_API_KEY'], 'sk-test-123')
             listing = setup.list_cloud(tmp)
             self.assertEqual(listing[0]['url'], 'https://api.example.com/v1')
             self.assertNotIn('sk-test-123', json.dumps(listing),
                              'the page must never receive the key back')
-            mode = (Path(tmp) / setup.KEY_FILE).stat().st_mode & 0o777
-            if os.name != 'nt':
-                self.assertEqual(mode, 0o600)
-            # Windows has no POSIX group/other bits: os.open's mode only sets the read-only flag and
-            # access is governed by the inherited ACL, so there is nothing here to assert.
+            self.assertFalse((Path(tmp) / 'cloud-keys.json').exists(),
+                             'the key must not be written to the data directory')
+            for path in Path(tmp).rglob('*'):
+                if path.is_file():
+                    self.assertNotIn('sk-test-123', path.read_text(errors='ignore'),
+                                     f'the key was written to {path}')
 
     def test_a_working_endpoint_is_confirmed_with_one_request(self):
         server, base = serve({'/models': (200, {'data': [{'id': 'music-3'}]})})

@@ -2278,21 +2278,23 @@ if ($('setup-panel')) {
     box.replaceChildren();
     (data.endpoints || []).forEach(entry => {
       box.append(el('p', 'hint',
-        `${entry.name} · ${entry.url}${entry.model ? ' · ' + entry.model : ''}${entry.has_key ? ' · key saved' : ''}`));
+        `${entry.name} · ${entry.url}${entry.model ? ' · ' + entry.model : ''}${entry.has_key ? ' · key saved in Hermes' : ''}`));
     });
     if (!(data.endpoints || []).length) box.append(el('p', 'hint', 'No hosted endpoint saved yet.'));
+    if (data.message) box.append(el('p', 'hint', data.message));
   };
 
   if ($('setup-cloud-test')) $('setup-cloud-test').addEventListener('click', async () => {
     const name = ($('setup-cloud-name').value || 'default').trim() || 'default';
     try {
-      await api('/studio/setup/cloud', {
+      const saved = await api('/studio/setup/cloud', {
         name, url: ($('setup-cloud-url').value || '').trim(),
         key: $('setup-cloud-key').value || '',
         model: ($('setup-cloud-model') || {}).value || '',
       });
+      if (saved.message) await setupMessage(saved.message, true);
       const result = await api('/studio/setup/cloud/test', { name });
-      await setupMessage(result.detail, !result.ok);
+      await setupMessage(result.message || result.detail, !result.ok);
       await renderCloud();
     } catch (err) {
       await setupMessage(err.message, true);

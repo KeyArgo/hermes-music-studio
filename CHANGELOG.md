@@ -16,6 +16,15 @@ All notable changes to Music Studio are recorded here. The format follows
   `filename_prefix` is forced to `music-studio/workflow`. Health lists any node type the server
   lacks, Test never renders, and a render is pinned to the workflow's endpoint.
 
+### Fixed
+
+- **Hosted API keys live in Hermes, not the data directory.** `music_studio/setup.py` no longer writes
+  `cloud-keys.json`; `save_cloud` saves the key with `hermes_cli.config.save_env_value` under
+  `ACE_REMOTE_API_KEY` and stores only the endpoint in `engine-settings.json`. `list_cloud` reports
+  `has_key` and never the key, `probe_cloud` reads the key through `agent.secret_scope`, and a legacy
+  `cloud-keys.json` is migrated once and deleted only after the key reads back. Renders now use the
+  saved endpoint because `save_cloud` also writes `ace_remote_url`.
+
 ## 1.0.0 — in catalog review
 
 ### Nous review fixes

@@ -228,6 +228,8 @@ HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback hos
   `presets.json`, `comfy-targets.json`, `comfy-workflows.json`, `studio-workspaces.json`, `engine-settings.json`,
   `library.json`, checkpoint files and worker logs, all under the plugin data directory you chose.
   Audio is opened with `O_NOFOLLOW`, checked as a regular file, and served with `nosniff`.
+  API keys are stored through Hermes' own credential store; the plugin never writes a key to its data
+  directory.
 - **Network calls.** The studio calls only endpoints you configure: a ComfyUI server
   (`COMFYUI_URL` or a saved target; a custom workflow contacts only the endpoint you saved with it), an optional ACE-Step HTTP server (`ACE_REMOTE_URL`), REVamp's
   local API at `127.0.0.1:8114`, and — only when you press the buttons — your configured Hermes model
@@ -239,7 +241,8 @@ HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback hos
   MiniMax's FLAC → WAV transcode, and read-only `nvidia-smi` probes for GPU attribution. Cover
   generation and the creative partner run the Hermes CLI; REVamp actions run `revampctl`.
 - **Shell commands.** `git` is read for the version stamp. The studio never runs a shell string from
-  user text and never changes a password or credential.
+  user text and never changes a password. The only credential it writes is the hosted API key you
+  enter, saved through Hermes' own credential store.
 - **Local only.** The HTTP server binds loopback and rejects a non-loopback `Host` and cross-site
   writes. There is no multi-user authentication: anyone who can reach the loopback API can approve
   and render.

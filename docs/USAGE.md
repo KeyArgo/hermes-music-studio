@@ -129,7 +129,8 @@ to that workspace. Workspaces are local JSON (`studio-workspaces.json`); they do
 - **Local hardware** is a read-only `nvidia-smi` inventory. A GPU is attributed to a take only when
   `nvidia-smi` reports that take's exact PID on a device.
 - **Set up an engine** has three paths: a server you already run, a Hugging Face model download, or a
-  hosted API with a key. Each tests before it saves and names the check that failed.
+  hosted API with a key. Each tests before it saves and names the check that failed; the hosted key
+  is kept in Hermes' credential store, not in the studio folder.
 - **Version**, **Companion**, **Contribute** and **Report a problem** round out the panel.
   **Copy diagnostics** includes the version, platform, library path, counts and newest failed take.
 

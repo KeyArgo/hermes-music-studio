@@ -6,8 +6,9 @@ that reads it.
 Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 
 Settings saved in the studio (Compute → Render settings) win over most environment variables where
-both exist; the exceptions are noted. Nothing here is a cloud credential except the optional hosted
-provider entry, which is written to its own `0600` file and never sent back to the page.
+both exist; the exceptions are noted. The optional hosted provider's key is a credential: it is stored
+only through Hermes' own credential store and is never written to the plugin data directory or sent
+back to the page.
 
 ## Where the data lives
 
@@ -69,7 +70,8 @@ moved). It is written atomically and validated on save.
 | `export_dir` | `""` (`~/Music/Hermes Music Studio`) | absolute path | Where Export writes. Also the boundary: with it set, nothing outside it is writable; without it, anything inside `~/Music` |
 | `ace_runtime_dir` | `""` | path | ACE runtime, used to start the host |
 | `ace_source_dir` | `""` | path | ACE source checkout |
-| `ace_remote_url` | `""` | URL | ACE remote server |
+| `ace_remote_url` | `""` | URL | ACE remote server (the hosted endpoint writes this too) |
+| `ace_remote` | `{}` | `{url, model, saved_at, key_env}` | The one hosted endpoint; `key_env` names the Hermes credential (`ACE_REMOTE_API_KEY`) |
 | `minimax.steps` | `30` | integer 1–100 | ComfyUI sampler steps |
 | `minimax.cfg` | `4.0` | number 0–20 | CFG |
 | `minimax.cfg_scale` | `1.5` | number 0–10 | MiniMax music guidance |
@@ -92,9 +94,12 @@ Other files in the same folder:
 
 ## Hosted provider keys
 
-`POST /api/studio/setup/cloud` stores an optional hosted model provider in the plugin data folder with
-mode `0600`. The response reports only whether a key is present; the key is never returned to the
-page. The studio is not a hosted service and has no account of its own.
+`POST /api/studio/setup/cloud` stores the optional hosted ACE remote endpoint in `engine-settings.json`
+and saves its key with `hermes_cli.config.save_env_value` under `ACE_REMOTE_API_KEY`. The response
+reports only whether a key is present; the key is never returned to the page and is never written to
+the plugin data directory. An older `cloud-keys.json` is migrated into the credential store once, and
+only deleted after the key reads back; if that cannot be done it is left alone and Setup says to
+re-enter the key. The studio is not a hosted service and has no account of its own.
 
 ## Offline hints (not a sandbox)
 
