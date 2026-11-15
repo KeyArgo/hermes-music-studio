@@ -64,6 +64,7 @@ async function boot(overrides = {}, options = {}) {
       '/api/presets': PRESETS,
       '/api/settings': SETTINGS,
       '/api/studio/targets': { success: true, targets: [] },
+      '/api/studio/workflows': { success: true, workflows: [] },
       '/api/studio/workspaces': { success: true, workspaces: [] },
       '/api/studio/hardware': { success: true, devices: [], pid_to_gpu: {} },
       '/api/studio/models': { success: true, providers: [], provider: 'nous', model: 'm' },
@@ -1099,4 +1100,56 @@ test('escape cancels a rename and restores the title without a request', async t
   assert.equal(doc.querySelector('#library .rename-input'), null);
   assert.equal(text(doc.querySelector('#library .project-title')), 'First song');
   assert.ok(!calls.some(c => (c.path === '/api/update' || c.path === '/api/rename') && c.body && c.body.project_id === 'p1'), 'no request was sent');
+});
+
+test('custom workflows: the settings list, test, delete and engine choice', async t => {
+  const target = { id: 'tg1', name: 'Studio box', url: 'http://192.0.2.9:8188' };
+  const workflow = { id: 'w1', name: 'ACE graph', target_id: 'tg1',
+    placeholders: ['lyrics', 'style', 'duration', 'seed'] };
+  const { window, calls } = await boot({
+    '/api/studio/targets': { success: true, targets: [target] },
+    '/api/studio/workflows': { success: true, workflows: [workflow] },
+    '/api/studio/workflows/w1/test': { success: true, workflow_id: 'w1',
+      placeholders: workflow.placeholders,
+      status: { available: true, state: 'ready', detail: 'ComfyUI workflow ready' } }
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const pause = () => new Promise(resolve => setTimeout(resolve, 25));
+
+  const list = doc.getElementById('workflow-list');
+  assert.match(text(list), /ACE graph/, 'the uploaded workflow is listed');
+  assert.match(text(list), /\{\{style\}\}/, 'its placeholders are shown');
+  const engineOptions = [...doc.getElementById('engine-select').options].map(o => o.value);
+  assert.ok(engineOptions.includes('comfy_workflow:w1'), 'it is offered in the draft engine picker');
+
+  const row = [...list.querySelectorAll('button')].find(b => text(b) === 'Test');
+  assert.ok(row, 'a workflow can be tested');
+  row.click();
+  await pause();
+  assert.ok(calls.some(c => c.path === '/api/studio/workflows/w1/test' && c.method === 'POST'));
+  assert.match(text(list), /Available/, 'the health result is shown');
+
+  const remove = [...list.querySelectorAll('button')].find(b => text(b) === 'Delete');
+  assert.ok(remove, 'a workflow can be deleted');
+  remove.click();
+  await confirmInPage(window);
+  await pause();
+  assert.ok(calls.some(c => c.path === '/api/studio/workflows/w1' && c.method === 'DELETE'));
+});
+
+test('a saved draft keeps a workflow engine that arrived before the workflow list', async t => {
+  const project = { project_id: 'p1', title: 'Graph song', caption: 'quiet',
+    engine: 'comfy_workflow:w1', approved: false, takes: [] };
+  const { window } = await boot({
+    '/api/status': { success: true, engine_available: true, engines: [], projects: [project] }
+  });
+  t.after(() => window.close());
+  const doc = window.document;
+  const open = [...doc.querySelectorAll('#library button')].find(b => text(b) === 'Open draft');
+  assert.ok(open, 'the draft can be opened from the library');
+  open.click();
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(doc.getElementById('engine-select').value, 'comfy_workflow:w1',
+    'opening the draft did not silently switch it to a built-in engine');
 });

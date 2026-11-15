@@ -24,6 +24,30 @@ needs `ffmpeg` for FLAC → WAV. `ace_remote` is registered but undeployed. The 
 limits and its failure reason are exposed in `GET /status.engines[]`; nothing
 substitutes an unavailable engine silently.
 
+## Custom ComfyUI workflows
+
+Settings -> Compute -> **Custom workflows** accepts a ComfyUI **Export (API)**
+JSON graph (1 MiB), a name and one saved endpoint. Records live in
+`comfy-workflows.json` beside `comfy-targets.json` and are written under the
+same lock/atomic-replace pattern. Each record becomes an engine with id
+`comfy_workflow:<uuid>`, so a draft can name exactly that graph.
+
+The graph must be a dict of nodes with `class_type` and `inputs`, and exactly one
+node must be an audio save node (`class_type` starting `SaveAudio`). Its
+`filename_prefix` is forced to `music-studio/workflow`. A workflow must use
+`{{style}}` or `{{lyrics}}`; `{{duration}}`, `{{seed}}`, `{{title}}` and
+`{{instrumental}}` are also available. An input string that is exactly one
+placeholder becomes the take's typed value (float seconds, int seed, bool
+instrumental); a placeholder inside a longer string is replaced as text.
+Instrumental takes send `''` for `{{lyrics}}`.
+
+Health asks the endpoint for `/object_info`, checks every `class_type` in the
+graph against it and names the missing ones (`/system_stats` only adds device
+metadata when the server has it). Test in the UI does
+that plus the placeholder report and never renders. A render reuses the MiniMax
+ComfyUI queue/history/download/transcode path and is pinned to its endpoint like
+a MiniMax take. Only the endpoint saved with the workflow is contacted.
+
 ## One render at a time
 
 The `.worker.lock` lease is held for the whole render (or batch). `enqueue`

@@ -4,6 +4,18 @@ All notable changes to Music Studio are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Bring your own ComfyUI workflow
+
+- **Any music model your ComfyUI runs, not just MiniMax.** Settings -> Compute accepts a
+  ComfyUI Export (API) JSON graph, a name and a saved endpoint. The record lives in
+  `comfy-workflows.json` (1 MiB cap, same lock/atomic-write as `comfy-targets.json`) and becomes
+  an engine choice in the draft picker. Placeholders `{{style}}`, `{{lyrics}}`, `{{duration}}`,
+  `{{seed}}`, `{{title}}` and `{{instrumental}}` are filled per take; the save node's
+  `filename_prefix` is forced to `music-studio/workflow`. Health lists any node type the server
+  lacks, Test never renders, and a render is pinned to the workflow's endpoint.
+
 ## 1.0.0 — in catalog review
 
 ### Nous review fixes

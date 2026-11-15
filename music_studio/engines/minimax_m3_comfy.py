@@ -317,7 +317,15 @@ class MiniMaxM3ComfyEngine(Engine):
                 on_progress: Callable[[int], None] | None = None,
                 on_process: Callable[[int], None] | None = None) -> RenderResult:
         # ComfyUI renders server-side; there is no local child process to report.
-        graph = self.build_workflow(request)
+        return self._render_graph(self.build_workflow(request), request, on_progress)
+
+    def _render_graph(self, graph: dict, request: RenderRequest,
+                      on_progress: Callable[[int], None] | None = None) -> RenderResult:
+        """Submit an API graph and turn its saved file into a WAV take.
+
+        Shared by the built-in MiniMax graph and user-supplied workflows, so the
+        queue/history/download/transcode path has exactly one implementation.
+        """
         self._emit(on_progress, 2)
         created = self._post('/prompt', {'prompt': graph, 'client_id': uuid.uuid4().hex})
         prompt_id = created.get('prompt_id') if isinstance(created, dict) else None
@@ -376,7 +384,12 @@ class MiniMaxM3ComfyEngine(Engine):
         except InvalidAudio as exc:
             raise EngineError(f'ComfyUI audio could not be converted to WAV: {exc}',
                               engine_id=self.id) from exc
-        return RenderResult(wav, {
+        return RenderResult(wav, self._provenance(prompt_id, info, source_format,
+                                                  transcode, request))
+
+    def _provenance(self, prompt_id: str, info: dict, source_format: str,
+                    transcode: str | None, request: RenderRequest) -> dict:
+        return {
             'engine_id': self.id,
             'model': self.unet_name,
             'model_family': LICENCE_ID,
@@ -395,7 +408,7 @@ class MiniMaxM3ComfyEngine(Engine):
             'channels': info['channels'],
             'frames': info['frames'],
             'audio_seconds': info['seconds'],
-        })
+        }
 
     save_node = '9'
 

@@ -583,6 +583,52 @@ def probe_studio_target(target_id: str):
     return _studio_call(service.probe_target, target_id)
 
 
+WORKFLOW_BODY_LIMIT = 2 * 1024 * 1024
+
+
+async def workflow_json_body(request: Request):
+    """Parse a workflow upload; its graph has its own 1 MiB cap in the store."""
+    declared = request.headers.get('content-length')
+    if declared is not None:
+        try:
+            if int(declared) > WORKFLOW_BODY_LIMIT:
+                raise HTTPException(status_code=413, detail='workflow upload too large')
+        except ValueError:
+            raise HTTPException(status_code=400, detail='invalid content-length') from None
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > WORKFLOW_BODY_LIMIT:
+            raise HTTPException(status_code=413, detail='workflow upload too large')
+    try:
+        body = json.loads(bytes(raw) or b'{}')
+    except ValueError:
+        raise HTTPException(status_code=400, detail='invalid JSON body') from None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail='invalid request body')
+    return body
+
+
+@router.get('/studio/workflows')
+def studio_workflows():
+    return _studio_call(service.workflows)
+
+
+@router.post('/studio/workflows')
+async def create_studio_workflow(request: Request):
+    return _studio_call(service.create_workflow, await workflow_json_body(request))
+
+
+@router.delete('/studio/workflows/{workflow_id}')
+def delete_studio_workflow(workflow_id: str):
+    return _studio_call(service.delete_workflow, workflow_id)
+
+
+@router.post('/studio/workflows/{workflow_id}/test')
+def test_studio_workflow(workflow_id: str):
+    return _studio_call(service.test_workflow, workflow_id)
+
+
 @router.get('/studio/hardware')
 def studio_hardware():
     return _studio_call(service.hardware)

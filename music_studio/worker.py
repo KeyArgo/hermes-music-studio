@@ -62,15 +62,33 @@ def _registry(store, target_url=None):
     named ComfyUI target, the MiniMax engine in this registry is built against
     that exact URL instead of the engine's default.
     """
-    from music_studio.engines import MiniMaxM3ComfyEngine, Registry, default_engines
+    from music_studio.engines import ComfyWorkflowEngine, MiniMaxM3ComfyEngine, Registry, default_engines
     from music_studio.engines.registry import PREFERENCE_FILE
+    from music_studio.network import TargetStore
+    from music_studio.workflows import WorkflowStore
     preference_path = store.root / PREFERENCE_FILE
-    if not target_url:
-        return Registry(preference_path=preference_path)
     engines = default_engines()
-    engines = [MiniMaxM3ComfyEngine(base_url=target_url)
-               if engine.id == 'minimax_m3_comfy' else engine
-               for engine in engines]
+    if target_url:
+        engines = [MiniMaxM3ComfyEngine(base_url=target_url)
+                   if engine.id == 'minimax_m3_comfy' else engine
+                   for engine in engines]
+    else:
+        target_url = None
+    # Every uploaded workflow is a real engine choice. One take pins one of them;
+    # the pinned endpoint (when there is one) wins over the record's own target.
+    try:
+        records = WorkflowStore(store.root).all()
+    except Exception:  # noqa: BLE001 - a broken workflow file must not strand the take
+        records = []
+    targets = TargetStore(store.root)
+    for record in records:
+        base = target_url
+        if not base:
+            try:
+                base = targets.get(record['target_id'])['url']
+            except (KeyError, ValueError):
+                base = ''
+        engines.append(ComfyWorkflowEngine(record, base_url=base))
     return Registry(engines, preference_path=preference_path)
 
 
@@ -102,7 +120,7 @@ def _render_request(store, jobs, project_id, snap, take):
     # itself is what enforces real geometry caps.
     timeout = min(3600, render_timeout_seconds(duration))
     return RenderRequest(
-        caption=snap['caption'], lyrics=snap['lyrics'],
+        caption=snap['caption'], lyrics=snap['lyrics'], title=snap.get('title') or '',
         duration_seconds=duration, seed=take['seed'],
         instrumental=bool(snap.get('instrumental', False)),
         vocal_language=snap.get('vocal_language') or 'en',

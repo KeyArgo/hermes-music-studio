@@ -56,7 +56,7 @@ from .store import (DEFAULT_ENGINE_ID, Store, estimate_render_seconds, limits,
                     sections_for, valid_id)
 from .jobs import Jobs
 from .engines import (CapabilityUnsupported, EngineUnavailable, MiniMaxM3ComfyEngine,
-                      Registry, resolve_id)
+                      Registry, default_engines, resolve_id)
 from .engines.registry import PREFERENCE_FILE
 from .network import TargetStore
 import ace_engine
@@ -89,9 +89,42 @@ def registry(s=None):
     key = str(s.root)
     found = _REGISTRIES.get(key)
     if found is None:
-        found = Registry(preference_path=s.root / PREFERENCE_FILE)
+        engines = default_engines() + _workflow_engines(s)
+        found = Registry(engines, preference_path=s.root / PREFERENCE_FILE)
         _REGISTRIES[key] = found
     return found
+
+
+def _workflow_engines(s):
+    """One ComfyWorkflowEngine per uploaded workflow (empty store = none).
+
+    Built lazily so the default build stays exactly the three built-in engines;
+    each workflow engine is bound to the saved endpoint its record names.
+    """
+    from .engines.comfy_workflow import ComfyWorkflowEngine
+    from .network import TargetStore
+    from .workflows import WorkflowStore
+
+    try:
+        records = WorkflowStore(s.root).all()
+    except Exception:  # noqa: BLE001 - a broken workflow file must not break /status
+        return []
+    targets = TargetStore(s.root)
+    engines = []
+    for record in records:
+        try:
+            base_url = targets.get(record['target_id'])['url']
+        except (KeyError, ValueError):
+            base_url = ''
+        try:
+            engines.append(ComfyWorkflowEngine(record, base_url=base_url))
+        except Exception:  # noqa: BLE001 - one corrupt record must not hide the rest
+            continue
+    return engines
+
+
+def _invalidate_registry(s):
+    _REGISTRIES.pop(str(s.root), None)
 
 
 def engine_id_for(project):
@@ -227,16 +260,20 @@ def _selected_target(s, project):
         raise ValueError(f'unknown target: {target_id}') from None
 
 
-def _preflight_target(target, engine_id=None, draft_engine=None):
+def _preflight_target(target, engine_id=None, draft_engine=None, workflow=None):
     """Probe the exact endpoint the take will render on, and pin its engine.
 
     This is a health read (no model launch). It never falls back to another
     engine or another URL: an unreachable target is a visible 409.
     """
     engine_id = engine_id if engine_id is not None else draft_engine
-    if engine_id is not None and resolve_id(engine_id) != 'minimax_m3_comfy':
-        raise ValueError('comfy_target_id requires engine minimax_m3_comfy')
-    engine = MiniMaxM3ComfyEngine(base_url=target['url'])
+    if engine_id is not None and resolve_id(engine_id) == 'minimax_m3_comfy':
+        engine = MiniMaxM3ComfyEngine(base_url=target['url'])
+    elif workflow is not None:
+        from .engines.comfy_workflow import ComfyWorkflowEngine
+        engine = ComfyWorkflowEngine(workflow, base_url=target['url'])
+    else:
+        raise ValueError('comfy_target_id requires a ComfyUI engine')
     status = engine.health()
     if not status.available:
         raise EngineUnavailable(
@@ -522,9 +559,24 @@ def _engine_and_target(s, project, engine_id=None):
     target made every other engine refuse — so "compare this song on both models" failed on the ACE
     row with "comfy_target_id requires engine minimax_m3_comfy". The pin now simply does not apply to
     an engine that has no use for it, and it is still probed before an M3 take is queued.
+
+    A custom workflow carries its own endpoint, so that record's target is the one probed and pinned.
     """
-    target = _selected_target(s, project)
+    from .workflows import (WorkflowStore, is_workflow_engine,
+                            workflow_id_from_engine)
     resolved = resolve_engine(project, engine_id, reg=registry(s))
+    if is_workflow_engine(resolved):
+        try:
+            workflow = WorkflowStore(s.root).get(workflow_id_from_engine(resolved))
+        except (KeyError, ValueError):
+            raise ValueError(f'unknown workflow: {workflow_id_from_engine(resolved)}') from None
+        try:
+            target = TargetStore(s.root).get(workflow['target_id'])
+        except (KeyError, ValueError):
+            raise ValueError(f'unknown target: {workflow["target_id"]}') from None
+        resolved = _preflight_target(target, resolved, workflow=workflow)
+        return resolved, target
+    target = _selected_target(s, project)
     if target is not None:
         if resolve_id(resolved) == 'minimax_m3_comfy':
             resolved = _preflight_target(target, resolved, draft_engine=project.get('engine'))
@@ -671,11 +723,7 @@ def batch(project_id, count, seed_base=None, engine_id=None):
     takes = None
     try:
         project = s.get(project_id)
-        target = _selected_target(s, project)
-        if target is not None:
-            resolved = _preflight_target(target, engine_id, draft_engine=project.get('engine'))
-        else:
-            resolved = resolve_engine(project, engine_id, reg=registry(s))
+        resolved, target = _engine_and_target(s, project, engine_id)
         _check_duration(project, resolved)
         takes = jobs.enqueue_batch(project_id, count, seed_base,
                                    engine_id=resolved, target=target)
@@ -745,6 +793,76 @@ def probe_target(target_id):
     engine = MiniMaxM3ComfyEngine(base_url=target['url'])
     return {'success': True, 'target': target,
             'status': engine.health().as_dict()}
+
+
+# -- custom ComfyUI workflows ----------------------------------------------
+def workflows():
+    """List the profile's uploaded workflows (summaries, no graphs)."""
+    from .workflows import WorkflowStore
+
+    return {'success': True, 'workflows': WorkflowStore(store().root).list()}
+
+
+def create_workflow(body):
+    """Validate and store an uploaded ComfyUI Export (API) graph."""
+    from .workflows import MAX_WORKFLOW_BYTES, WorkflowStore
+
+    if not isinstance(body, dict):
+        raise ValueError('invalid workflow body')
+    graph = body.get('workflow')
+    if graph is None:
+        graph = body.get('graph')
+    if graph is None and isinstance(body.get('content'), str):
+        graph = body['content']
+    if graph is None:
+        raise ValueError('workflow JSON is required')
+    if isinstance(graph, str):
+        encoded = graph.encode('utf-8')
+        if len(encoded) > MAX_WORKFLOW_BYTES:
+            raise ValueError(f'workflow is larger than {MAX_WORKFLOW_BYTES // 1024} KiB')
+    s = store()
+    record = WorkflowStore(s.root).create(body.get('name'), body.get('target_id'), graph)
+    _invalidate_registry(s)
+    from .workflows import find_placeholders
+    return {'success': True,
+            'workflow': {'id': record['id'], 'name': record['name'],
+                         'target_id': record['target_id'],
+                         'placeholders': list(find_placeholders(record['workflow'])),
+                         'created_at': record.get('created_at')}}
+
+
+def delete_workflow(workflow_id):
+    from .workflows import WorkflowStore
+
+    s = store()
+    record = WorkflowStore(s.root).delete(workflow_id)
+    _invalidate_registry(s)
+    return {'success': True, 'workflow_id': record['id'], 'deleted': record['name']}
+
+
+def test_workflow(workflow_id):
+    """Health + placeholder report for one workflow; never renders."""
+    from .engines.comfy_workflow import ComfyWorkflowEngine
+    from .workflows import WorkflowStore, find_placeholders
+
+    s = store()
+    record = WorkflowStore(s.root).get(workflow_id)
+    target = TargetStore(s.root).get(record['target_id'])
+    engine = ComfyWorkflowEngine(record, base_url=target['url'])
+    status = engine.health()
+    return {'success': True, 'workflow_id': record['id'], 'name': record['name'],
+            'target': target, 'placeholders': list(find_placeholders(record['workflow'])),
+            'status': status.as_dict()}
+
+
+def workflows_for_draft():
+    """Workflow engine choices the draft page appends to its engine picker."""
+    from .workflows import engine_id
+
+    return {'success': True,
+            'engines': [{'id': engine_id(w['id']), 'name': w['name'],
+                         'target_id': w['target_id'], 'placeholders': w['placeholders']}
+                        for w in workflows()['workflows']]}
 
 
 def hardware():

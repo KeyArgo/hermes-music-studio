@@ -295,6 +295,24 @@
 <div id="target-list" class="library" aria-live="polite"></div>
 <p id="target-message" class="message" role="status"></p>
 </div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">BRING YOUR OWN GRAPH</span>
+<h2>Custom workflows</h2>
+</div>
+</div>
+<form id="workflow-form" class="workspace-form target-form">
+<label>Name<input id="workflow-name" maxlength="80" required placeholder="e.g. ACE-Step 1.5"></label>
+<label>Endpoint<select id="workflow-target" required></select></label>
+<label>Workflow JSON<input id="workflow-file" type="file" accept=".json,application/json" required></label>
+<button class="button primary" type="submit">Add workflow</button>
+</form>
+<p class="hint">In ComfyUI: Workflow → Export (API). Put <code>{{lyrics}}</code>, <code>{{style}}</code>, <code>{{duration}}</code>, <code>{{seed}}</code> in the fields the studio should fill.</p>
+<p class="hint">Only the endpoint you picked is contacted. Test checks the server and the placeholders; it never renders audio.</p>
+<div id="workflow-list" class="library" aria-live="polite"></div>
+<p id="workflow-message" class="message" role="status"></p>
+</div>
 <div class="card">
 <span class="kicker">LOCAL HARDWARE</span>
 <h3>GPU attribution.</h3>

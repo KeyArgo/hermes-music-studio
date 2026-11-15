@@ -34,7 +34,9 @@ def registered_engine_ids():
 
 def engine_is_registered(value):
     from .engines.registry import resolve_id
-    return isinstance(value, str) and resolve_id(value) in registered_engine_ids()
+    from .workflows import valid_engine_id
+    return (isinstance(value, str)
+            and (resolve_id(value) in registered_engine_ids() or valid_engine_id(value)))
 
 # Input bounds. caption/lyrics mirror the ACE engine's own limits exactly, so an
 # approved draft can always render; title/idea are UI-sized metadata.
@@ -103,8 +105,11 @@ def engine_limits(engine=None):
     caller is validating a draft that named an engine the build does not have.
     """
     from .engines.registry import default_engines, resolve_id
+    from .workflows import WORKFLOW_LIMITS, is_workflow_engine
     wanted = resolve_id(engine) if isinstance(engine, str) and engine else None
     wanted = wanted or DEFAULT_ENGINE_ID
+    if is_workflow_engine(wanted):
+        return WORKFLOW_LIMITS
     for candidate in default_engines():
         if candidate.id == wanted:
             declared = candidate.limits
@@ -332,10 +337,23 @@ class Store:
         except (KeyError, ValueError):
             raise ValueError(f'unknown target: {target_id}') from None
 
+    def _require_workflow(self, engine_id):
+        """Refuse a draft that names a custom workflow this profile does not have."""
+        from .workflows import (WorkflowStore, is_workflow_engine,
+                                workflow_id_from_engine)
+        if not is_workflow_engine(engine_id):
+            return
+        workflow_id = workflow_id_from_engine(engine_id)
+        try:
+            WorkflowStore(self.root).get(workflow_id)
+        except (KeyError, ValueError):
+            raise ValueError(f'unknown workflow: {workflow_id}') from None
+
     def create(self, **draft):
         draft = normalize(draft)
         validate(draft)
         self._require_target(draft.get('comfy_target_id'))
+        self._require_workflow(draft.get('engine'))
         project = {'project_id': str(uuid.uuid4()), **copy.deepcopy(FIELDS),
                    **copy.deepcopy(draft), 'approved': False, 'takes': []}
         # The create response must show sections when the lyrics carry [verse]/[chorus]
@@ -366,6 +384,7 @@ class Store:
                 raise ValueError('stale draft')
             validate_ready(project)
             self._require_target(project.get('comfy_target_id'))
+            self._require_workflow(project.get('engine'))
             # Approval is the migration point for pre-metadata projects: once a
             # user approves, the record carries every field a render reads.
             for key, default in FIELDS.items():
@@ -388,6 +407,7 @@ class Store:
             if 'engine' in draft:
                 # Switching engines must not smuggle in a duration the new
                 # engine cannot render.
+                self._require_workflow(draft['engine'])
                 validate({'duration_seconds': draft.get(
                     'duration_seconds', project.get('duration_seconds'))},
                     engine=draft['engine'])

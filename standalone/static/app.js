@@ -9,7 +9,7 @@ const STUDIO = (function () {
 const brandLink = document.querySelector('a.brand');
 if (brandLink && STUDIO.plugin) brandLink.href = STUDIO.api + '/studio/ui';
 const form = $('draft-form');
-let current = null, dirty = false, busy = false, revision = 0, engines = [], projects = [], workspaces = [], conversation = [], libraryFilter = null, modelCatalog = [], targets = [], targetProbes = {}, hardware = null, hardwareProblem = '', hardwareFetchedAt = 0, refreshing = false, pollTimer = null;
+let current = null, dirty = false, busy = false, revision = 0, engines = [], projects = [], workspaces = [], conversation = [], libraryFilter = null, modelCatalog = [], targets = [], workflows = [], targetProbes = {}, hardware = null, hardwareProblem = '', hardwareFetchedAt = 0, refreshing = false, pollTimer = null;
 const message = (text, bad = false) => { $('form-message').textContent = text; $('form-message').classList.toggle('error', bad); };
 // The host requires a per-launch token on every /api route (review item 3). The pane frames this page
 // with it in the query string; a browser tab opened by hand has none, which is the point.
@@ -190,6 +190,7 @@ async function loadProject(p) {
   if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return;
   current = p;
   try { localStorage.setItem('studio.lastProject', p.project_id); } catch (e) {}
+  ensureEngineOption(p.engine);
   for (const key of ['title','caption','lyrics','duration_seconds','engine']) form.elements[key].value = p[key] ?? (key === 'duration_seconds' ? 30 : '');
   if (p.engine === 'ace') form.elements.engine.value = 'ace_local';
   form.elements.instrumental.checked = !!p.instrumental;
@@ -1284,7 +1285,7 @@ for (const [id, event] of [['library-search','input'], ['library-sort','change']
 try { const saved = localStorage.getItem('studio.librarySort'); if (saved && $('library-sort')) $('library-sort').value = saved; } catch (e) {}
 $('nav-create').addEventListener('click',() => show('create')); $('nav-library').addEventListener('click',() => {libraryFilter=null;library();show('library');});
 $('nav-workspaces').addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
-$('nav-compute').addEventListener('click',async()=>{show('compute');await refreshTargets();await loadHardware(true);});
+$('nav-compute').addEventListener('click',async()=>{show('compute');await refreshTargets();await refreshWorkflows();await loadHardware(true);});
 function showCover(id) {
   const image=$('cover-preview'), placeholder=$('cover-placeholder');
   if(!id) { image.hidden=true; placeholder.hidden=false; image.removeAttribute('src'); return; }
@@ -1339,12 +1340,14 @@ async function refreshTargets() {
     targets = data.targets || [];
     for (const id of Object.keys(targetProbes)) if (!targets.some(t => t.id === id)) delete targetProbes[id];
     fillTargetSelect();
+    fillWorkflowTargetSelect();
     drawTargets();
     $('target-message').textContent = targets.length ? `${targets.length} saved target${targets.length === 1 ? '' : 's'}.` : 'No saved targets; the engine default endpoint is used.';
     $('target-message').classList.remove('error');
   } catch (e) {
     targets = [];
     fillTargetSelect();
+    fillWorkflowTargetSelect();
     drawTargets();
     $('target-message').textContent = 'Targets unavailable: ' + e.message;
     $('target-message').classList.add('error');
@@ -1384,6 +1387,120 @@ async function deleteTarget(t) {
   } catch (e) {
     $('target-message').textContent = e.message;
     $('target-message').classList.add('error');
+  }
+}
+
+function workflowEngineId(workflow) { return 'comfy_workflow:' + workflow.id; }
+function fillWorkflowTargetSelect() {
+  const select = $('workflow-target');
+  if (!select) return;
+  const previous = select.value;
+  select.replaceChildren();
+  if (!targets.length) {
+    const option = el('option', 'No saved targets — add one first');
+    option.value = '';
+    select.append(option);
+    return;
+  }
+  targets.forEach(t => { const option = el('option', t.name); option.value = t.id; select.append(option); });
+  if (previous && targets.some(t => t.id === previous)) select.value = previous;
+}
+function ensureEngineOption(id) {
+  if (!id) return;
+  const select = $('engine-select');
+  if (!select || [...select.options].some(o => o.value === id)) return;
+  const workflow = workflows.find(w => workflowEngineId(w) === id);
+  const option = el('option', workflow ? 'Custom workflow: ' + workflow.name : 'Missing workflow ' + id);
+  option.value = id;
+  select.append(option);
+}
+function fillWorkflowEngineOptions() {
+  const select = $('engine-select');
+  if (!select) return;
+  const previous = select.value;
+  const add = (value, text) => { const option = el('option', text); option.value = value; select.append(option); };
+  select.replaceChildren();
+  add('ace_local', 'ACE-Step 1.5');
+  add('minimax_m3_comfy', 'MiniMax Music 3');
+  workflows.forEach(w => add(workflowEngineId(w), 'Custom workflow: ' + w.name));
+  if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
+  else if (previous) { add(previous, 'Missing workflow ' + previous); select.value = previous; }
+}
+function drawWorkflows() {
+  const list = $('workflow-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!workflows.length) {
+    list.append(el('p', 'No custom workflows yet. Upload a ComfyUI Export (API) JSON to render with any graph that server runs.'));
+    return;
+  }
+  workflows.forEach(w => {
+    const card = el('article', '', 'project target-card'), head = el('div', '', 'project-head');
+    const info = el('div'), actions = el('div', '', 'actions target-actions');
+    const endpoint = targetName(w.target_id) || w.target_id;
+    info.append(el('b', w.name), el('p', `Endpoint: ${endpoint}`),
+      el('p', 'Placeholders: ' + ((w.placeholders || []).map(p => '{{' + p + '}}').join(', ') || 'none')));
+    const test = el('button', 'Test', 'button secondary'), remove = el('button', 'Delete', 'button secondary');
+    test.type = remove.type = 'button';
+    const result = el('p', '', 'hint target-result');
+    test.onclick = () => probeWorkflow(w, test, result);
+    remove.onclick = () => deleteWorkflow(w);
+    actions.append(test, remove);
+    head.append(info, actions);
+    card.append(head, result);
+    list.append(card);
+  });
+}
+async function refreshWorkflows() {
+  try {
+    const data = await api('/studio/workflows');
+    workflows = data.workflows || [];
+    fillWorkflowTargetSelect();
+    drawWorkflows();
+    fillWorkflowEngineOptions();
+    if ($('workflow-message')) {
+      $('workflow-message').textContent = workflows.length
+        ? `${workflows.length} custom workflow${workflows.length === 1 ? '' : 's'} saved.`
+        : 'No custom workflows yet; the built-in engines still work.';
+      $('workflow-message').classList.remove('error');
+    }
+  } catch (e) {
+    workflows = [];
+    drawWorkflows();
+    fillWorkflowEngineOptions();
+    if ($('workflow-message')) {
+      $('workflow-message').textContent = 'Workflows unavailable: ' + e.message;
+      $('workflow-message').classList.add('error');
+    }
+  }
+}
+async function probeWorkflow(w, button, result) {
+  button.disabled = true;
+  result.textContent = 'Testing…';
+  result.classList.remove('error');
+  try {
+    const data = await api('/studio/workflows/' + encodeURIComponent(w.id) + '/test', undefined, 'POST');
+    const status = data.status || {}, available = status.available === true;
+    const placeholders = (data.placeholders || []).map(p => '{{' + p + '}}').join(', ') || 'none';
+    result.textContent = `${available ? 'Available' : 'Unavailable'} · ${status.state || 'unknown'}`
+      + `${status.detail ? ' · ' + status.detail : ''} · placeholders: ${placeholders}`;
+    result.classList.toggle('error', !available);
+  } catch (e) {
+    result.textContent = e.message;
+    result.classList.add('error');
+  } finally {
+    button.disabled = false;
+  }
+}
+async function deleteWorkflow(w) {
+  if (!(await askConfirm(`Delete workflow "${w.name}"?`, {confirmLabel:'Delete', danger:true}))) return;
+  try {
+    await api('/studio/workflows/' + encodeURIComponent(w.id), undefined, 'DELETE');
+    await refreshWorkflows();
+    $('workflow-message').textContent = `Deleted "${w.name}".`;
+  } catch (e) {
+    $('workflow-message').textContent = e.message;
+    $('workflow-message').classList.add('error');
   }
 }
 function drawHardware() {
@@ -1613,7 +1730,7 @@ if ($('revamp-create')) $('revamp-create').addEventListener('click', async () =>
 $('nav-listen').onclick=()=>{show('listen');loadRevamp();};
 if ($('play-sample')) $('play-sample').addEventListener('click', playDemo);
 // The old playlist picker is gone: a take goes to the studio's own REVamp list.
-$('manage-targets').onclick=async()=>{show('compute');await refreshTargets();await loadHardware(true);};
+$('manage-targets').onclick=async()=>{show('compute');await refreshTargets();await refreshWorkflows();await loadHardware(true);};
 $('target-form').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('target-name').value.trim(), url = $('target-url').value.trim();
@@ -1623,14 +1740,37 @@ $('target-form').addEventListener('submit', async e => {
     await api('/studio/targets', {name, url});
     $('target-name').value = ''; $('target-url').value = '';
     await refreshTargets();
+    fillWorkflowTargetSelect();
     $('target-message').textContent = `Saved "${name}". Start ComfyUI on that host before rendering.`;
   } catch (err) {
     $('target-message').textContent = err.message;
     $('target-message').classList.add('error');
   }
 });
+$('workflow-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('workflow-name').value.trim(), target = $('workflow-target').value;
+  const file = ($('workflow-file').files || [])[0];
+  if (!name || !target || !file) { $('workflow-message').textContent = 'Name, endpoint and a workflow JSON file are required.'; return; }
+  $('workflow-message').classList.remove('error');
+  $('workflow-message').textContent = 'Reading workflow…';
+  try {
+    const text = await file.text();
+    let workflow;
+    try { workflow = JSON.parse(text); } catch (err) { throw new Error('that file is not valid JSON'); }
+    $('workflow-message').textContent = 'Validating workflow…';
+    const data = await api('/studio/workflows', {name, target_id: target, workflow});
+    $('workflow-name').value = ''; $('workflow-file').value = '';
+    await refreshWorkflows();
+    const found = ((data.workflow || {}).placeholders || []).map(p => '{{' + p + '}}').join(', ');
+    $('workflow-message').textContent = `Saved "${name}". Fillable: ${found || 'none'}.`;
+  } catch (err) {
+    $('workflow-message').textContent = err.message;
+    $('workflow-message').classList.add('error');
+  }
+});
 $('hardware-refresh').onclick=refreshHardware;
-refreshTargets(); refresh(); refreshWorkspaces(); loadModels(); loadPresets();
+refreshTargets(); refreshWorkflows(); refresh(); refreshWorkspaces(); loadModels(); loadPresets();
 
 
 // -- render settings and library folder ------------------------------------
@@ -2252,6 +2392,7 @@ function applyDraft(draft) {
   for (const [key, value] of Object.entries(draft || {})) {
     const node = form.elements[key];
     if (!node) continue;
+    if (key === 'engine') ensureEngineOption(value);
     if (node.type === 'checkbox') node.checked = Boolean(value); else node.value = value ?? '';
   }
 }

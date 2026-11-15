@@ -15,13 +15,14 @@ from .contract import (BPM_MAX, BPM_MIN, KINDS, MODES, STATES, VOCAL_LANGUAGES, 
 from .ace_local import AceLocalEngine
 from .ace_remote import AceRemoteEngine
 from .minimax_m3_comfy import MiniMaxM3ComfyEngine
+from .comfy_workflow import ComfyWorkflowEngine
 from .registry import (NoEngineAvailable, PreferenceStore, Registry, Selection,
                        default_engines, resolve_id)
 
 __all__ = [
     'BPM_MAX', 'BPM_MIN', 'KINDS', 'MODES', 'STATES', 'VOCAL_LANGUAGES', 'AceLocalEngine',
     'AceRemoteEngine',
-    'Capabilities', 'CapabilityUnsupported', 'Engine', 'EngineBusy', 'EngineError', 'EngineStatus',
+    'Capabilities', 'CapabilityUnsupported', 'ComfyWorkflowEngine', 'Engine', 'EngineBusy', 'EngineError', 'EngineStatus',
     'EngineUnavailable', 'HealthCheck', 'InvalidAudio', 'Limits', 'MiniMaxM3ComfyEngine',
     'NoEngineAvailable', 'PreferenceStore', 'Registry', 'RenderRequest', 'RenderResult',
     'RequestInvalid', 'Selection', 'default_engines', 'inspect_wav', 'resolve_id',

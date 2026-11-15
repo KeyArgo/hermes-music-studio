@@ -175,6 +175,7 @@ class RenderRequest:
     caption: str
     duration_seconds: float
     seed: int
+    title: str = ''
     lyrics: str = ''
     instrumental: bool = False
     vocal_language: str = 'en'

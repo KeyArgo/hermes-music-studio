@@ -225,11 +225,11 @@ HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback hos
 ## Privacy & security
 
 - **What it stores.** Project JSON, raw take WAVs, QC edit WAVs, `engine-preference.json`,
-  `presets.json`, `comfy-targets.json`, `studio-workspaces.json`, `engine-settings.json`,
+  `presets.json`, `comfy-targets.json`, `comfy-workflows.json`, `studio-workspaces.json`, `engine-settings.json`,
   `library.json`, checkpoint files and worker logs, all under the plugin data directory you chose.
   Audio is opened with `O_NOFOLLOW`, checked as a regular file, and served with `nosniff`.
 - **Network calls.** The studio calls only endpoints you configure: a ComfyUI server
-  (`COMFYUI_URL` or a saved target), an optional ACE-Step HTTP server (`ACE_REMOTE_URL`), REVamp's
+  (`COMFYUI_URL` or a saved target; a custom workflow contacts only the endpoint you saved with it), an optional ACE-Step HTTP server (`ACE_REMOTE_URL`), REVamp's
   local API at `127.0.0.1:8114`, and — only when you press the buttons — your configured Hermes model
   and image providers (creative partner and cover art) and Hugging Face for weights
   (`POST /api/studio/setup/hf`). It sends no telemetry and has no cloud audio service. "Check for a

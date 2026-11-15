@@ -192,6 +192,11 @@ class Jobs:
         engine, so a mismatch is not a reason to refuse. The ComfyUI engine
         still has to refuse an unpreflighted draft target.
         """
+        from .workflows import is_workflow_engine
+        if is_workflow_engine(engine_id):
+            # A custom workflow carries its own saved endpoint, which the service preflighted and
+            # passes as ``target``; the draft's MiniMax target says nothing about it.
+            return
         named = project.get('comfy_target_id')
         if target is not None:
             if named != target['id']:
