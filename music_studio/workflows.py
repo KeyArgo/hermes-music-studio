@@ -15,12 +15,14 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import tempfile
 import time
 import uuid
 from pathlib import Path
 
 from .network import _lock_ex, _lock_un, _valid_id, validate_name
+from .store import replace_with_retry
 
 WORKFLOWS_FILE = 'comfy-workflows.json'
 MAX_WORKFLOW_BYTES = 1024 * 1024
@@ -60,11 +62,19 @@ def valid_engine_id(value) -> bool:
         return False
 
 
+def _is_link(value) -> bool:
+    """True for a ComfyUI link: exactly ``[node_id: str, output_index: int]``."""
+    return (isinstance(value, list) and len(value) == 2
+            and isinstance(value[0], str) and type(value[1]) is int)
+
+
 def _walk_strings(value):
     """Yield every string value inside a graph input (including nested lists)."""
     if isinstance(value, str):
         yield value
     elif isinstance(value, list):
+        if _is_link(value):
+            return
         for item in value:
             yield from _walk_strings(item)
     elif isinstance(value, dict):
@@ -123,22 +133,27 @@ def validate_workflow(graph) -> dict:
 def _placeholder_values(request, title=None):
     instrumental = bool(getattr(request, 'instrumental', False))
     lyrics = '' if instrumental else (getattr(request, 'lyrics', '') or '')
+    try:
+        duration = float(getattr(request, 'duration_seconds', 0) or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
     return {
         'lyrics': lyrics,
         'style': getattr(request, 'caption', '') or '',
-        'duration': float(getattr(request, 'duration_seconds', 0) or 0),
+        'duration': int(duration) if duration.is_integer() else duration,
         'seed': int(getattr(request, 'seed', 0) or 0),
         'title': (title if title is not None else getattr(request, 'title', '') or ''),
         'instrumental': instrumental,
     }
 
 
+_PLACEHOLDER_PATTERN = re.compile(
+    r"\{\{(lyrics|style|duration|seed|title|instrumental)\}\}")
+
+
 def _replace_text(text: str, values: dict) -> str:
-    result = text
-    for name, token in zip(PLACEHOLDERS, PLACEHOLDER_TOKENS):
-        if token in result:
-            result = result.replace(token, str(values[name]))
-    return result
+    # One pass, so a value that itself contains ``{{...}}`` is never rewritten afterwards.
+    return _PLACEHOLDER_PATTERN.sub(lambda match: str(values[match.group(1)]), text)
 
 
 def _replace_value(value, values: dict):
@@ -146,6 +161,8 @@ def _replace_value(value, values: dict):
         if value in PLACEHOLDER_TOKENS:
             return values[value[2:-2]]
         return _replace_text(value, values)
+    if _is_link(value):
+        return value
     if isinstance(value, list):
         return [_replace_value(item, values) for item in value]
     if isinstance(value, dict):
@@ -203,7 +220,7 @@ class WorkflowStore:
                 json.dump(workflows, out, ensure_ascii=False, indent=2)
                 out.flush()
                 os.fsync(out.fileno())
-            os.replace(name, self.path)
+            replace_with_retry(name, self.path)
             if os.name != 'nt':
                 fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
                 try:

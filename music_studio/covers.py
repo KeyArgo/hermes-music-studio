@@ -99,6 +99,27 @@ def allowed_roots(root, temp: Path | None = None) -> list[Path]:
     return unique
 
 
+def _inside_any_root(path: Path, roots: list[Path]) -> bool:
+    """True when ``path`` is one of the roots or lives under one, judged by file identity.
+
+    Comparing resolved strings fails on a case-insensitive disk, where the same file can be spelled
+    two ways. ``samefile`` asks the filesystem instead, and walking the parents keeps the rule to
+    real containment (a symlink that resolves outside is still refused).
+    """
+    candidate = Path(path)
+    while True:
+        for root in roots:
+            try:
+                if os.path.exists(root) and os.path.samefile(candidate, root):
+                    return True
+            except OSError:
+                continue
+        parent = candidate.parent
+        if parent == candidate:
+            return False
+        candidate = parent
+
+
 def cover_from_file(root, project_id: str, raw_path: str, temp: Path | None = None) -> dict:
     """Copy an image the agent made into the project's cover slot.
 
@@ -115,7 +136,7 @@ def cover_from_file(root, project_id: str, raw_path: str, temp: Path | None = No
         raise CoverError('image_path must be a real file, not a link')
     resolved = path.resolve()
     roots = allowed_roots(root, temp=temp)
-    if not any(resolved == candidate or candidate in resolved.parents for candidate in roots):
+    if not _inside_any_root(resolved, roots):
         raise CoverError('image_path must be inside the studio folder, the temp directory, or '
                          "Hermes' own image cache")
     if not resolved.is_file():

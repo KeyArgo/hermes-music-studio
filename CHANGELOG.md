@@ -24,6 +24,27 @@ All notable changes to Music Studio are recorded here. The format follows
   `has_key` and never the key, `probe_cloud` reads the key through `agent.secret_scope`, and a legacy
   `cloud-keys.json` is migrated once and deleted only after the key reads back. Renders now use the
   saved endpoint because `save_cloud` also writes `ace_remote_url`.
+- **A hosted URL saved in Setup applies immediately.** `AceRemoteEngine` resolves its address at
+  health/render time (explicit argument, then the saved `ace_remote_url`, then `ACE_REMOTE_URL`), so a
+  cached engine no longer needs a host restart. `ace_remote_url` is the single stored address; the
+  nested `ace_remote.url` is cleared and only read as a fallback for older settings files.
+- **The engine registry notices other processes' writes.** Its cache is keyed on the data directory
+  plus the mtime and size of `comfy-workflows.json`, `comfy-targets.json` and
+  `engine-settings.json`; deleting a target also invalidates it.
+- **A workflow in use cannot be deleted.** `delete_workflow` refuses with
+  `workflow is in use by a queued take` while a queued or running take names its engine id.
+- **ComfyUI links are never treated as placeholder text.** Graph inputs shaped exactly like
+  `[node_id, output_index]` are skipped by placeholder discovery and left unchanged on substitution.
+- **User text is not rewritten by substitution.** Placeholders are replaced in one `re.sub` pass, so a
+  lyric containing `{{seed}}` stays exactly that.
+- **Windows workflow writes retry like the rest of the store.** `WorkflowStore._write` uses
+  `store.replace_with_retry` instead of a bare `os.replace`.
+- **Covers accept case-insensitive spellings of an allowed folder.** Containment is decided with
+  `os.path.samefile`; files outside every allowed root and symlinks that escape one are still refused.
+- **The legacy key migration and a new key save share one file lock.** A `list_cloud` racing
+  `save_cloud` can no longer re-import the old key after the new one was saved.
+- **Whole-number durations stay integers in workflows.** `{{duration}}` becomes an `int` for whole
+  seconds and a `float` otherwise.
 
 ## 1.0.0 — in catalog review
 

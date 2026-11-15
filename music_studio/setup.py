@@ -13,6 +13,7 @@ Three paths, in the order people actually meet them:
 Nothing here renders audio. Every function answers `{ok, checks, detail}` in the same shape the
 Compute screen already renders for `/settings/test`, so a failure names the check that failed.
 """
+import contextlib
 import json
 import logging
 import shutil
@@ -238,7 +239,7 @@ def _stored_endpoint(data_dir):
 
     saved = settings.read(Path(data_dir))
     entry = saved.get('ace_remote') if isinstance(saved.get('ace_remote'), dict) else {}
-    return {'url': entry.get('url') or saved.get('ace_remote_url') or '',
+    return {'url': saved.get('ace_remote_url') or entry.get('url') or '',
             'model': entry.get('model') or '',
             'saved_at': entry.get('saved_at') or '',
             'key_env': entry.get('key_env') or CLOUD_KEY_ENV}
@@ -249,11 +250,28 @@ def _store_endpoint(data_dir, url, model):
     from . import settings
 
     base = normalise_url(url)
-    entry = {'url': base, 'model': (model or '').strip(),
+    # ``ace_remote_url`` is the one stored address. The nested ``url`` is cleared rather than
+    # written so an old value read by a previous release can never win over the new setting.
+    entry = {'url': '', 'model': (model or '').strip(),
              'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
              'key_env': CLOUD_KEY_ENV}
     settings.write(Path(data_dir), {'ace_remote': entry, 'ace_remote_url': base})
     return entry
+
+
+@contextlib.contextmanager
+def _cloud_key_guard(data_dir):
+    """Serialise the legacy migration and the key write across processes."""
+    from .network import _lock_ex, _lock_un
+
+    directory = Path(data_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / '.cloud-key.lock').open('a') as lock:
+        _lock_ex(lock)
+        try:
+            yield
+        finally:
+            _lock_un(lock)
 
 
 def migrate_legacy_keys(data_dir):
@@ -262,6 +280,11 @@ def migrate_legacy_keys(data_dir):
     Returns a message for the UI when the file cannot be migrated safely. The file is left untouched
     in that case: a key is only deleted after it has been read back from the credential store.
     """
+    with _cloud_key_guard(data_dir):
+        return _migrate_legacy_keys_unlocked(data_dir)
+
+
+def _migrate_legacy_keys_unlocked(data_dir):
     path = Path(data_dir) / LEGACY_KEY_FILE
     if not path.is_file():
         return None
@@ -311,25 +334,28 @@ def migrate_legacy_keys(data_dir):
 
 def save_cloud(data_dir, name, url, key, model=''):
     """Save the hosted endpoint and put its key only in Hermes' credential store."""
-    message = migrate_legacy_keys(data_dir)
     base = normalise_url(url)
     if not (key or '').strip():
         raise ValueError('an API key is required for a hosted endpoint')
     from .hermes_secrets import SAVE_FAILED, save_secret
 
-    if not save_secret(CLOUD_KEY_ENV, key.strip()):
-        raise ValueError(SAVE_FAILED)
-    entry = _store_endpoint(data_dir, base, model)
-    result = {'ok': True, 'name': name or 'default', 'url': entry['url'], 'has_key': True}
-    legacy = Path(data_dir) / LEGACY_KEY_FILE
-    if message and legacy.is_file():
-        # The owner just entered the key they want, and Hermes has confirmed it: the old plaintext
-        # copy that migration could not resolve is no longer needed.
-        try:
-            legacy.unlink()
-            message = None
-        except OSError:
-            pass
+    with _cloud_key_guard(data_dir):
+        # Migration and the owner's new key are one transaction: without the lock a concurrent
+        # list_cloud could import the legacy key right after this one was saved.
+        message = _migrate_legacy_keys_unlocked(data_dir)
+        if not save_secret(CLOUD_KEY_ENV, key.strip()):
+            raise ValueError(SAVE_FAILED)
+        entry = _store_endpoint(data_dir, base, model)
+        legacy = Path(data_dir) / LEGACY_KEY_FILE
+        if message and legacy.is_file():
+            # The owner just entered the key they want, and Hermes has confirmed it: the old plaintext
+            # copy that migration could not resolve is no longer needed.
+            try:
+                legacy.unlink()
+                message = None
+            except OSError:
+                pass
+    result = {'ok': True, 'name': name or 'default', 'url': base, 'has_key': True}
     if message:
         result['message'] = message
     return result

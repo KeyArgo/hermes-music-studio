@@ -37,6 +37,19 @@ POLL_SECONDS = 2.0
 DEFAULT_TIMEOUT = 10.0
 
 
+def _saved_url() -> str:
+    """The endpoint saved in Setup, read at use time so a cached engine is not stale."""
+    try:
+        from .. import settings
+
+        base = settings.base_dir()
+        if base is None:
+            return ''
+        return settings.read(base).get('ace_remote_url') or ''
+    except Exception:  # noqa: BLE001 - a broken settings file means "not set"
+        return ''
+
+
 def _remote_key() -> str | None:
     """The remote key, resolved the way Hermes resolves credentials.
 
@@ -66,11 +79,23 @@ class AceRemoteEngine(Engine):
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
                  timeout: float = DEFAULT_TIMEOUT):
         super().__init__()
-        self.base_url = (base_url or os.environ.get('ACE_REMOTE_URL') or DEFAULT_URL).rstrip('/')
+        self._explicit_base_url = base_url or ''
         self.api_key = api_key if api_key is not None else _remote_key()
         self.timeout = timeout
         # Overridable so tests do not sleep on the production poll interval.
         self.poll_seconds = POLL_SECONDS
+
+    @property
+    def base_url(self) -> str:
+        """Resolve the endpoint on every read: explicit, saved, environment, default."""
+        return (self._explicit_base_url
+                or _saved_url()
+                or os.environ.get('ACE_REMOTE_URL')
+                or DEFAULT_URL).rstrip('/')
+
+    @base_url.setter
+    def base_url(self, value: str | None) -> None:
+        self._explicit_base_url = value or ''
 
     # -- description -----------------------------------------------------
     @property

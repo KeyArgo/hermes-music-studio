@@ -155,7 +155,8 @@ def test_a_failed_credential_write_is_reported_and_writes_no_secret(tmp_path, he
     monkeypatch.setattr(config, "save_env_value", refuse)
     with pytest.raises(ValueError, match="could not be saved to Hermes"):
         setup.save_cloud(tmp_path, "default", "https://api.example.com/v1", "sk-test-123")
-    assert [p for p in tmp_path.rglob("*") if p.is_file()] == [], (
+    assert [p for p in tmp_path.rglob("*")
+            if p.is_file() and p.name != ".cloud-key.lock"] == [], (
         "a secret was written by a fallback")
 
 

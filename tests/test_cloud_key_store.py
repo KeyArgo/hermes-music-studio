@@ -90,7 +90,7 @@ def test_renders_use_the_saved_url(tmp_path, hermes):
 
     saved = settings.read(tmp_path)
     assert saved['ace_remote_url'] == 'https://api.example.com/v1'
-    assert saved['ace_remote']['url'] == 'https://api.example.com/v1'
+    assert not saved['ace_remote'].get('url')
     assert saved['ace_remote']['key_env'] == 'ACE_REMOTE_API_KEY'
     assert 'sk-url' not in json.dumps(saved)
 
@@ -169,7 +169,8 @@ def test_save_without_hermes_importable_raises_and_writes_nothing(tmp_path, monk
     with pytest.raises(ValueError, match='could not be saved to Hermes'):
         setup.save_cloud(tmp_path, 'default', 'https://api.example.com/v1', 'sk-no-hermes')
 
-    assert [p for p in tmp_path.rglob('*') if p.is_file()] == []
+    assert [p for p in tmp_path.rglob('*')
+            if p.is_file() and p.name != '.cloud-key.lock'] == []
 
 
 def test_a_failed_credential_write_raises_and_writes_nothing(tmp_path, hermes, monkeypatch):
@@ -185,4 +186,5 @@ def test_a_failed_credential_write_raises_and_writes_nothing(tmp_path, hermes, m
     with pytest.raises(ValueError, match='could not be saved to Hermes'):
         setup.save_cloud(tmp_path, 'default', 'https://api.example.com/v1', 'sk-refused')
 
-    assert [p for p in tmp_path.rglob('*') if p.is_file()] == []
+    assert [p for p in tmp_path.rglob('*')
+            if p.is_file() and p.name != '.cloud-key.lock'] == []

@@ -83,14 +83,35 @@ def store():
     return Store(plugin_data_dir(PLUGIN_ID))
 
 
+def _file_signature(path):
+    """``(mtime_ns, size)`` for a file another process may have replaced, or None."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _registry_cache_key(s):
+    """A key that changes when another process writes the files the registry is built from."""
+    root = s.root
+    return (str(root),
+            _file_signature(root / 'comfy-workflows.json'),
+            _file_signature(root / 'comfy-targets.json'),
+            _file_signature(root / 'engine-settings.json'))
+
+
 def registry(s=None):
     """The engine registry for this profile's data directory."""
     s = s or store()
-    key = str(s.root)
+    key = _registry_cache_key(s)
     found = _REGISTRIES.get(key)
     if found is None:
         engines = default_engines() + _workflow_engines(s)
         found = Registry(engines, preference_path=s.root / PREFERENCE_FILE)
+        # One registry per data dir: drop the copy built from older files, or every write by
+        # another process would leave a stale registry behind for the life of this one.
+        _invalidate_registry(s)
         _REGISTRIES[key] = found
     return found
 
@@ -124,7 +145,9 @@ def _workflow_engines(s):
 
 
 def _invalidate_registry(s):
-    _REGISTRIES.pop(str(s.root), None)
+    root = str(s.root)
+    for key in [k for k in _REGISTRIES if (k[0] if isinstance(k, tuple) else k) == root]:
+        _REGISTRIES.pop(key, None)
 
 
 def engine_id_for(project):
@@ -783,7 +806,9 @@ def create_target(body):
 
 
 def delete_target(target_id):
-    target = TargetStore(store().root).delete(target_id)
+    s = store()
+    target = TargetStore(s.root).delete(target_id)
+    _invalidate_registry(s)
     return {'success': True, 'target': target, 'target_id': target['id']}
 
 
@@ -832,9 +857,15 @@ def create_workflow(body):
 
 
 def delete_workflow(workflow_id):
-    from .workflows import WorkflowStore
+    from .workflows import WorkflowStore, engine_id
 
     s = store()
+    in_use = engine_id(workflow_id)
+    for project in s.all():
+        for take in project.get('takes') or []:
+            if (isinstance(take, dict) and take.get('state') in ('queued', 'running')
+                    and take.get('engine_id') == in_use):
+                raise ValueError('workflow is in use by a queued take')
     record = WorkflowStore(s.root).delete(workflow_id)
     _invalidate_registry(s)
     return {'success': True, 'workflow_id': record['id'], 'deleted': record['name']}

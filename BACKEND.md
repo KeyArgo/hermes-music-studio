@@ -47,6 +47,7 @@ metadata when the server has it). Test in the UI does
 that plus the placeholder report and never renders. A render reuses the MiniMax
 ComfyUI queue/history/download/transcode path and is pinned to its endpoint like
 a MiniMax take. Only the endpoint saved with the workflow is contacted.
+The graph runs as-is on your own ComfyUI; only you can upload one (the agent has no tool for it), and ComfyUI keeps saves inside its output folder.
 
 ## One render at a time
 
