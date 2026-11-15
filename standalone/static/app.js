@@ -27,9 +27,12 @@ function mediaUrl(url) {
   const separator = String(url).includes('?') ? '&' : '?';
   return url + separator + 'token=' + encodeURIComponent(STUDIO_TOKEN);
 }
-async function api(path, data, method) {
+async function api(path, data, method, options) {
   const opts = method ? {method} : data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)};
   if (method && data !== undefined) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(data); }
+  // A request started from pagehide is cancelled with the page unless the browser is told to
+  // keep it alive. Only the caller knows whether this is a last-gasp save, so it is opt-in.
+  if (options && options.keepalive) opts.keepalive = true;
   opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
@@ -1139,35 +1142,78 @@ form.elements.minimax_guidance.addEventListener('input',()=>{$('minimax-guidance
 let autosaveTimer = null, autosaving = false, lastSavedAt = 0;
 function draftHasContent(d) { return Boolean((d.title || '').trim() || (d.caption || '').trim() || (d.lyrics || '').trim()); }
 function draftStateLabel(text) { const pill = $('draft-state'); if (pill) pill.textContent = text; }
-async function autosave() {
-  if (busy || autosaving) return;
-  const draft = fields();
-  if (!draftHasContent(draft)) return;
+// The pane frames this page without allow-same-origin, so touching localStorage throws there.
+// Everything below goes through try/catch: the server save is what matters, and storage is only
+// the bonus that survives a reload in an ordinary browser tab.
+function saveBackup(draft) {
+  try { localStorage.setItem('studio.draftBackup', JSON.stringify({project_id: current ? current.project_id : null, draft, at: Date.now()})); } catch (e) {}
+}
+function readBackup() {
+  try { const raw = localStorage.getItem('studio.draftBackup'); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+// undefined means storage itself is unavailable; null means it works but remembers nothing.
+function readLastProject() {
+  try { return localStorage.getItem('studio.lastProject'); } catch (e) { return undefined; }
+}
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosave, 1200);
+}
+async function saveDraft(draft, keepalive, unguarded) {
   autosaving = true;
   const savedRevision = revision;
+  // `unguarded` drops the stale-draft token. Only the leaving save uses it, and only while an
+  // earlier save of this same draft is still in the air: that save is about to move the token,
+  // so the leaving one would be refused as stale and the last keystrokes lost with the page.
+  const update = {project_id: current && current.project_id, draft};
+  if (!unguarded && current) update.base_updated_at = current.updated_at;
   try {
     const data = current
-      ? await api('/update', {project_id: current.project_id, base_updated_at: current.updated_at, draft})
-      : await api('/create', {draft});
+      ? await api('/update', update, undefined, {keepalive})
+      : await api('/create', {draft}, undefined, {keepalive});
     current = data.project;
     dirty = revision !== savedRevision;
     lastSavedAt = Date.now();
-    try { localStorage.setItem('studio.lastProject', current.project_id); localStorage.removeItem('studio.draftBackup'); } catch (e) {}
+    // Keep the backup while newer keystrokes are still unsaved: they exist nowhere else yet.
+    try { localStorage.setItem('studio.lastProject', current.project_id); if (!dirty) localStorage.removeItem('studio.draftBackup'); } catch (e) {}
     draftStateLabel('Saved ' + new Date(lastSavedAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
     buttons();
   } catch (err) {
-    // Keep the words on this machine, and say so instead of pretending they are safe.
-    try { localStorage.setItem('studio.draftBackup', JSON.stringify(draft)); } catch (e) {}
+    // Keep the words on this machine until the server accepts them, and say so instead of
+    // pretending they are safe.
+    saveBackup(draft);
     draftStateLabel('Not saved — ' + (err && err.message ? err.message : 'retry'));
   } finally { autosaving = false; }
 }
+async function autosave() {
+  // Busy or already saving is not a reason to drop the last keystrokes: come back shortly.
+  if (busy || autosaving) { scheduleAutosave(); return; }
+  const draft = fields();
+  if (!draftHasContent(draft)) return;
+  await saveDraft(draft, false);
+}
+// Leaving is the moment that matters most: a normal fetch started here dies with the page, so
+// this one is keepalive. A create already in the air will land on its own, and sending a second
+// one would turn a single draft into two songs.
+function flushNow() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  if (autosaving && !current) return;
+  if (!dirty) return;
+  const draft = fields();
+  if (!draftHasContent(draft)) return;
+  saveDraft(draft, true, autosaving);
+}
 form.addEventListener('input', () => {
   dirty = true;
+  // Written synchronously on every keystroke: if the page dies before the debounce fires, this
+  // is the only copy of the words.
+  saveBackup(fields());
   draftStateLabel('Saving…');
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(autosave, 1200);
+  scheduleAutosave();
 });
-window.addEventListener('pagehide', () => { if (dirty) autosave(); });
+window.addEventListener('pagehide', flushNow);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
 
 form.addEventListener('submit', async e => { e.preventDefault(); if (busy) return; const savedRevision=revision; const draft=fields(); const workspace=$('workspace-select').value; busy=true; buttons(); try { const data=current ? await api('/update',{project_id:current.project_id,base_updated_at:current.updated_at,draft}) : await api('/create',{draft}); current=data.project; dirty=revision!==savedRevision; await api('/studio/assign',{project_id:current.project_id,workspace_id:workspace}); message(dirty ? 'The earlier draft was saved. Save your newer edits before approval.' : 'Draft saved. Review it before approval.'); await refreshWorkspaces(); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
 $('approve').addEventListener('click', async () => { if(busy || !current || dirty) return; busy=true; buttons(); try { const data=await api('/approve',{project_id:current.project_id,base_updated_at:current.updated_at}); current=data.project; message(dirty ? 'The saved draft was approved; newer edits still need saving.' : 'Draft approved. You can render when ready.'); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
@@ -2201,24 +2247,47 @@ document.addEventListener('click', e => {
   document.querySelectorAll('details.take-more[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
 });
 // Landing behaviour: reopen the draft the person was last in. A pane that comes back to an empty
-// form reads as "my work is gone", even when every take is safely on disk.
+// form reads as "my work is gone", even when every take is safely on disk. The saved form copy is
+// applied after the project loads: the other order lets the older server text overwrite it.
+function applyDraft(draft) {
+  for (const [key, value] of Object.entries(draft || {})) {
+    const node = form.elements[key];
+    if (!node) continue;
+    if (node.type === 'checkbox') node.checked = Boolean(value); else node.value = value ?? '';
+  }
+}
 (async () => {
   try {
-    const backup = localStorage.getItem('studio.draftBackup');
-    const lastId = localStorage.getItem('studio.lastProject');
-    if (backup) {
-      const draft = JSON.parse(backup);
-      for (const [key, value] of Object.entries(draft || {})) {
-        const node = form.elements[key];
-        if (!node) continue;
-        if (node.type === 'checkbox') node.checked = Boolean(value); else node.value = value ?? '';
-      }
-      draftStateLabel('Restored unsaved draft');
-    }
-    if (!lastId) return;
+    const backup = readBackup();
+    const lastId = readLastProject();
+    // readLastProject answers undefined only when storage is unavailable — the sandboxed pane.
+    const storageWorks = lastId !== undefined;
+    if (storageWorks && !lastId && !backup) return;
     const data = await api('/status');
-    const project = (data.projects || []).find(p => p.project_id === lastId);
+    const projects = data.projects || [];
+    // A backup names the draft the person was typing in, even a brand-new one (project_id null),
+    // so it wins over the last project they merely had open.
+    let projectId = backup && backup.draft ? backup.project_id : (lastId || null);
+    if (!projectId && !backup && !storageWorks) {
+      // Nothing can be remembered here, so the most recently edited project is the closest
+      // thing to where the person left off.
+      const stamp = p => Number(p && p.updated_at) || 0;
+      const newest = projects.slice().sort((a, b) => stamp(b) - stamp(a))[0];
+      projectId = newest ? newest.project_id : null;
+    }
+    const project = projectId ? projects.find(p => p.project_id === projectId) : null;
     if (project) await loadProject(project);
+    const mine = backup && backup.draft
+      && (backup.project_id == null ? !project : Boolean(project) && backup.project_id === project.project_id);
+    if (mine) {
+      applyDraft(backup.draft);
+      dirty = true;
+      revision++;
+      buttons();
+      // After buttons(): that helper paints the state pill from the dirty flag.
+      draftStateLabel('Restored unsaved draft');
+      scheduleAutosave();
+    }
   } catch (e) { /* a restore is a convenience, never a failure the person must read */ }
 })();
 
