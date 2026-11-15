@@ -186,6 +186,7 @@ async function deletePreset() {
 async function loadProject(p) {
   if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return;
   current = p;
+  try { localStorage.setItem('studio.lastProject', p.project_id); } catch (e) {}
   for (const key of ['title','caption','lyrics','duration_seconds','engine']) form.elements[key].value = p[key] ?? (key === 'duration_seconds' ? 30 : '');
   if (p.engine === 'ace') form.elements.engine.value = 'ace_local';
   form.elements.instrumental.checked = !!p.instrumental;
@@ -1048,7 +1049,11 @@ function renderActiveTake() {
   $('active-state').textContent = running ? 'Rendering' : 'Queued';
   $('active-progress-bar').style.width = progress + '%';
   $('active-progress-bar').parentElement.setAttribute('aria-valuenow', String(progress));
-  $('active-progress').textContent = running ? `estimated ${progress}% complete · estimated ETA ${formatEta(take.eta_seconds)}` : `Waiting for the GPU${take.queue_position ? ` · queue #${take.queue_position}` : ''}.`;
+  const elapsed = running && take.started_at ? Math.max(0, Math.round(Date.now() / 1000 - take.started_at)) : null;
+  $('active-progress').textContent = running
+    ? `estimated ${progress}% complete · ${elapsed != null ? formatEta(elapsed) + ' working · ' : ''}` +
+      `estimated ETA ${formatEta(take.eta_seconds)} left`
+    : `Waiting for the GPU${take.queue_position ? ` · queue #${take.queue_position}` : ''}.`;
   const engine = take.engine_id || project.engine || 'engine', target = takeTargetLabel(take);
   $('active-detail').textContent = `Engine: ${engine}${target ? ` · ${target}` : ''}`;
   const gpu = running ? gpuForTake(take) : null;
@@ -1071,6 +1076,25 @@ function scheduleRefresh(delay) {
   clearTimeout(pollTimer);
   pollTimer = setTimeout(() => { refresh(); }, delay);
 }
+// Plug-and-play. A fresh install has no ComfyUI address, so every engine reads unavailable and the
+// person is told to go hunting in Compute. Ask the local network once instead, and adopt the only
+// answer; if there are several, say so and let them choose. Never overwrites a saved address.
+let autoDetected = false;
+async function autoDetectEngine() {
+  if (autoDetected) return;
+  autoDetected = true;
+  try {
+    const configured = (await api('/settings')).settings || {};
+    if (configured.comfy_url) return;
+    const found = await api('/discover', {});
+    const urls = (found.found || []).map(item => item.url || item.base_url).filter(Boolean);
+    if (!urls.length) { message('No ComfyUI answered on this machine. Open Compute to point the studio at one.'); return; }
+    if (urls.length > 1) { message(`Found ${urls.length} ComfyUI servers — choose one in Compute.`); return; }
+    await api('/settings', {comfy_url: urls[0]});
+    message(`Found ComfyUI at ${urls[0]} and set it up.`);
+    await refresh();
+  } catch (e) { /* discovery is a convenience, never a failure the person must read */ }
+}
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -1078,6 +1102,7 @@ async function refresh() {
     const data = await api('/status');
     engines = data.engines || []; projects = data.projects || [];
     const ready = engines.filter(e => e.available).length;
+    if (!ready && !autoDetected) autoDetectEngine();
     $('engine-status').textContent = ready ? `${ready} engine${ready===1?'':'s'} ready` : 'No engine ready';
     engineHint(); buttons(); renderLibrary();
     const live = projects.some(p => (p.takes || []).some(t => t.state === 'running' || t.state === 'queued'));
@@ -1108,6 +1133,42 @@ $('preset-delete').addEventListener('click', deletePreset);
 form.elements.engine.addEventListener('change',engineHint);
 form.elements.comfy_target_id.addEventListener('change',()=>{targetProbes={};engineHint();buttons();});
 form.elements.minimax_guidance.addEventListener('input',()=>{$('minimax-guidance-value').value=form.elements.minimax_guidance.value;});
+// Autosave. Two failures this prevents: closing the pane mid-thought loses the draft, and a
+// person cannot tell whether their typing reached the library. Debounced, silent, never an
+// approval — a saved draft is still unapproved, and rendering still needs the button.
+let autosaveTimer = null, autosaving = false, lastSavedAt = 0;
+function draftHasContent(d) { return Boolean((d.title || '').trim() || (d.caption || '').trim() || (d.lyrics || '').trim()); }
+function draftStateLabel(text) { const pill = $('draft-state'); if (pill) pill.textContent = text; }
+async function autosave() {
+  if (busy || autosaving) return;
+  const draft = fields();
+  if (!draftHasContent(draft)) return;
+  autosaving = true;
+  const savedRevision = revision;
+  try {
+    const data = current
+      ? await api('/update', {project_id: current.project_id, base_updated_at: current.updated_at, draft})
+      : await api('/create', {draft});
+    current = data.project;
+    dirty = revision !== savedRevision;
+    lastSavedAt = Date.now();
+    try { localStorage.setItem('studio.lastProject', current.project_id); localStorage.removeItem('studio.draftBackup'); } catch (e) {}
+    draftStateLabel('Saved ' + new Date(lastSavedAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
+    buttons();
+  } catch (err) {
+    // Keep the words on this machine, and say so instead of pretending they are safe.
+    try { localStorage.setItem('studio.draftBackup', JSON.stringify(draft)); } catch (e) {}
+    draftStateLabel('Not saved — ' + (err && err.message ? err.message : 'retry'));
+  } finally { autosaving = false; }
+}
+form.addEventListener('input', () => {
+  dirty = true;
+  draftStateLabel('Saving…');
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosave, 1200);
+});
+window.addEventListener('pagehide', () => { if (dirty) autosave(); });
+
 form.addEventListener('submit', async e => { e.preventDefault(); if (busy) return; const savedRevision=revision; const draft=fields(); const workspace=$('workspace-select').value; busy=true; buttons(); try { const data=current ? await api('/update',{project_id:current.project_id,base_updated_at:current.updated_at,draft}) : await api('/create',{draft}); current=data.project; dirty=revision!==savedRevision; await api('/studio/assign',{project_id:current.project_id,workspace_id:workspace}); message(dirty ? 'The earlier draft was saved. Save your newer edits before approval.' : 'Draft saved. Review it before approval.'); await refreshWorkspaces(); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
 $('approve').addEventListener('click', async () => { if(busy || !current || dirty) return; busy=true; buttons(); try { const data=await api('/approve',{project_id:current.project_id,base_updated_at:current.updated_at}); current=data.project; message(dirty ? 'The saved draft was approved; newer edits still need saving.' : 'Draft approved. You can render when ready.'); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
 // The decision point: four lines and 25 seconds, instead of three minutes of a whole song the
@@ -1167,7 +1228,8 @@ $('render').addEventListener('click', async () => {
     await refresh();
   } catch (err) { message(err.message, true); } finally { busy = false; buttons(); }
 });
-$('new-song').addEventListener('click', async () => { if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); message('New draft.'); show('create'); });
+$('new-song').addEventListener('click', async () => { if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); try { localStorage.removeItem('studio.lastProject'); localStorage.removeItem('studio.draftBackup'); } catch (e) {}
+  clearTimeout(autosaveTimer); draftStateLabel('New idea'); message('New draft.'); show('create'); });
 for (const [id, event] of [['library-search','input'], ['library-sort','change']]) {
   const node = $(id); if (node) node.addEventListener(event, () => {
     if (id === 'library-sort') { try { localStorage.setItem('studio.librarySort', node.value); } catch (e) {} }
@@ -2138,3 +2200,25 @@ if ($('version-panel')) {
 document.addEventListener('click', e => {
   document.querySelectorAll('details.take-more[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
 });
+// Landing behaviour: reopen the draft the person was last in. A pane that comes back to an empty
+// form reads as "my work is gone", even when every take is safely on disk.
+(async () => {
+  try {
+    const backup = localStorage.getItem('studio.draftBackup');
+    const lastId = localStorage.getItem('studio.lastProject');
+    if (backup) {
+      const draft = JSON.parse(backup);
+      for (const [key, value] of Object.entries(draft || {})) {
+        const node = form.elements[key];
+        if (!node) continue;
+        if (node.type === 'checkbox') node.checked = Boolean(value); else node.value = value ?? '';
+      }
+      draftStateLabel('Restored unsaved draft');
+    }
+    if (!lastId) return;
+    const data = await api('/status');
+    const project = (data.projects || []).find(p => p.project_id === lastId);
+    if (project) await loadProject(project);
+  } catch (e) { /* a restore is a convenience, never a failure the person must read */ }
+})();
+
