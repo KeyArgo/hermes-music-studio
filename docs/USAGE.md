@@ -129,7 +129,7 @@ filling the folder with "Song (2)", "Song (3)". The library keeps its master; ex
 Create a workspace, then pick it in Create's **Workspace** select. **View songs** filters the library
 to that workspace. Workspaces are local JSON (`studio-workspaces.json`); they do not move audio.
 
-## Compute
+## Music engines
 
 ![Compute settings, targets and library folder](screenshots/compute.png)
 
@@ -142,9 +142,54 @@ to that workspace. Workspaces are local JSON (`studio-workspaces.json`); they do
 - **ComfyUI targets** save named endpoints; a take pins the exact URL it was preflighted against.
 - **Local hardware** is a read-only `nvidia-smi` inventory. A GPU is attributed to a take only when
   `nvidia-smi` reports that take's exact PID on a device.
-- **Set up an engine** has three paths: a server you already run, a Hugging Face model download, or a
-  hosted API with a key. Each tests before it saves and names the check that failed; the hosted key
-  is kept in Hermes' credential store, not in the studio folder.
+
+### Setting up a music engine
+
+The **Music engines** page (left menu) has three ways to get an engine. Each button tests before it saves and names exactly which check failed.
+
+#### Use a server I already have
+
+Point at any ComfyUI running MiniMax Music 3 or any ACE-Step HTTP server you already run:
+
+1. Type the address, for example `http://192.168.1.50:8188` (include `http://` or `https://` and the port number).
+2. Press **Test this address**. The studio asks the server which music models it can run.
+3. If it answers, the ready models appear in a list, for example: `MiniMax Music 3` or `ACE-Step 1.5`.
+4. Press **Add**. The address and its name are now saved and appear in the Generate song menu.
+
+In the Generate menu, they show as `ACE-Step 1.5 on <server name>` or `MiniMax Music 3 on <server name>`.
+
+Troubleshooting:
+
+- **Nothing answered.** Check the address, the port number, and that the server on the other computer has started. On Windows, check the firewall. On a ComfyUI, you may need to restart it with `--listen` so other computers can connect.
+- **It answered but not ComfyUI or ACE.** You typed the wrong port. Pick a different one and test again.
+- **The server answered but says it is missing files.** The server is running but lacks the MiniMax nodes or ACE-Step weights. Copy the named files into that server's models folder (it will tell you where), then test again.
+- **The graphics card is missing or broken.** The card that matters is on the computer running the server, not the one where you run the studio. Check that computer's hardware.
+
+#### Install on this computer
+
+Download ACE-Step 1.5 and run it locally:
+
+1. Install ComfyUI Desktop from https://www.comfy.org/download. Start it at least once.
+2. In the Music engines page, press **Look on this computer**. The studio scans for a local ComfyUI and finds its models folder.
+3. Press **Check space** to see whether your disk has room. ACE-Step 1.5 is 14.7 GB.
+4. Press **Download ACE-Step 1.5 (14.7 GB)**. The download shows progress. You can cancel and resume.
+5. When it finishes, restart ComfyUI Desktop.
+6. The studio checks and adds it automatically.
+
+After the first download, the files stay on your disk. Restarting ComfyUI or the studio does not re-download them.
+
+#### Move to another computer
+
+Copy your saved engines to another computer:
+
+1. In Music engines, press **Copy my engines**. A list of text appears with the name and address of each engine you have saved.
+2. Copy that text.
+3. On the other computer, open Music Studio and go to Music engines.
+4. Press **Paste engines** and paste the text you copied.
+5. Each computer remembers its own engines. They are stored in the plugin data folder and survive plugin updates.
+
+Your API keys are never copied, only the names and addresses.
+
 - **Version**, **Companion**, **Contribute** and **Report a problem** round out the panel.
   **Copy diagnostics** includes the version, platform, library path, counts and newest failed take.
 

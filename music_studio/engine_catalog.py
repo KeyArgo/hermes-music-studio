@@ -336,7 +336,9 @@ def _ace_template(resolved) -> dict:
     lookup = {}
     if isinstance(resolved, dict):
         for bare, exact in resolved.items():
-            if isinstance(bare, str) and isinstance(exact, str) and exact.strip():
+            # Only a subfolder spelling of the same file: never a different file.
+            if (isinstance(bare, str) and isinstance(exact, str) and exact.strip()
+                    and exact.replace('\\', '/').rsplit('/', 1)[-1] == bare):
                 lookup[bare] = exact
     if not lookup:
         return graph

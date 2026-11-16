@@ -18,6 +18,15 @@ All notable changes to Music Studio are recorded here. The format follows
 - **Set up a music engine when you need one.** When no engine is ready, the button shows **Set up a music engine** and explains what is needed. Press it to install locally, connect to ComfyUI, or add a hosted API.
 - **Disabled states explain why.** If the button is unavailable, it shows the reason: write lyrics first, rendering in progress, or engine not ready.
 
+### Music engines page
+
+- **Three ways to get an engine.** The Music engines page (left menu) offers: point at a server you already run (ComfyUI or ACE-Step), download ACE-Step 1.5 to this computer from Comfy-Org/ACE-Step-1.5, or a hosted API. Each path tests before saving and names which check failed.
+- **Server test names the ready models.** Test asks the server for its node list and reports which music models are ready to render, for example `MiniMax Music 3` or `ACE-Step 1.5`.
+- **ACE-Step 1.5 ready-made graph.** The Download path finds a local ComfyUI Desktop, checks disk space, downloads the four ACE-Step-1.5 model files (14.7 GB) from Hugging Face at a pinned revision, verifies each by SHA-256, and shows progress. Downloads resume and can be cancelled.
+- **Copy and Paste engines.** Copy my engines exports the names and addresses (never keys) as text; on another computer, Paste engines restores them. Each computer maintains its own list in the plugin data folder, surviving plugin updates.
+- **Fixes found in review, each with a regression test.** Add works only after a passing test of the address on screen and adds only the ready models; removing an engine is refused while a song uses it; a failed Add leaves nothing behind; partial downloads are kept for resume; files already in the folder are checksum-checked, never overwritten; a project is never left half-deleted on Windows; the library cannot move while a song is being made; dead renders are cleaned up outside the library lock.
+- **Ready models appear in Generate menu.** After a test passes, the model names and server appear in the Music engine dropdown as, for example, `ACE-Step 1.5 on studio-pc`. A take is pinned to the engine and address it was generated with.
+
 ### Bring your own ComfyUI workflow
 
 - **Any music model your ComfyUI runs, not just MiniMax.** Settings -> Compute accepts a

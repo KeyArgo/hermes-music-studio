@@ -317,3 +317,18 @@ def test_an_unknown_model_id_in_the_text_falls_back_to_minimax(tmp_path):
     assert result['errors'] == []
     assert WorkflowStore(tmp_path).all() == []
     assert len(TargetStore(tmp_path).list()) == 1
+
+
+def test_resolved_names_must_be_the_same_file(tmp_path):
+    """A page-sent loader name may add a subfolder, never swap in a different file."""
+    graph = engine_catalog._ace_template({
+        'qwen_0.6b_ace15.safetensors': 'sub/qwen_0.6b_ace15.safetensors',
+        'qwen_4b_ace15.safetensors': 'sub/something_else.safetensors',
+        'ace_1.5_vae.safetensors': 'vae\\ace_1.5_vae.safetensors',
+    })
+    values = [v for node in graph.values() for v in (node.get('inputs') or {}).values()
+              if isinstance(v, str)]
+    assert 'sub/qwen_0.6b_ace15.safetensors' in values
+    assert 'vae\\ace_1.5_vae.safetensors' in values
+    assert 'qwen_4b_ace15.safetensors' in values
+    assert 'sub/something_else.safetensors' not in values

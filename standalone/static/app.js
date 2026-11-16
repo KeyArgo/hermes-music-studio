@@ -3378,7 +3378,12 @@ async function addServerEngine() {
     return;
   }
   const models = readyModelIds(lastEngineTest && lastEngineTest.data);
-  const saved = await api('/studio/engines', { kind: 'comfyui', name: name, url: current.url, models: models });
+  // The exact loader names the test matched, for model files kept in a subfolder.
+  const resolved = {};
+  ((lastEngineTest && lastEngineTest.data && lastEngineTest.data.models) || []).forEach(row => {
+    if (row && row.status === 'ready' && row.resolved && typeof row.resolved === 'object') Object.assign(resolved, row.resolved);
+  });
+  const saved = await api('/studio/engines', { kind: 'comfyui', name: name, url: current.url, models: models, resolved: resolved });
   if (saved && saved.ok === false) {
     serverMessage((saved.error || saved.detail || saved.message) || 'Could not add that engine.', true);
     return;
