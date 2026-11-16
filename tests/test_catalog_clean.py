@@ -80,7 +80,7 @@ def test_studio_models_returns_the_default_only_without_the_provider_registry():
     assert payload == {'default': {'label': 'Your Hermes model'}, 'providers': []}
 
 
-def test_ideas_complete_sends_no_provider_or_model_override(monkeypatch):
+def test_ideas_complete_forwards_the_chosen_provider_and_model(monkeypatch):
     from standalone import ideas
 
     seen = []
@@ -93,7 +93,7 @@ def test_ideas_complete_sends_no_provider_or_model_override(monkeypatch):
     body = ideas.build_request('provider', 'model',
                                [{'role': 'user', 'content': 'a song'}], 'draft', '', 50)
     assert ideas._complete(body) == '{"title": "A song"}'
-    assert seen and 'provider' not in seen[0] and 'model' not in seen[0]
+    assert seen and seen[0].get('provider') == 'provider' and seen[0].get('model') == 'model'
 
 
 def test_the_host_is_told_the_active_home(monkeypatch, tmp_path):

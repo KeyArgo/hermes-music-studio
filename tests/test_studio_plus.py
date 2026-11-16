@@ -99,7 +99,7 @@ def test_api_workspaces_and_uploaded_art(tmp_path, monkeypatch):
     assert client.get(url).content == second
 
 
-def test_idea_bridge_uses_the_hosts_active_model(tmp_path, monkeypatch):
+def test_idea_bridge_forwards_the_chosen_provider_and_model(tmp_path, monkeypatch):
     monkeypatch.setenv('HEWN_STUDIO_DATA_DIR', str(tmp_path))
     from fastapi.testclient import TestClient
     from standalone.app import app
@@ -115,8 +115,8 @@ def test_idea_bridge_uses_the_hosts_active_model(tmp_path, monkeypatch):
     response = client.post('/api/studio/ideas', json={'provider':'nous','model':'model-x','messages':[{'role':'user','content':'night drive'}],'action':'draft','tone':'warm','style':70})
     assert response.status_code == 200, response.text
     assert response.json()['draft']['title'] == 'Night Drive'
-    assert requests[0]['provider'] is None and requests[0]['model'] is None, (
-        'no public list-models API: drafting must use the host\'s active model, not a picker value'
+    assert requests[0]['provider'] == 'nous' and requests[0]['model'] == 'model-x', (
+        'a chosen provider and model must reach the host facade'
     )
 
 
