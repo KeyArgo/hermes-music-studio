@@ -40,7 +40,7 @@ def test_serves_the_studio_page(client):
     body = res.text
     assert 'HERMES' in body and 'MUSIC STUDIO' in body
     # The modern UI's rail, not the old console dashboard.
-    for nav in ('Create', 'Library', 'Workspaces', 'Compute', 'REVamp'):
+    for nav in ('Create', 'Library', 'Workspaces', 'Music engines', 'REVamp'):
         assert nav in body
 
 

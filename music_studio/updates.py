@@ -19,7 +19,6 @@ from pathlib import Path
 from .childenv import minimal_env
 
 REPO = 'KeyArgo/hermes-music-studio'
-API = f'https://api.github.com/repos/{REPO}'
 PREVIOUS_FILE = 'update-previous.json'
 JOB_FILE = 'update-job.json'
 LOG_FILE = 'update.log'

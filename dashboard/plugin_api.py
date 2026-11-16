@@ -6,7 +6,7 @@ import os
 import threading
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 _ROOT = str(Path(__file__).resolve().parent.parent)
 if _ROOT not in sys.path:
@@ -956,6 +956,127 @@ def setup_cloud_test(body: dict = Depends(json_body)):
     from music_studio import setup as studio_setup
 
     return studio_setup.probe_cloud(_studio_data(), body.get('name') or 'default')
+
+
+# The Music engines page: a server already on the network, or the files on this
+# computer. Each route only forwards what the page sent. The catalog and the
+# installer are imported on the call, so this module still loads if either is absent.
+
+
+def _page_error(fn, *args, **kwargs):
+    """A ValueError is the sentence the page shows, returned as a 400.
+
+    A KeyError means the record the page named is not here (an engine deleted in
+    another tab): a 404 with a sentence, not a 500 with no body.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except ValueError as exc:
+        return JSONResponse({'success': False, 'error': str(exc)}, status_code=400)
+    except KeyError:
+        return JSONResponse({'success': False, 'error': 'Not found.'}, status_code=404)
+
+
+@router.get('/studio/engines')
+def studio_engines():
+    """Servers already saved, plus the ACE address and any hosted endpoint."""
+    from music_studio import engine_catalog
+
+    return _page_error(engine_catalog.list_engines, _studio_data())
+
+
+@router.post('/studio/engines/test')
+def studio_engines_test(body: dict = Depends(json_body)):
+    """Ask an address what it is. Nothing is saved."""
+    from music_studio import engine_catalog
+
+    return _page_error(engine_catalog.test_server, body.get('kind'), body.get('url'))
+
+
+@router.post('/studio/engines')
+def studio_engines_add(body: dict = Depends(json_body)):
+    """Save a server and the ready models the page picked.
+
+    ``kind`` and ``resolved`` only travel when the page sent them: kind is the
+    wizard's choice (anything but ComfyUI has its own form), resolved is the
+    detector's exact loader option for a file listed under a subfolder.
+    """
+    from music_studio import engine_catalog
+
+    extra = {key: body[key] for key in ('kind', 'resolved') if key in body}
+    return _page_error(engine_catalog.add_engine, _studio_data(),
+                       name=body.get('name'), url=body.get('url'),
+                       models=body.get('models') or [], **extra)
+
+
+@router.delete('/studio/engines/{target_id}')
+def studio_engines_remove(target_id: str):
+    """Remove a saved server and the workflows that belong to it."""
+    from music_studio import engine_catalog
+
+    return _page_error(engine_catalog.remove_engine, _studio_data(), target_id)
+
+
+@router.get('/studio/engines/export')
+def studio_engines_export():
+    """The saved engines as text to carry to another computer. Never any key."""
+    from music_studio import engine_catalog
+
+    return _page_error(engine_catalog.export_engines, _studio_data())
+
+
+@router.post('/studio/engines/import')
+def studio_engines_import(body: dict = Depends(json_body)):
+    """Rebuild the engines another computer exported, skipping ones already here."""
+    from music_studio import engine_catalog
+
+    return _page_error(engine_catalog.import_engines, _studio_data(), body.get('text'))
+
+
+@router.get('/studio/install/look-local')
+def studio_install_look_local():
+    """ComfyUI already listening on this computer."""
+    from music_studio import local_install
+
+    return _page_error(local_install.look_local)
+
+
+@router.post('/studio/install/plan')
+def studio_install_plan(body: dict = Depends(json_body)):
+    """Space and folder check before any file is downloaded."""
+    from music_studio import local_install
+
+    return _page_error(local_install.plan, body.get('models_dir'))
+
+
+@router.get('/studio/install/suggest')
+def studio_install_suggest():
+    """The models folder ComfyUI is most likely using, when one exists."""
+    from music_studio import local_install
+
+    return _page_error(local_install.suggest_models_dir)
+
+
+@router.post('/studio/install/jobs')
+def studio_install_start(body: dict = Depends(json_body)):
+    """Start the download and return at once; the page polls the job."""
+    from music_studio import local_install
+
+    return _page_error(local_install.start, body.get('models_dir'))
+
+
+@router.get('/studio/install/jobs/{job_id}')
+def studio_install_status(job_id: str):
+    from music_studio import local_install
+
+    return _page_error(local_install.status, job_id)
+
+
+@router.post('/studio/install/jobs/{job_id}/cancel')
+def studio_install_cancel(job_id: str):
+    from music_studio import local_install
+
+    return _page_error(local_install.cancel, job_id)
 
 
 @router.get('/update')

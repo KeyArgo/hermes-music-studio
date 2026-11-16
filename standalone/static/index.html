@@ -32,7 +32,7 @@
 <button id="nav-create" class="nav active" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span>Create</span></button>
 <button id="nav-library" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16M4 9h5M4 14h5"/></svg><span>Library</span></button>
 <button id="nav-workspaces" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M8 6V4h8v2"/></svg><span>Workspaces</span></button>
-<button id="nav-compute" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span>Compute</span></button>
+<button id="nav-engines" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span>Music engines</span></button>
 <button id="nav-listen" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span>REVamp</span></button>
 </nav>
 <div class="rail-bottom">
@@ -231,10 +231,171 @@
 </form>
 <div id="workspace-list" class="library"></div>
 </section>
-<section id="compute-view" class="page" hidden>
-<div class="eyebrow">04 / COMPUTE</div>
-<h1>Point at a<br><em>renderer.</em></h1>
-<p class="intro">Save named ComfyUI endpoints and check the local GPU inventory. Hermes connects to these servers; it does not launch them.</p>
+<section id="engines-view" class="page" hidden>
+<div class="eyebrow">04 / MUSIC ENGINES</div>
+<h1>Set up an<br><em>audio engine.</em></h1>
+<p class="intro">Use a music server on your network, or install one on this computer.</p>
+<div class="engines-intro">
+<button class="info-toggle" type="button" aria-expanded="false" title="Learn what a music engine is">
+<span class="info-label">What is this?</span>
+<span class="info-icon" aria-hidden="true">?</span>
+</button>
+<div class="info-text" hidden>
+<p>A music engine turns your words into audio. It can run here, on another computer, or online. ComfyUI is one app that runs music engines.</p>
+</div>
+</div>
+<div id="engine-list" class="engine-list" aria-live="polite"></div>
+<div class="engine-actions">
+<button class="button secondary" id="add-server-btn" type="button">Use a server I already have</button>
+<button class="button secondary" id="add-local-btn" type="button">Install on this computer</button>
+</div>
+<div id="server-wizard" class="engine-wizard" hidden>
+<div class="wizard-title">
+<h3>Add a music engine</h3>
+<button class="close-wizard" type="button" aria-label="Close wizard">×</button>
+</div>
+<form id="server-form" class="wizard-form">
+<fieldset>
+<legend>What kind of service do you have?</legend>
+<label class="radio-label"><input type="radio" name="engine-kind" value="comfyui" checked><span class="radio-copy">ComfyUI<span class="radio-help">Runs on a computer you set up</span></span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="ace_server"><span class="radio-copy">ACE-Step server<span class="radio-help">That project's own address</span></span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="hosted"><span class="radio-copy">Hosted service<span class="radio-help">A website that needs a key</span></span></label>
+</fieldset>
+<label>Engine name <input id="server-name" maxlength="80" placeholder="e.g. Studio MiniMax box" title="Choose a name you'll recognize"><button class="help-icon" type="button" aria-describedby="help-name">?</button><span id="help-name" class="sr-only">Choose a name you'll recognize.</span></label>
+<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Example: http://192.168.1.50:8188</span></label>
+<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" autocomplete="off" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
+<label id="server-model-label" hidden>Model <input id="server-model" maxlength="120" placeholder="optional" autocomplete="off" title="The model name your provider expects. Leave this blank if you do not have one."><button class="help-icon" type="button" aria-describedby="help-model">?</button><span id="help-model" class="sr-only">The model name your provider expects. Leave this blank if you do not have one.</span></label>
+<div class="wizard-actions">
+<button class="button secondary" id="test-server-btn" type="button">Test this address</button>
+</div>
+<div id="test-result" hidden class="test-result"></div>
+<div id="troubleshooting" hidden class="troubleshooting-card"></div>
+<p id="server-message" class="message" role="status"></p>
+<div class="wizard-actions">
+<button class="button primary" id="add-engine-btn" type="button" disabled>Add</button>
+<button class="button secondary" id="cancel-server-btn" type="button">Cancel</button>
+</div>
+</form>
+</div>
+<div id="install-wizard" class="engine-wizard" hidden>
+<div class="wizard-title">
+<h3>Install on this computer</h3>
+<button class="close-wizard" type="button" aria-label="Close wizard">×</button>
+</div>
+<div class="wizard-form">
+<div class="install-step">
+<h4>Step 1: Get ComfyUI Desktop</h4>
+<p class="hint">ComfyUI Desktop is the music engine app. Download it from the official source.</p>
+<div class="control-row">
+<button class="button secondary" id="open-comfyui-link" type="button" title="Open the ComfyUI Desktop download page" aria-describedby="help-comfy-link">Get ComfyUI Desktop ↗</button>
+<button class="help-icon" type="button" title="Open the ComfyUI Desktop download page" aria-describedby="help-comfy-link">?</button>
+<span id="help-comfy-link" class="sr-only">Opens the official ComfyUI download page in your browser. This studio does not install the app for you.</span>
+</div>
+<div class="control-row">
+<button class="button secondary" id="look-local-btn" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-local">Look on this computer</button>
+<button class="help-icon" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-local">?</button>
+<span id="help-look-local" class="sr-only">Checks this PC only, on ports 8000 and 8188.</span>
+</div>
+</div>
+<div id="look-local-result" hidden class="look-local-result"></div>
+<div id="install-step-2" class="install-step">
+<h4>Step 2: Choose models folder</h4>
+<p class="hint">Choose the folder ComfyUI calls models.</p>
+<label>Models folder <input id="models-dir" maxlength="500" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models."><button class="help-icon" type="button" aria-describedby="help-models" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.">?</button><span id="help-models" class="sr-only">Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.</span></label>
+</div>
+<div id="install-step-3" class="install-step">
+<h4>Step 3: Download files</h4>
+<div class="control-row">
+<button class="button secondary" id="check-space-btn" type="button" title="See if this computer has room for the music files" aria-describedby="help-check-space">Check space</button>
+<button class="help-icon" type="button" title="See if this computer has room for the music files" aria-describedby="help-check-space">?</button>
+<span id="help-check-space" class="sr-only">Counts the music files, how big they are, and how much free space this computer has.</span>
+<p id="install-gpu" class="hint install-gpu" hidden></p>
+</div>
+<div id="space-result" hidden class="space-result"></div>
+<div class="control-row">
+<button class="button primary" id="download-ace-btn" type="button" disabled title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">Download ACE-Step 1.5 (14.7 GB)</button>
+<button class="help-icon" type="button" title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">?</button>
+<span id="help-download" class="sr-only">Downloads about 14.7 GB of music files into the folder you chose. You can stop it and continue later.</span>
+</div>
+<div class="control-row" id="resume-download-row" hidden>
+<button class="button primary" id="resume-download-btn" type="button" hidden title="Continue the download where it left off" aria-describedby="help-resume">Resume download</button>
+<button class="help-icon" id="resume-help-btn" type="button" hidden title="Continue the download where it left off" aria-describedby="help-resume">?</button>
+<span id="help-resume" class="sr-only">Continues the download. Files that were only partly saved are picked up where they stopped.</span>
+</div>
+<div id="download-progress" hidden class="download-progress">
+<div class="progress-track" id="install-progress-track" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="install-progress-bar" class="progress-bar"></div></div>
+<p id="progress-text" class="hint"></p>
+<div class="control-row">
+<button class="button secondary" id="cancel-download-btn" type="button" title="Stop this download" aria-describedby="help-cancel-download">Cancel</button>
+<button class="help-icon" type="button" title="Stop this download" aria-describedby="help-cancel-download">?</button>
+<span id="help-cancel-download" class="sr-only">Stops the download. What was partly saved stays, so you can resume later.</span>
+</div>
+</div>
+<p id="install-message" class="message" role="status"></p>
+</div>
+<div id="install-done" hidden class="install-step">
+<p class="hint">Restart ComfyUI, then press Look on this computer.</p>
+<div class="control-row">
+<button class="button secondary" id="look-again-btn" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-again">Look on this computer</button>
+<button class="help-icon" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-again">?</button>
+<span id="help-look-again" class="sr-only">Checks this PC only, on ports 8000 and 8188.</span>
+</div>
+</div>
+<div class="wizard-actions">
+<button class="button secondary" id="cancel-install-btn" type="button" title="Close this guide" aria-describedby="help-cancel-install">Cancel</button>
+<button class="help-icon" type="button" title="Close this guide" aria-describedby="help-cancel-install">?</button>
+<span id="help-cancel-install" class="sr-only">Closes this guide. A download that already started keeps going until you press Cancel beside the progress.</span>
+</div>
+</div>
+</div>
+<div class="panel" id="move-engines">
+<div class="panel-title">
+<div>
+<span class="kicker">ANOTHER COMPUTER</span>
+<h2>Move to another computer</h2>
+</div>
+</div>
+<div class="control-row">
+<button class="button secondary" id="copy-engines-btn" type="button" title="Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied." aria-describedby="help-copy-engines">Copy my engines</button>
+<button class="help-icon" type="button" title="Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied." aria-describedby="help-copy-engines">?</button>
+<span id="help-copy-engines" class="sr-only">Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied.</span>
+</div>
+<div class="control-row">
+<button class="button secondary" id="paste-engines-btn" type="button" title="Paste engines you copied from another computer, then add them here. Keys are not included." aria-describedby="help-paste-engines">Paste engines</button>
+<button class="help-icon" type="button" title="Paste engines you copied from another computer, then add them here. Keys are not included." aria-describedby="help-paste-engines">?</button>
+<span id="help-paste-engines" class="sr-only">Paste engines you copied from another computer, then add them here. Keys are not included.</span>
+</div>
+<div id="paste-engines-box" hidden>
+<label>Engines to add <textarea id="paste-engines-text" rows="6" title="The list from Copy my engines on the other computer" aria-describedby="help-paste-text"></textarea><button class="help-icon" type="button" title="The list from Copy my engines on the other computer" aria-describedby="help-paste-text">?</button><span id="help-paste-text" class="sr-only">The list from Copy my engines on the other computer. Keys are not included.</span></label>
+<div class="control-row">
+<button class="button primary" id="import-engines-btn" type="button" title="Add the engines in this box. Engines already on this computer stay as they are." aria-describedby="help-import-engines">Add these engines</button>
+<button class="help-icon" type="button" title="Add the engines in this box. Engines already on this computer stay as they are." aria-describedby="help-import-engines">?</button>
+<span id="help-import-engines" class="sr-only">Add the engines in this box. Engines already on this computer stay as they are.</span>
+</div>
+</div>
+<textarea id="copy-engines-fallback" readonly hidden aria-label="Engines to copy"></textarea>
+<p id="move-engines-message" class="message" role="status"></p>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">ADVANCED</span>
+<h2>More options</h2>
+</div>
+</div>
+<details class="advanced-options">
+<summary>Advanced settings</summary>
+<div class="advanced-content">
+<label>Where songs are saved <input id="export-dir" maxlength="500" placeholder="~/Music/Hermes Music Studio"></label>
+<p class="hint">This folder stores the final audio files. Leave blank to use the default.</p>
+<label>Custom workflow <input id="custom-workflow" type="file" accept=".json,application/json"></label>
+<p class="hint">In ComfyUI: Workflow → Export (API). Put {{lyrics}}, {{style}}, {{duration}}, {{seed}} in the fields the studio should fill.</p>
+<div class="settings-actions">
+<button class="button primary" type="button" id="save-advanced">Save</button>
+</div>
+</div>
+</details>
+</div>
 <div class="compute-grid">
 <div class="panel">
 <div class="panel-title">
@@ -367,6 +528,8 @@
 </div>
 <p id="setup-message" class="message" role="status"></p>
 </div>
+<!-- Keep old compute-view ID for backwards compatibility -->
+<div id="compute-view" style="display: none;"></div>
 <div class="panel" id="version-panel">
 <div class="panel-title">
 <div>

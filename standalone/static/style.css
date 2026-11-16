@@ -98,6 +98,75 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .hint.error{color:#f0ac9b}
 .version-chip[data-copied="failed"]{color:#f0ac9b;border-color:#f0ac9b}
 
+/* Music engines page */
+.engines-intro { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 24px; }
+.info-toggle { background: transparent; border: 1px solid var(--line); padding: 12px; border-radius: 8px; display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; }
+.info-label { flex: 1; font-weight: 700; color: #e5b987; }
+.info-icon { display: grid; place-items: center; width: 24px; height: 24px; background: #3a3037; border-radius: 50%; flex: 0 0 auto; font-size: 14px; font-weight: 700; }
+.info-text { margin-top: 12px; padding: 12px 16px; background: #262128; border-left: 3px solid #8e7fd6; border-radius: 6px; }
+.info-text p { margin: 0; color: #c5d69a; font-size: 13px; line-height: 1.6; }
+.engine-list { display: grid; gap: 12px; margin: 0 0 24px; }
+.engine-row { display: flex; align-items: center; gap: 16px; padding: 14px; background: #262128; border: 1px solid #3a3037; border-radius: 12px; }
+.engine-info { flex: 1; min-width: 0; }
+.engine-name { font-weight: 700; color: #e5b987; font-size: 14px; }
+.engine-address { color: #a6ac9c; font-size: 12px; margin-top: 4px; }
+.engine-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 11px; border: 1px solid #505842; background: transparent; }
+.engine-pill.ready { color: #cbd9a2; border-color: #60724a; }
+.engine-pill.not-tested { color: #b6bdae; border-color: #505842; }
+.engine-pill.cant-reach { color: #f0ac9b; border-color: #7a4a44; }
+.engine-pill.missing-files { color: #e8a33d; border-color: #7a5c33; }
+.engine-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 24px; }
+.engine-actions .button { flex: 1; min-width: 200px; }
+.engine-wizard { background: #262128; border: 1px solid #3a3037; border-radius: 14px; padding: 24px; margin: 0 0 24px; }
+.engine-wizard [hidden] { display: none !important; }
+.wizard-title { display: flex; justify-content: space-between; align-items: center; margin: 0 0 20px; border-bottom: 1px solid #3a3037; padding-bottom: 16px; }
+.wizard-title h3 { margin: 0; font-size: 20px; font-family: Georgia, serif; font-weight: 400; }
+.close-wizard { background: transparent; border: 0; color: #a6ac9c; font-size: 28px; cursor: pointer; padding: 0; }
+.wizard-form { display: grid; gap: 16px; }
+.wizard-form fieldset { border: 0; padding: 0; margin: 0; }
+.wizard-form legend { font-weight: 700; color: #e5b987; font-size: 12px; margin: 0 0 12px; }
+.radio-label { display: flex; flex-direction: row; gap: 12px; align-items: flex-start; padding: 12px; background: #1d1b20; border-radius: 8px; margin: 0 0 8px; cursor: pointer; }
+.radio-label input[type="radio"] { width: auto; margin-top: 3px; flex: 0 0 auto; }
+.radio-help { display: block; color: #9e96a1; font-size: 11px; font-weight: 400; margin-top: 3px; }
+.wizard-form label { margin: 0; display: grid; gap: 6px; }
+.wizard-form label.radio-label { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; }
+.wizard-form label.radio-label input[type="radio"] { width: auto; flex: 0 0 auto; margin-top: 3px; }
+.radio-copy { display: grid; gap: 3px; min-width: 0; }
+.wizard-form label.radio-label .radio-help { margin-top: 0; }
+#move-engines { display: grid; gap: 12px; }
+#move-engines .panel-title { margin-bottom: 0; }
+#paste-engines-box { display: grid; gap: 12px; }
+.help-icon { background: transparent; border: 1px solid #4b404b; border-radius: 50%; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; color: #e5b987; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: auto; flex: 0 0 auto; }
+.wizard-actions { display: flex; gap: 10px; margin-top: 16px; }
+.test-result { padding: 16px; background: #19171c; border: 1px solid #4b3d4a; border-radius: 10px; }
+.test-result .test-message { color: #c5d69a; font-weight: 700; margin: 0 0 12px; }
+.test-result .model-checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.test-result .model-item { display: flex; gap: 10px; align-items: center; font-size: 12px; }
+.test-result .status-icon { width: 16px; height: 16px; flex: 0 0 auto; }
+.troubleshooting-card { padding: 16px; background: #19171c; border: 1px solid #b9785e; border-radius: 10px; }
+.troubleshooting-card h4 { margin: 0 0 10px; color: #f0ac9b; font-family: Georgia, serif; font-weight: 400; font-size: 16px; }
+.troubleshooting-card p { margin: 0; color: #a6ac9c; font-size: 12px; line-height: 1.6; }
+.install-step { display: grid; gap: 12px; padding: 16px; background: #1d1b20; border-radius: 10px; }
+.install-step h4 { margin: 0; font-family: Georgia, serif; font-weight: 400; font-size: 16px; color: #e5b987; }
+.install-step p { margin: 0; }
+.look-local-result { padding: 12px; background: #19171c; border-radius: 8px; }
+.found-server { display: grid; gap: 8px; padding: 12px; background: #262128; border-radius: 8px; margin: 8px 0; }
+.found-server .server-label { font-weight: 700; color: #c5d69a; }
+.found-server .server-url { color: #a6ac9c; font-size: 12px; }
+.control-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.control-row .help-icon { margin-left: 0; }
+.space-result { padding: 16px; background: #19171c; border-radius: 10px; }
+.space-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #3a3037; font-size: 12px; }
+.space-item:last-child { border-bottom: none; }
+.space-item .label { color: #a6ac9c; }
+.space-item .value { color: #c5d69a; font-weight: 500; text-align: right; }
+.space-result .message { margin: 10px 0 0; }
+.install-gpu { margin: 0; color: #e5b987; }
+.download-progress { display: grid; gap: 12px; padding: 16px; background: #19171c; border-radius: 10px; }
+.download-progress .progress-track { margin: 0; }
+.advanced-content { padding: 16px; display: grid; gap: 14px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 /* Plain words → a different draft, on the card itself (also a chat command). */
 .project-change { display: flex; gap: 8px; align-items: center; margin: 6px 0 4px; flex-wrap: wrap; }
 .change-words { flex: 1 1 240px; min-width: 180px; }

@@ -36,9 +36,11 @@ async function api(path, data, method, options) {
   opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
-  if (!res.ok || value.success === false) {
-    const err = new Error(value.detail || value.error || 'Request failed');
-    err.commands = value.commands;
+  // Suggest may answer with a string or null. Only an object carries success, detail, or error.
+  const failed = !!(value && typeof value === 'object' && value.success === false);
+  if (!res.ok || failed) {
+    const err = new Error((value && (value.detail || value.error)) || 'Request failed');
+    err.commands = value && value.commands;
     throw err;
   }
   return value;
@@ -145,7 +147,8 @@ function buttons() {
   $('new-song').disabled = busy;
   $('nav-library').disabled = busy;
   $('nav-workspaces').disabled = busy;
-  $('nav-compute').disabled = busy;
+  const navEngines = $('nav-engines') || $('nav-compute');
+  if (navEngines) navEngines.disabled = busy;
   $('nav-listen').disabled = busy;
   const ready = engineReady();
   const wordsMissing = draftNeedsWords();
@@ -309,7 +312,14 @@ function engineHint() {
   $('engine-hint').textContent = engineStatusLine();
 }
 function show(view) {
-  for (const name of ['create','library','workspaces','compute','listen']) { $(name+'-view').hidden = view !== name; $('nav-'+name).classList.toggle('active',view === name); }
+  // Compute became the Music engines page; older callers still ask for 'compute'.
+  if (view === 'compute') view = 'engines';
+  for (const name of ['create','library','workspaces','engines','listen']) {
+    const viewEl = $(name+'-view') || (name === 'engines' ? $('compute-view') : null);
+    if (viewEl) viewEl.hidden = view !== name;
+    const navEl = $('nav-'+name) || (name === 'engines' ? $('nav-compute') : null);
+    if (navEl) navEl.classList.toggle('active',view === name);
+  }
 }
 function clock(value) {
   const total = Number.isFinite(value) && value > 0 ? value : 0;
@@ -1268,6 +1278,11 @@ async function autoDetectEngine() {
     await refresh();
   } catch (e) { /* discovery is a convenience, never a failure the person must read */ }
 }
+// refresh() skips while one is in flight; this waits for it so the result is current.
+async function refreshNow() {
+  for (let i = 0; i < 50 && refreshing; i++) await new Promise(r => setTimeout(r, 100));
+  await refresh();
+}
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -1460,6 +1475,9 @@ async function openEngineSetup() {
   if (field && typeof field.focus === 'function') field.focus();
 }
 async function generateSong() {
+  // An engine added a moment ago is not in the last status yet: ask once before sending
+  // the person to setup.
+  if (!engineReady()) await refreshNow();
   if (!engineReady()) { await openEngineSetup(); return; }
   if (busy || draftNeedsWords()) return;
   busy = true; buttons();
@@ -1562,9 +1580,18 @@ for (const [id, event] of [['library-search','input'], ['library-sort','change']
     library(); });
 }
 try { const saved = localStorage.getItem('studio.librarySort'); if (saved && $('library-sort')) $('library-sort').value = saved; } catch (e) {}
-$('nav-create').addEventListener('click',() => show('create')); $('nav-library').addEventListener('click',() => {libraryFilter=null;library();show('library');});
-$('nav-workspaces').addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
-$('nav-compute').addEventListener('click',async()=>{show('compute');await refreshTargets();await refreshWorkflows();await loadHardware(true);});
+const navCreate = $('nav-create');
+if (navCreate) navCreate.addEventListener('click',() => show('create'));
+const navLibrary = $('nav-library');
+if (navLibrary) navLibrary.addEventListener('click',() => {libraryFilter=null;library();show('library');});
+const navWorkspaces = $('nav-workspaces');
+if (navWorkspaces) navWorkspaces.addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
+const navEngines = $('nav-engines');
+if (navEngines) navEngines.addEventListener('click',async()=>{show('engines');await loadEngines();wireEnginesPage();});
+const navCompute = $('nav-compute');
+if (navCompute && navCompute !== navEngines) {
+  navCompute.addEventListener('click',async()=>{show('engines');await loadEngines();wireEnginesPage();});
+}
 function showCover(id) {
   const image=$('cover-preview'), placeholder=$('cover-placeholder');
   if(!id) { image.hidden=true; placeholder.hidden=false; image.removeAttribute('src'); return; }
@@ -1684,12 +1711,29 @@ function fillWorkflowTargetSelect() {
   targets.forEach(t => { const option = el('option', t.name); option.value = t.id; select.append(option); });
   if (previous && targets.some(t => t.id === previous)) select.value = previous;
 }
+// A workflow the Music engines wizard made belongs to a listed engine: show it as
+// "<model> on <server>". Uploads under More options keep the "Custom workflow:" prefix.
+function wizardWorkflowServer(workflow) {
+  const id = workflow && workflow.id;
+  for (const engine of enginesList || []) {
+    if ((engine && Array.isArray(engine.workflows) ? engine.workflows : []).some(w => w && w.id === id)) {
+      return engine.name || engine.url || '';
+    }
+  }
+  return null;
+}
+function workflowMenuLabel(workflow) {
+  const name = workflow && workflow.name ? String(workflow.name) : '';
+  const server = wizardWorkflowServer(workflow);
+  if (server !== null) return server ? `${name} on ${server}` : name;
+  return 'Custom workflow: ' + name;
+}
 function ensureEngineOption(id) {
   if (!id) return;
   const select = $('engine-select');
   if (!select || [...select.options].some(o => o.value === id)) return;
   const workflow = workflows.find(w => workflowEngineId(w) === id);
-  const option = el('option', workflow ? 'Custom workflow: ' + workflow.name : 'Missing workflow ' + id);
+  const option = el('option', workflow ? workflowMenuLabel(workflow) : 'Missing workflow ' + id);
   option.value = id;
   select.append(option);
 }
@@ -1699,9 +1743,9 @@ function fillWorkflowEngineOptions() {
   const previous = select.value;
   const add = (value, text) => { const option = el('option', text); option.value = value; select.append(option); };
   select.replaceChildren();
-  add('ace_local', 'ACE-Step 1.5');
+  add('ace_local', 'ACE-Step 1.5 (this computer)');
   add('minimax_m3_comfy', 'MiniMax Music 3');
-  workflows.forEach(w => add(workflowEngineId(w), 'Custom workflow: ' + w.name));
+  workflows.forEach(w => add(workflowEngineId(w), workflowMenuLabel(w)));
   if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
   else if (previous) { add(previous, 'Missing workflow ' + previous); select.value = previous; }
 }
@@ -1734,6 +1778,11 @@ async function refreshWorkflows() {
   try {
     const data = await api('/studio/workflows');
     workflows = data.workflows || [];
+    try {
+      const listed = await api('/studio/engines');
+      enginesList = listed.engines || [];
+      renderEngineList();
+    } catch (err) { /* keep the engine names already loaded */ }
     fillWorkflowTargetSelect();
     drawWorkflows();
     fillWorkflowEngineOptions();
@@ -2338,7 +2387,8 @@ if ($('discover-renderers')) $('discover-renderers').addEventListener('click', f
 $('library-copy').addEventListener('click', () => relocateLibrary('copy'));
 $('library-move').addEventListener('click', () => relocateLibrary('move'));
 $('library-reset').addEventListener('click', resetLibrary);
-$('nav-compute').addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); loadDoctor(); });
+const settingsNavBtn = $('nav-compute');
+if (settingsNavBtn) settingsNavBtn.addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); loadDoctor(); });
 loadSettings().catch(err => { const node = $('settings-message'); if (node) node.textContent = err.message; });
 loadDoctor();
 
@@ -2810,6 +2860,784 @@ if ($('version-panel')) {
     }
   });
 }
+// ---------------------------------------------------------------- engines page
+let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0, engineTestGen = 0, lastEngineTest = null;
+function renderEngineList() {
+  const container = $('engine-list');
+  if (!container) return;
+  container.replaceChildren();
+  if (!enginesList.length) {
+    const empty = el('p', 'No music engines set up yet. Add one to get started.', 'hint');
+    container.append(empty);
+    return;
+  }
+  for (const eng of enginesList) {
+    const row = el('div', '', 'engine-row');
+    const info = el('div', '', 'engine-info');
+    const name = el('div', eng.name || eng.url, 'engine-name');
+    const addr = el('div', eng.url || '(unknown address)', 'engine-address');
+    info.append(name, addr);
+
+    const pill = el('span', '', 'engine-pill');
+    const status = eng.status || engineRowStatus[eng.url];
+    if (status === 'checking') { pill.textContent = 'Checking…'; pill.classList.add('not-tested'); }
+    else if (status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
+    else if (status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
+    else if (status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
+    else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
+
+    const testBtn = el('button', 'Test', 'button secondary');
+    testBtn.type = 'button';
+    testBtn.title = 'Ask this server again which music models it can run.';
+    testBtn.addEventListener('click', async () => {
+      await checkEngineRow(eng, true);
+    });
+
+    const removeBtn = el('button', 'Remove', 'button secondary');
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', async () => {
+      if (await askConfirm(`Remove ${eng.name || eng.url}?`, {confirmLabel: 'Remove', danger: true})) {
+        await removeEngine(eng.id);
+      }
+    });
+
+    row.append(info, pill, testBtn, removeBtn);
+    container.append(row);
+  }
+}
+// What each saved server answered this session, by address: 'checking', 'ready',
+// 'missing_files' or 'cant_reach'. A saved engine is checked once when the list loads, so
+// the pill tells the truth instead of "Not tested".
+const engineRowStatus = {};
+function rowStatusFrom(data) {
+  if (!data || data.ok !== true) return 'cant_reach';
+  const models = Array.isArray(data.models) ? data.models : [];
+  if (!models.length || models.some(m => m && m.status === 'ready')) return 'ready';
+  return 'missing_files';
+}
+async function checkEngineRow(eng, force) {
+  const url = eng && eng.url;
+  if (!url || (!force && engineRowStatus[url])) return;
+  engineRowStatus[url] = 'checking';
+  renderEngineList();
+  let data;
+  try { data = await api('/studio/engines/test', { kind: eng.kind || 'comfyui', url: url }); }
+  catch (err) { data = { ok: false }; }
+  engineRowStatus[url] = rowStatusFrom(data);
+  renderEngineList();
+}
+async function loadEngines() {
+  try {
+    const data = await api('/studio/engines');
+    enginesList = data.engines || [];
+    renderEngineList();
+    fillWorkflowEngineOptions();
+    enginesList.forEach(eng => { checkEngineRow(eng, false); });
+  } catch (err) {
+    // Silent fail; show empty list
+    enginesList = [];
+    renderEngineList();
+  }
+}
+async function testEngine(eng) {
+  const gen = ++engineTestGen;
+  const kind = (eng && eng.kind) || 'comfyui';
+  const url = ((eng && eng.url) || '').trim();
+  testingServer = true;
+  const result = $('test-result');
+  if (result) result.hidden = true;
+
+  let data;
+  try {
+    data = await api('/studio/engines/test', { kind: kind, url: url });
+  } catch (err) {
+    data = {
+      ok: false,
+      message: err && err.message ? err.message : 'That address could not be tested.',
+      problem: 'bad_address',
+    };
+  }
+  testingServer = false;
+  if (gen !== engineTestGen) return;
+  lastEngineTest = { kind: kind, url: url, data: data };
+  showTestResult(data);
+  syncServerKind();
+}
+function showTestResult(data) {
+  const result = $('test-result');
+  const trouble = $('troubleshooting');
+  if (!result || !trouble) return;
+
+  result.hidden = false;
+  trouble.hidden = true;
+  trouble.replaceChildren();
+
+  result.replaceChildren();
+  const message = data && data.message != null ? String(data.message) : '';
+  result.append(el('p', message, 'test-message'));
+
+  if (data.models && Array.isArray(data.models)) {
+    const list = el('ul', '', 'model-checklist');
+    for (const model of data.models) {
+      const item = el('li', '', 'model-item');
+      const status = model && model.status != null ? String(model.status) : '';
+      const name = model && (model.label || model.id) != null ? String(model.label || model.id) : '';
+      const icon = el('span', status === 'ready' ? '✓' : '–', 'status-icon');
+      const label = el('span', name + ' (' + status + ')');
+      item.append(icon, label);
+      list.append(item);
+    }
+    result.append(list);
+  }
+
+  if (data.problem && TROUBLESHOOTING[data.problem]) {
+    trouble.hidden = false;
+    const card = TROUBLESHOOTING[data.problem];
+    trouble.replaceChildren(
+      el('h4', card.title),
+      el('p', card.text)
+    );
+  }
+}
+const TROUBLESHOOTING = {
+  bad_address: { title: 'Wrong address', text: 'Nothing answered. Include http:// and the port, like http://192.168.1.50:8188.' },
+  no_answer: { title: 'Firewall blocking', text: "The other computer's firewall is blocking the port. Allow 8188, or 8000, for your local network." },
+  not_comfy: { title: 'Not ComfyUI', text: 'That address answered but is not ComfyUI or ACE-Step server. Check the address.' },
+  not_ace: { title: 'Not an ACE server', text: 'That address is not an ACE-Step server.' },
+  missing_files: { title: 'Missing model files', text: 'ComfyUI knows the model, and these files are not on it. Put them in that computer\'s models folder, then test again.' },
+  no_gpu: { title: 'No GPU available', text: 'The graphics card that matters is on the machine running the model. This PC does not need one when the server is elsewhere.' }
+};
+async function removeEngine(engineId) {
+  try {
+    await api(`/studio/engines/${encodeURIComponent(engineId)}`, undefined, 'DELETE');
+    await loadEngines();
+  } catch (err) {
+    // Silent fail
+  }
+}
+function installMessage(text, bad = false) {
+  const node = $('install-message');
+  if (!node) return;
+  node.textContent = text || '';
+  node.classList.toggle('error', !!bad);
+}
+function suggestedModelsDir(data) {
+  if (typeof data === 'string') return data.trim();
+  if (data && typeof data.models_dir === 'string') return data.models_dir.trim();
+  return '';
+}
+// Decimal gigabytes, so the sizes match the 14.7 GB on the download button.
+function bytesToGb(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return '0.0 GB';
+  return (n / 1e9).toFixed(1) + ' GB';
+}
+function spaceLine(label, value) {
+  const row = el('div', '', 'space-item');
+  row.append(el('span', label, 'label'), el('span', value, 'value'));
+  return row;
+}
+function showResume(on) {
+  const btn = $('resume-download-btn');
+  if (btn) {
+    btn.hidden = !on;
+    const row = btn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = !on;
+  }
+  const help = $('resume-help-btn');
+  if (help) help.hidden = !on;
+}
+function showCancelDownload(on) {
+  const btn = $('cancel-download-btn');
+  if (!btn) return;
+  btn.hidden = !on;
+  const row = btn.parentElement;
+  if (row && row.classList.contains('control-row')) row.hidden = !on;
+}
+function showGpuLine(text) {
+  const node = $('install-gpu');
+  if (!node) return;
+  node.textContent = text || '';
+  node.hidden = !text;
+}
+function gpuLineText(hw) {
+  if (!hw || typeof hw !== 'object') return '';
+  const devices = Array.isArray(hw.devices) ? hw.devices : [];
+  if (!devices.length) {
+    if (hw.error) return String(hw.error);
+    return 'No graphics card reported on this computer.';
+  }
+  return devices.map(device => {
+    const name = device.name || 'Graphics card';
+    const index = device.index == null || device.index === '' ? '' : String(device.index);
+    let line = index === '' ? name : ('GPU ' + index + ' · ' + name);
+    if (device.memory_total_mb != null) {
+      const used = device.memory_used_mb == null ? '—' : String(device.memory_used_mb);
+      line += ' · ' + used + ' / ' + device.memory_total_mb + ' MiB';
+    }
+    return line;
+  }).join('; ');
+}
+async function loadInstallGpu() {
+  try {
+    return await api('/studio/hardware');
+  } catch (err) {
+    const missing = /not found/i.test((err && err.message) || '');
+    if (missing) return null;
+    return { error: err && err.message ? err.message : 'Could not read the graphics card.', devices: [] };
+  }
+}
+function renderInstallPlan(plan) {
+  const box = $('space-result');
+  const downloadBtn = $('download-ace-btn');
+  const data = plan || {};
+  if (box) {
+    box.hidden = false;
+    box.replaceChildren();
+    const files = Array.isArray(data.files) ? data.files : [];
+    let downloadBytes = 0;
+    for (const file of files) {
+      const name = file && file.name ? file.name : 'file';
+      const present = !!(file && file.present);
+      if (!present) downloadBytes += Number(file && file.size) || 0;
+      const size = bytesToGb(file && file.size);
+      box.append(spaceLine(name, present ? (size + ' · already there') : size));
+    }
+    box.append(spaceLine('Total to download', bytesToGb(downloadBytes)));
+    box.append(spaceLine('Free space', bytesToGb(data.free_bytes)));
+    if (data.message) {
+      const msg = el('p', data.message, 'message space-message' + (data.ok === false ? ' error' : ''));
+      box.append(msg);
+    }
+  }
+  if (downloadBtn) {
+    downloadBtn.hidden = false;
+    const row = downloadBtn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = false;
+    downloadBtn.disabled = !(data.ok === true && data.enough_space === true);
+  }
+}
+async function openInstallWizard() {
+  const wizard = $('install-wizard');
+  if (wizard) wizard.hidden = false;
+  const step2 = $('install-step-2');
+  const step3 = $('install-step-3');
+  if (step2) step2.hidden = false;
+  if (step3) step3.hidden = false;
+  installMessage('');
+  const field = $('models-dir');
+  try {
+    const data = await api('/studio/install/suggest');
+    const dir = suggestedModelsDir(data);
+    if (field && dir) field.value = dir;
+  } catch (err) {
+    installMessage(err.message, true);
+  }
+}
+async function checkInstallSpace() {
+  const field = $('models-dir');
+  const modelsDir = field ? field.value.trim() : '';
+  installMessage('');
+  const gpuPromise = loadInstallGpu();
+  try {
+    const plan = await api('/studio/install/plan', { models_dir: modelsDir });
+    renderInstallPlan(plan);
+  } catch (err) {
+    installMessage(err.message, true);
+    const downloadBtn = $('download-ace-btn');
+    if (downloadBtn) downloadBtn.disabled = true;
+  }
+  const hw = await gpuPromise;
+  showGpuLine(hw ? gpuLineText(hw) : '');
+}
+function stopInstallPoll() {
+  installPollGen += 1;
+  if (installPollTimer) {
+    clearTimeout(installPollTimer);
+    installPollTimer = null;
+  }
+}
+function applyInstallStatus(status) {
+  const state = status && status.state;
+  const box = $('download-progress');
+  if (box) box.hidden = false;
+  const doneBytes = Number(status && status.done_bytes) || 0;
+  const totalBytes = Number(status && status.total_bytes) || 0;
+  const pct = totalBytes > 0 ? Math.max(0, Math.min(100, Math.round((doneBytes / totalBytes) * 100))) : 0;
+  const bar = $('install-progress-bar');
+  if (bar) {
+    bar.style.width = pct + '%';
+    const track = bar.parentElement;
+    if (track) track.setAttribute('aria-valuenow', String(pct));
+  }
+  const file = (status && status.file) || '';
+  const filesDone = status && status.files_done != null ? status.files_done : 0;
+  const filesTotal = status && status.files_total != null ? status.files_total : 0;
+  const msg = (status && status.message) || '';
+  const parts = [];
+  if (file) parts.push(file);
+  parts.push(String(filesDone) + ' of ' + String(filesTotal));
+  if (msg) parts.push(msg);
+  const progressText = $('progress-text');
+  if (progressText) progressText.textContent = parts.join(' · ');
+  const doneBox = $('install-done');
+  if (state === 'done') {
+    showResume(false);
+    showCancelDownload(false);
+    if (doneBox) doneBox.hidden = false;
+    installMessage('');
+    return true;
+  }
+  if (state === 'failed' || state === 'cancelled') {
+    showResume(true);
+    showCancelDownload(false);
+    if (doneBox) doneBox.hidden = true;
+    if (state === 'failed') installMessage((status && (status.error || status.message)) || 'The download failed.', true);
+    else installMessage((status && status.message) || 'Download cancelled. Press Resume download to continue.');
+    return true;
+  }
+  showResume(false);
+  showCancelDownload(true);
+  if (doneBox) doneBox.hidden = true;
+  installMessage('');
+  return false;
+}
+async function pollInstallJob(jobId, gen) {
+  if (gen !== installPollGen) return;
+  let status;
+  try {
+    status = await api('/studio/install/jobs/' + encodeURIComponent(jobId));
+  } catch (err) {
+    if (gen !== installPollGen) return;
+    installMessage(err.message, true);
+    showResume(true);
+    return;
+  }
+  if (gen !== installPollGen) return;
+  const terminal = applyInstallStatus(status);
+  if (gen !== installPollGen || terminal) return;
+  installPollTimer = setTimeout(() => { pollInstallJob(jobId, gen); }, 1000);
+}
+async function startInstallDownload() {
+  const field = $('models-dir');
+  const modelsDir = field ? field.value.trim() : '';
+  installMessage('');
+  let data;
+  try {
+    data = await api('/studio/install/jobs', { models_dir: modelsDir });
+  } catch (err) {
+    installMessage(err.message, true);
+    return;
+  }
+  const jobId = data && data.job_id;
+  if (!jobId) {
+    installMessage('The download did not start.', true);
+    return;
+  }
+  downloadJobId = jobId;
+  const progress = $('download-progress');
+  if (progress) progress.hidden = false;
+  const downloadBtn = $('download-ace-btn');
+  if (downloadBtn) {
+    downloadBtn.hidden = true;
+    const row = downloadBtn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = true;
+  }
+  showResume(false);
+  showCancelDownload(true);
+  const doneBox = $('install-done');
+  if (doneBox) doneBox.hidden = true;
+  stopInstallPoll();
+  const gen = installPollGen;
+  await pollInstallJob(jobId, gen);
+}
+async function cancelInstallDownload() {
+  if (!downloadJobId) return;
+  try {
+    await api('/studio/install/jobs/' + encodeURIComponent(downloadJobId) + '/cancel', undefined, 'POST');
+  } catch (err) {
+    installMessage(err.message, true);
+    return;
+  }
+  stopInstallPoll();
+  const gen = installPollGen;
+  await pollInstallJob(downloadJobId, gen);
+}
+async function lookLocal() {
+  installMessage('');
+  try {
+    const data = await api('/studio/install/look-local');
+    showLookLocalResult(data);
+  } catch (err) {
+    installMessage(err.message, true);
+  }
+}
+function testedKindUrl() {
+  const form = $('server-form');
+  const picked = form && form.elements['engine-kind'];
+  const kind = picked && picked.value ? picked.value : 'comfyui';
+  const urlField = $('server-url');
+  return { kind: kind, url: urlField ? urlField.value.trim() : '' };
+}
+function readyModelIds(data) {
+  const models = data && Array.isArray(data.models) ? data.models : [];
+  const ids = [];
+  for (const model of models) {
+    if (!model || model.status !== 'ready' || typeof model.id !== 'string') continue;
+    const id = model.id.trim();
+    if (!id || ids.indexOf(id) !== -1) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+// ComfyUI is usable only when this test named a ready model. ACE-Step's check
+// has no model list; ok means that server itself is ready.
+function serverAddReady() {
+  const current = testedKindUrl();
+  if (current.kind === 'hosted' || !lastEngineTest) return false;
+  if (lastEngineTest.kind !== current.kind || lastEngineTest.url !== current.url) return false;
+  const data = lastEngineTest.data;
+  if (!data || data.ok !== true) return false;
+  if (current.kind === 'ace_server') {
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (!models.length) return true;
+    return readyModelIds(data).length > 0;
+  }
+  if (current.kind === 'comfyui') return readyModelIds(data).length > 0;
+  return false;
+}
+function syncServerKind() {
+  const hosted = testedKindUrl().kind === 'hosted';
+  const testBtn = $('test-server-btn');
+  if (testBtn) {
+    testBtn.hidden = hosted;
+    const row = testBtn.closest('.wizard-actions');
+    if (row) row.hidden = hosted;
+  }
+  const keyLabel = $('api-key-label');
+  if (keyLabel) keyLabel.hidden = !hosted;
+  const modelLabel = $('server-model-label');
+  if (modelLabel) modelLabel.hidden = !hosted;
+  const addBtn = $('add-engine-btn');
+  if (addBtn) addBtn.disabled = hosted ? false : !serverAddReady();
+}
+function invalidateEngineTest() {
+  engineTestGen += 1;
+  lastEngineTest = null;
+  const result = $('test-result');
+  if (result) {
+    result.hidden = true;
+    result.replaceChildren();
+  }
+  const trouble = $('troubleshooting');
+  if (trouble) {
+    trouble.hidden = true;
+    trouble.replaceChildren();
+  }
+  syncServerKind();
+}
+function clearHostedKey() {
+  const keyEl = $('server-key');
+  if (keyEl) keyEl.value = '';
+}
+function serverMessage(text, bad = false) {
+  const node = $('server-message');
+  if (!node) return;
+  node.textContent = text == null ? '' : String(text);
+  node.classList.toggle('error', !!bad && node.textContent !== '');
+}
+function moveMessage(text, bad = false) {
+  const node = $('move-engines-message');
+  if (!node) return;
+  node.textContent = text == null ? '' : String(text);
+  node.classList.toggle('error', !!bad && node.textContent !== '');
+}
+function engineNameList(value) {
+  if (!Array.isArray(value)) return '';
+  const names = [];
+  for (const item of value) {
+    if (item == null || item === '') continue;
+    names.push(String(item));
+  }
+  return names.join(', ');
+}
+function dismissServerWizard() {
+  const form = $('server-form');
+  if (form) form.reset();
+  const comfy = document.querySelector('input[name="engine-kind"][value="comfyui"]');
+  if (comfy) comfy.checked = true;
+  clearHostedKey();
+  const modelEl = $('server-model');
+  if (modelEl) modelEl.value = '';
+  invalidateEngineTest();
+  serverMessage('');
+  const wizard = $('server-wizard');
+  if (wizard) wizard.hidden = true;
+}
+async function finishEngineAdd() {
+  if (lastEngineTest && lastEngineTest.url) engineRowStatus[lastEngineTest.url] = rowStatusFrom(lastEngineTest.data);
+  dismissServerWizard();
+  await loadEngines();
+  await refreshWorkflows();
+  await refreshNow();
+}
+async function addServerEngine() {
+  const current = testedKindUrl();
+  const name = ($('server-name') && $('server-name').value || '').trim();
+  serverMessage('');
+  if (current.kind === 'hosted') {
+    const keyEl = $('server-key');
+    const key = keyEl ? keyEl.value : '';
+    const modelEl = $('server-model');
+    const model = modelEl ? modelEl.value.trim() : '';
+    const saved = await api('/studio/setup/cloud', {
+      name: name, url: current.url, key: key, model: model,
+    });
+    if (!saved || saved.ok !== true) {
+      serverMessage((saved && (saved.message || saved.detail || saved.error)) || 'Could not save that hosted service.', true);
+      return;
+    }
+    clearHostedKey();
+    await finishEngineAdd();
+    return;
+  }
+  if (!serverAddReady()) {
+    serverMessage('Test this address first.', true);
+    return;
+  }
+  if (current.kind === 'ace_server') {
+    const saved = await api('/studio/setup/ace', { url: current.url });
+    if (!saved || saved.ok !== true) {
+      serverMessage((saved && (saved.detail || saved.message || saved.error)) || 'That address is not an ACE-Step server.', true);
+      return;
+    }
+    await finishEngineAdd();
+    return;
+  }
+  const models = readyModelIds(lastEngineTest && lastEngineTest.data);
+  // The exact loader names the test matched, for model files kept in a subfolder.
+  const resolved = {};
+  ((lastEngineTest && lastEngineTest.data && lastEngineTest.data.models) || []).forEach(row => {
+    if (row && row.status === 'ready' && row.resolved && typeof row.resolved === 'object') Object.assign(resolved, row.resolved);
+  });
+  const body = { kind: 'comfyui', name: name, url: current.url, models: models };
+  if (Object.keys(resolved).length) body.resolved = resolved;
+  const saved = await api('/studio/engines', body);
+  if (saved && saved.ok === false) {
+    serverMessage((saved.error || saved.detail || saved.message) || 'Could not add that engine.', true);
+    return;
+  }
+  await finishEngineAdd();
+}
+function useLocalComfy(url) {
+  const wizard = $('server-wizard');
+  if (wizard) wizard.hidden = false;
+  const kind = document.querySelector('input[name="engine-kind"][value="comfyui"]');
+  if (kind) kind.checked = true;
+  const field = $('server-url');
+  if (field) field.value = url || '';
+  clearHostedKey();
+  invalidateEngineTest();
+  testEngine({ kind: 'comfyui', url: url || '' });
+}
+function wireEnginesPage() {
+  if (enginesPageWired) return;
+  enginesPageWired = true;
+
+  const addServerBtn = $('add-server-btn');
+  const addLocalBtn = $('add-local-btn');
+  const serverWizard = $('server-wizard');
+  const installWizard = $('install-wizard');
+
+  if (addServerBtn) addServerBtn.addEventListener('click', () => {
+    if (serverWizard) serverWizard.hidden = false;
+  });
+
+  if (addLocalBtn) addLocalBtn.addEventListener('click', () => { openInstallWizard(); });
+
+  // Close buttons
+  const closeButtons = document.querySelectorAll('.close-wizard');
+  if (closeButtons && closeButtons.length > 0) {
+    closeButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const wizard = e.target.closest('.engine-wizard');
+        if (!wizard) return;
+        if (wizard.id === 'server-wizard') dismissServerWizard();
+        else wizard.hidden = true;
+      });
+    });
+  }
+
+  // Info toggle
+  const infoToggle = document.querySelector('.info-toggle');
+  if (infoToggle) {
+    const infoText = infoToggle.parentElement?.querySelector('.info-text');
+    if (infoText) {
+      infoToggle.addEventListener('click', () => {
+        infoText.hidden = !infoText.hidden;
+        infoToggle.setAttribute('aria-expanded', String(!infoText.hidden));
+      });
+    }
+  }
+
+  // Server form
+  const serverForm = $('server-form');
+  if (serverForm) {
+    const testBtn = $('test-server-btn');
+    const addBtn = $('add-engine-btn');
+    const cancelBtn = $('cancel-server-btn');
+    const kindInputs = serverForm.querySelectorAll('input[name="engine-kind"]');
+    const urlField = $('server-url');
+
+    if (kindInputs && kindInputs.length > 0) {
+      kindInputs.forEach(input => {
+        input.addEventListener('change', () => {
+          if (testedKindUrl().kind !== 'hosted') clearHostedKey();
+          invalidateEngineTest();
+          serverMessage('');
+        });
+      });
+    }
+    if (urlField) urlField.addEventListener('input', () => {
+      invalidateEngineTest();
+      serverMessage('');
+    });
+
+    if (testBtn) testBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const current = testedKindUrl();
+      if (current.kind === 'hosted') return;
+      serverMessage('');
+      await testEngine({ kind: current.kind, url: current.url });
+    });
+
+    if (addBtn) addBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await addServerEngine();
+      } catch (err) {
+        serverMessage(err && err.message ? err.message : 'Could not add that engine.', true);
+      }
+    });
+
+    if (cancelBtn) cancelBtn.addEventListener('click', () => {
+      dismissServerWizard();
+    });
+    syncServerKind();
+  }
+
+  const lookLocalBtn = $('look-local-btn');
+  if (lookLocalBtn) lookLocalBtn.addEventListener('click', () => { lookLocal(); });
+  const lookAgainBtn = $('look-again-btn');
+  if (lookAgainBtn) lookAgainBtn.addEventListener('click', () => { lookLocal(); });
+  const comfyLink = $('open-comfyui-link');
+  if (comfyLink) comfyLink.addEventListener('click', () => openLink('https://www.comfy.org/download'));
+  const checkSpaceBtn = $('check-space-btn');
+  if (checkSpaceBtn) checkSpaceBtn.addEventListener('click', () => { checkInstallSpace(); });
+  const downloadBtn = $('download-ace-btn');
+  if (downloadBtn) downloadBtn.addEventListener('click', () => { startInstallDownload(); });
+  const resumeBtn = $('resume-download-btn');
+  if (resumeBtn) resumeBtn.addEventListener('click', () => { startInstallDownload(); });
+  const cancelDownloadBtn = $('cancel-download-btn');
+  if (cancelDownloadBtn) cancelDownloadBtn.addEventListener('click', () => { cancelInstallDownload(); });
+  const cancelInstallBtn = $('cancel-install-btn');
+  if (cancelInstallBtn) cancelInstallBtn.addEventListener('click', () => {
+    if (installWizard) installWizard.hidden = true;
+  });
+  const modelsField = $('models-dir');
+  if (modelsField) modelsField.addEventListener('input', () => {
+    const btn = $('download-ace-btn');
+    if (btn) btn.disabled = true;
+  });
+
+  const copyEnginesBtn = $('copy-engines-btn');
+  if (copyEnginesBtn) copyEnginesBtn.addEventListener('click', async () => {
+    moveMessage('');
+    try {
+      const data = await api('/studio/engines/export');
+      const exported = data && typeof data.text === 'string' ? data.text : '';
+      try {
+        const clip = navigator.clipboard;
+        if (!clip || typeof clip.writeText !== 'function') throw new Error('clipboard unavailable');
+        await clip.writeText(exported);
+        const fallback = $('copy-engines-fallback');
+        if (fallback) fallback.hidden = true;
+        moveMessage('Copied. On your other computer, open Music engines and press Paste engines. Keys are not included.');
+      } catch (err) {
+        const fallback = $('copy-engines-fallback');
+        if (fallback) {
+          fallback.hidden = false;
+          fallback.readOnly = true;
+          fallback.value = exported;
+          fallback.focus();
+          fallback.select();
+        }
+        moveMessage('Could not copy automatically. The text is selected so you can copy it. Keys are not included.', true);
+      }
+    } catch (err) {
+      moveMessage(err && err.message ? err.message : 'Could not copy engines.', true);
+    }
+  });
+  const pasteEnginesBtn = $('paste-engines-btn');
+  if (pasteEnginesBtn) pasteEnginesBtn.addEventListener('click', () => {
+    const box = $('paste-engines-box');
+    if (box) box.hidden = false;
+  });
+  const importEnginesBtn = $('import-engines-btn');
+  if (importEnginesBtn) importEnginesBtn.addEventListener('click', async () => {
+    const area = $('paste-engines-text');
+    const text = area ? area.value : '';
+    try {
+      const data = await api('/studio/engines/import', { text: text });
+      const added = engineNameList(data && data.added);
+      const skipped = engineNameList(data && data.skipped);
+      const errors = engineNameList(data && data.errors);
+      const parts = [];
+      if (added) parts.push('Added: ' + added + '.');
+      if (skipped) parts.push('Already here: ' + skipped + '.');
+      if (errors) parts.push(errors);
+      moveMessage(parts.join(' ') || 'There were no engines in that text.');
+      await loadEngines();
+      await refreshWorkflows();
+      await refreshNow();
+    } catch (err) {
+      moveMessage(err && err.message ? err.message : 'Could not add those engines.', true);
+    }
+  });
+}
+function showLookLocalResult(data) {
+  const container = $('look-local-result');
+  if (!container) return;
+  container.hidden = false;
+  container.replaceChildren();
+  const found = data && Array.isArray(data.found) ? data.found : [];
+  const ready = found.filter(server => server && server.ok === true && server.url);
+  if (!ready.length) {
+    container.append(el('p', 'No ComfyUI is running on this computer yet. Start ComfyUI, then look again.', 'hint'));
+    return;
+  }
+  ready.forEach((server, index) => {
+    const div = el('div', '', 'found-server');
+    div.append(el('div', 'Found: ' + server.url, 'server-label'));
+    const helpId = 'help-use-comfy-' + index;
+    const row = el('div', '', 'control-row');
+    const btn = el('button', 'Use this ComfyUI', 'button secondary');
+    btn.type = 'button';
+    btn.title = 'Use this address and test it';
+    btn.setAttribute('aria-describedby', helpId);
+    btn.addEventListener('click', () => useLocalComfy(server.url));
+    const help = el('button', '?', 'help-icon');
+    help.type = 'button';
+    help.title = 'Use this address and test it';
+    help.setAttribute('aria-describedby', helpId);
+    const note = el('span', 'Opens the server form with this address filled in, then tests it. We do not make a song.', 'sr-only');
+    note.id = helpId;
+    row.append(btn, help, note);
+    div.append(row);
+    container.append(div);
+  });
+}
+
 // An open "More" menu closes when you click anywhere else, like any menu.
 document.addEventListener('click', e => {
   document.querySelectorAll('details.take-more[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
