@@ -666,7 +666,7 @@ async function startCompare(p, card) {
     return;
   }
   if (!engines.length) {
-    panel.replaceChildren(el('p', 'Set up at least two engines in Compute, then compare.',
+    panel.replaceChildren(el('p', 'Set up at least two engines on the Music engines page, then compare.',
       'hint error'));
     return;
   }
@@ -794,7 +794,7 @@ function library() {
     call.append(demoButton(), el('span','','hint demo-facts'));
     const note = el('p','','hint');
     note.append(document.createTextNode('The demo is a real take made with this studio; set up an engine on the '));
-    const compute = el('button','Compute','link-button'); compute.type = 'button';
+    const compute = el('button','Music engines','link-button'); compute.type = 'button';
     compute.addEventListener('click', () => show('compute'));
     note.append(compute, document.createTextNode(' page to make your own.'));
     empty.append(call, note);
@@ -1271,8 +1271,8 @@ async function autoDetectEngine() {
     if (configured.comfy_url) return;
     const found = await api('/discover', {});
     const urls = (found.found || []).map(item => item.url || item.base_url).filter(Boolean);
-    if (!urls.length) { message('No ComfyUI answered on this machine. Open Compute to point the studio at one.'); return; }
-    if (urls.length > 1) { message(`Found ${urls.length} ComfyUI servers — choose one in Compute.`); return; }
+    if (!urls.length) { message('No ComfyUI answered on this machine. Open Music engines to point the studio at one.'); return; }
+    if (urls.length > 1) { message(`Found ${urls.length} ComfyUI servers — choose one on the Music engines page.`); return; }
     await api('/settings', {comfy_url: urls[0]});
     message(`Found ComfyUI at ${urls[0]} and set it up.`);
     await refresh();

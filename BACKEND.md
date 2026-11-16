@@ -19,14 +19,14 @@ continues. Worker stdout/stderr goes to
 `ace_local` delegates to `ace_engine` and the runtime at `ACE_RUNTIME_DIR`
 (default `~/ace15-runtime`), source at `ACE_SOURCE_DIR`
 (default `~/ACE-Step-1.5`). `minimax_m3_comfy` talks to
-the ComfyUI endpoint saved in Compute or `COMFYUI_URL` (no baked-in address) and
+the ComfyUI endpoint saved on the Music engines page or `COMFYUI_URL` (no baked-in address) and
 needs `ffmpeg` for FLAC → WAV. `ace_remote` is registered but undeployed. The engine, its
 limits and its failure reason are exposed in `GET /status.engines[]`; nothing
 substitutes an unavailable engine silently.
 
 ## Custom ComfyUI workflows
 
-Settings -> Compute -> **Custom workflows** accepts a ComfyUI **Export (API)**
+Music engines → **Custom workflows** accepts a ComfyUI **Export (API)**
 JSON graph (1 MiB), a name and one saved endpoint. Records live in
 `comfy-workflows.json` beside `comfy-targets.json` and are written under the
 same lock/atomic-replace pattern. Each record becomes an engine with id

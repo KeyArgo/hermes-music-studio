@@ -45,7 +45,7 @@ from typing import Callable
 from .contract import (Capabilities, Engine, EngineError, EngineStatus, HealthCheck,
                        InvalidAudio, Limits, RenderRequest, RenderResult, inspect_wav)
 
-# No address is baked in: a ComfyUI host is per-machine. Set it in Settings -> Compute, in
+# No address is baked in: a ComfyUI host is per-machine. Set it on the Music engines page, in
 # COMFYUI_URL, or pass base_url. With none of those the engine reports itself unavailable and says
 # what to do — it never guesses another machine's address.
 DEFAULT_URL = ''
@@ -216,7 +216,7 @@ class MiniMaxM3ComfyEngine(Engine):
         if not self.base_url:
             return EngineStatus(
                 self.id, 'unavailable',
-                'no ComfyUI address is set: add one in Settings -> Compute, or set COMFYUI_URL '
+                'no ComfyUI address is set: add one on the Music engines page, or set COMFYUI_URL '
                 '(this build ships no address, because a ComfyUI host is per-machine)',
                 [HealthCheck('base_url', False, 'not configured')], latency_ms=0, extra=extra)
 

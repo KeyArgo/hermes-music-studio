@@ -1,7 +1,7 @@
 # Troubleshooting
 
 The failure modes the code actually handles, the sentence it gives you, and the next check. Start with
-`python3 scripts/ms.py doctor` or the **Compute** panel; both report each engine and the failing check.
+`python3 scripts/ms.py doctor` or the **Music engines** panel; both report each engine and the failing check.
 
 Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 
@@ -10,7 +10,7 @@ Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 `/status` reports each engine as available or not, with the failing check named. Common causes:
 
 - **ACE runtime not found.** `ace_local` needs `venv/bin/python`, `checkpoints/` and `source/acestep/`
-  under the runtime (defaults come from `ACE_RUNTIME_DIR` and `ACE_SOURCE_DIR`). Set both in Compute,
+  under the runtime (defaults come from `ACE_RUNTIME_DIR` and `ACE_SOURCE_DIR`). Set both on the Music engines page,
   or export them before starting Hermes. The health detail names the first missing path.
 - **ComfyUI unreachable.** `minimax_m3_comfy` probes `/system_stats` and `/object_info`. It needs the
   MiniMax Music 3 nodes, the three loader model lists, `CLIPLoader type="minimax"` and a lossless

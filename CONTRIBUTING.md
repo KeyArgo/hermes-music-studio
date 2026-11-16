@@ -103,7 +103,7 @@ without weights. Record any licence obligation in the take metadata and
 
 ## Reporting a problem
 
-Open the studio, go to **Compute → Report a problem**, and press **Copy diagnostics**. The report
+Open the studio, go to **Music engines → Report a problem**, and press **Copy diagnostics**. The report
 contains the version, platform, library path, project/take counts and the newest failed take. Paste
 it into a GitHub issue along with what you expected to happen.
 

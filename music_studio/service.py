@@ -177,14 +177,14 @@ def _engine_status(reg, engine):
 # Per-engine next steps for the doctor: plain words from what the code actually
 # reads. Only add a shell command here once it has been verified on a real machine.
 FIXES: dict[str, str | None] = {
-    'ace_local': ('Set the ACE-Step runtime and source folders in Compute '
-                  '(Settings -> Compute), or export ACE_RUNTIME_DIR and '
+    'ace_local': ('Set the ACE-Step runtime and source folders on the Music engines page, '
+                  'or export ACE_RUNTIME_DIR and '
                   'ACE_SOURCE_DIR. Needs an NVIDIA GPU (or Apple MPS, unverified).'),
-    'ace_remote': ('If you run an ACE-Step server, set its URL in Compute or export '
+    'ace_remote': ('If you run an ACE-Step server, set its URL on the Music engines page or export '
                    'ACE_REMOTE_URL, and set ACE_REMOTE_API_KEY if it needs a key; '
                    'otherwise use the local engine.'),
     'minimax_m3_comfy': ('Start ComfyUI with the MiniMax Music 3 nodes and set its URL '
-                         'in Compute (or export COMFYUI_URL); install ffmpeg '
+                         'on the Music engines page (or export COMFYUI_URL); install ffmpeg '
                          '(winget install ffmpeg / brew install ffmpeg) if it outputs FLAC.'),
 }
 

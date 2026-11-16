@@ -454,7 +454,7 @@ def test_a_comfyui_engine_with_no_address_says_so_instead_of_guessing():
     engine = minimax_m3_comfy.MiniMaxM3ComfyEngine(base_url='', timeout=1.0)
     status = engine.health()
     assert status.state == 'unavailable'
-    assert 'Settings' in status.detail and 'COMFYUI_URL' in status.detail
+    assert 'Music engines' in status.detail and 'COMFYUI_URL' in status.detail
 
 
 def test_ace_reports_why_it_cannot_render_instead_of_pointing_at_a_stranger_s_path():

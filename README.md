@@ -92,7 +92,7 @@ accident. The library, the worker and the audio stay on your machine.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/workspaces.png" alt="Workspaces grouping songs"><br><sub><b>Workspaces</b> — keep a session in one place.</sub></td>
-    <td width="50%"><img src="docs/screenshots/compute.png" alt="Compute settings and library folder"><br><sub><b>Compute</b> — endpoints, sampler knobs, library folder.</sub></td>
+    <td width="50%"><img src="docs/screenshots/compute.png" alt="Music engines page and library folder"><br><sub><b>Music engines</b> — endpoints, sampler knobs, library folder.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/verify.png" alt="The verify page reporting measured checks"><br><sub><b>Verify</b> — what this build can prove on this machine.</sub></td>

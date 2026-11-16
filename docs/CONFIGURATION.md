@@ -5,7 +5,7 @@ that reads it.
 
 Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
 
-Settings saved in the studio (Compute → Render settings) win over most environment variables where
+Settings saved in the studio (Music engines → Render settings) win over most environment variables where
 both exist; the exceptions are noted. The optional hosted provider's key is a credential: it is stored
 only through Hermes' own credential store and is never written to the plugin data directory or sent
 back to the page.

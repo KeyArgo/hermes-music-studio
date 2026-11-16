@@ -112,7 +112,7 @@ test('the demo audio URL carries the studio token, like every take URL', async t
   assert.match(audio.src, /\/api\/demo\/audio\?token=tok-demo123$/, 'the media element cannot send the header');
 });
 
-test('an empty library explains the demo and points at Compute, with one play control', async t => {
+test('an empty library explains the demo and points at Music engines, with one play control', async t => {
   const { window } = await boot();
   t.after(() => window.close());
   const doc = window.document;
@@ -124,7 +124,7 @@ test('an empty library explains the demo and points at Compute, with one play co
   const sentence = text(empty);
   assert.match(sentence, /real take made with this studio/);
   assert.match(sentence, /set up an engine/);
-  assert.match(sentence, /Compute/);
+  assert.match(sentence, /Music engines/);
 
   const demo = [...empty.querySelectorAll('button')].find(button => text(button) === 'Hear a demo song');
   assert.ok(demo, 'the empty state offers the demo');
@@ -133,7 +133,7 @@ test('an empty library explains the demo and points at Compute, with one play co
   assert.match(doc.getElementById('player').src, /\/api\/demo\/audio$/);
   assert.equal(text(doc.getElementById('player-title')), 'Afterglow');
 
-  const compute = [...empty.querySelectorAll('button')].find(button => text(button) === 'Compute');
+  const compute = [...empty.querySelectorAll('button')].find(button => text(button) === 'Music engines');
   compute.click();
   assert.equal(doc.getElementById('library-view').hidden, true);
   assert.equal(doc.getElementById('compute-view').hidden, false);

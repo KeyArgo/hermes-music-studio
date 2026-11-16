@@ -15,7 +15,7 @@ this repository:
 <https://github.com/KeyArgo/hermes-music-studio/security/advisories/new>
 
 Include the version, the commit if you have it, what you did, what happened, and any logs or
-diagnostics you are comfortable sharing. `Compute → Report a problem → Copy diagnostics` produces the
+diagnostics you are comfortable sharing. `Music engines → Report a problem → Copy diagnostics` produces the
 build facts without your library content.
 
 You should get an acknowledgement through GitHub. Please give the maintainers time to investigate and

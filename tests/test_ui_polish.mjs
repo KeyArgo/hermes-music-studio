@@ -166,7 +166,7 @@ test('reset library and diagnostics use POST, as their routes require', async t 
   assert.equal(diagnostics.method, 'POST', 'the diagnostics route is POST-only');
 });
 
-test('saving the Compute form sends the export folder and scan hosts it shows', async t => {
+test('saving the Music engines form sends the export folder and scan hosts it shows', async t => {
   const booted = await boot();
   t.after(() => booted.window.close());
   const doc = booted.window.document;

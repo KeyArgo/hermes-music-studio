@@ -69,7 +69,7 @@ class ComfyWorkflowEngine(MiniMaxM3ComfyEngine):
         if not self.base_url:
             return EngineStatus(
                 self.id, 'unavailable',
-                'the workflow has no saved ComfyUI endpoint: add one in Settings -> Compute',
+                'the workflow has no saved ComfyUI endpoint: add one on the Music engines page',
                 [HealthCheck('base_url', False, 'not configured')], latency_ms=0,
                 extra=extra)
 

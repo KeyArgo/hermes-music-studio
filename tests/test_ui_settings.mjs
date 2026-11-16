@@ -1037,7 +1037,7 @@ const DOCTOR = {
   success: true,
   engines: [
     { id: 'ace_local', label: 'ACE-Step 1.5 (local GPU)', ready: false, state: 'unavailable',
-      detail: 'source missing', checks: [], fix: 'Set the ACE-Step runtime and source folders in Compute.' },
+      detail: 'source missing', checks: [], fix: 'Set the ACE-Step runtime and source folders on the Music engines page, or export ACE_RUNTIME_DIR and ACE_SOURCE_DIR. Needs an NVIDIA GPU (or Apple MPS, unverified).' },
     { id: 'minimax_m3_comfy', label: 'MiniMax Music 3 (ComfyUI)', ready: true, state: 'ready',
       detail: 'nodes present', checks: [], fix: 'Install ffmpeg if ComfyUI outputs FLAC.' }
   ]
@@ -1051,7 +1051,7 @@ test('the compute pane shows each engine doctor row and its fix beneath it', asy
   const miniRow = doc.querySelector('#engine-doctor [data-engine="minimax_m3_comfy"]');
   assert.ok(aceRow && miniRow, 'one doctor row per engine');
   assert.match(text(aceRow), /ACE-Step 1\.5 \(local GPU\) · unavailable: source missing/);
-  assert.match(text(aceRow), /Set the ACE-Step runtime and source folders in Compute/);
+  assert.match(text(aceRow), /Set the ACE-Step runtime and source folders on the Music engines page/);
   assert.match(text(miniRow), /MiniMax Music 3 \(ComfyUI\) · ready: nodes present/);
   assert.match(text(miniRow), /Install ffmpeg if ComfyUI outputs FLAC/);
 });

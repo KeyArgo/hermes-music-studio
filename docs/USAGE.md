@@ -131,7 +131,7 @@ to that workspace. Workspaces are local JSON (`studio-workspaces.json`); they do
 
 ## Music engines
 
-![Compute settings, targets and library folder](screenshots/compute.png)
+![Music engines page, targets and library folder](screenshots/compute.png)
 
 - **Render settings** save the ComfyUI endpoint, extra scan hosts, export folder and the MiniMax
   sampler knobs (steps, CFG, guidance, top K, sampler, scheduler). Values are validated at save time.

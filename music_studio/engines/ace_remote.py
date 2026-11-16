@@ -117,7 +117,7 @@ class AceRemoteEngine(Engine):
             checks.append(HealthCheck('address', False, 'no ACE server address is set'))
             return EngineStatus(
                 self.id, 'unavailable',
-                'No ACE-Step server is configured: set its address in Settings -> Compute '
+                'No ACE-Step server is configured: set its address on the Music engines page '
                 '(or export ACE_REMOTE_URL) if you run one, otherwise use the local engine',
                 checks, latency_ms=int((time.monotonic() - started) * 1000), extra=extra)
         try:
