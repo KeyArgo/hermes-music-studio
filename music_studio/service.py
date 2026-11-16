@@ -1113,10 +1113,6 @@ def relocate_library(target, mode='copy'):
     the pointer file itself never moves with them. A source that could not be copied
     (or whose destination is a different, older file) is kept and named in ``kept``.
     """
-    import shutil
-
-    from . import settings as st
-
     if mode not in ('copy', 'move'):
         raise ValueError("mode must be 'copy' or 'move'")
     base = default_data_dir(PLUGIN_ID)
@@ -1127,6 +1123,21 @@ def relocate_library(target, mode='copy'):
     destination = Path(raw).expanduser().resolve()
     if destination == source.resolve():
         raise ValueError('that is already the library directory')
+    # Check under the lock, copy after releasing it: the copy can take minutes, and on Windows a
+    # held lock file cannot be moved.
+    library_store = Store(source)
+    with library_store.locked():
+        busy = any(t.get('state') in ('queued', 'running')
+                   for project in library_store.all() for t in project['takes'])
+    if busy:
+        raise ValueError('A song is still being made. Wait for it to finish, then move the library.')
+    return _relocate_library_files(source, destination, base, mode)
+
+
+def _relocate_library_files(source, destination, base, mode):
+    import shutil
+    from . import settings as st
+
     destination.mkdir(parents=True, exist_ok=True)
     # A same-named file with different bytes in the target would win once the pointer moves there,
     # so the library would silently show the older version. Refuse before copying anything.
