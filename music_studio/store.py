@@ -3,6 +3,7 @@ import contextlib
 import copy
 from .portalock import lock_ex, unlock
 import json
+import logging
 import math
 import os
 import tempfile
@@ -448,6 +449,7 @@ class Store:
             project = self.get(pid)
             if any(t.get('state') in ('queued', 'running') for t in project['takes']):
                 raise ValueError('GPU busy: project has an active render')
+            audio_names = []
             for take in project['takes']:
                 names = [take.get('audio_file')]
                 names += [edit.get('audio_file') for edit in take.get('edits') or []
@@ -460,10 +462,52 @@ class Store:
                             continue
                     except ValueError:
                         continue
-                    self._remove_audio_file(name)
+                    audio_names.append(name)
+            pending_path = self.root / '.orphaned-audio.json'
+            if pending_path.exists():
+                pending = json.loads(pending_path.read_text())
+            else:
+                pending = {}
+            pending[pid] = audio_names
+            self._save_orphaned_audio(pending_path, pending)
             (self.root / (pid + '.json')).unlink()
             fsync_dir(self.root)
+            for owner, names in list(pending.items()):
+                if (self.root / (valid_id(owner) + '.json')).exists():
+                    continue
+                remaining = []
+                for name in names:
+                    try:
+                        if not isinstance(name, str) or not name.endswith('.wav') or valid_id(name[:-4]) + '.wav' != name:
+                            continue
+                    except ValueError:
+                        continue
+                    try:
+                        self._remove_audio_file(name)
+                        if (self.root / name).exists():
+                            raise PermissionError('audio file could not be removed')
+                    except OSError as exc:
+                        logging.getLogger(__name__).warning('Audio cleanup deferred for %s: %s', name, exc)
+                        remaining.append(name)
+                if remaining:
+                    pending[owner] = remaining
+                else:
+                    del pending[owner]
+            self._save_orphaned_audio(pending_path, pending)
         return pid
+
+    def _save_orphaned_audio(self, path, pending):
+        fd, name = tempfile.mkstemp(dir=self.root, prefix='.orphaned-audio-')
+        try:
+            with os.fdopen(fd, 'w') as out:
+                json.dump(pending, out)
+                out.flush()
+                os.fsync(out.fileno())
+            replace_with_retry(name, path)
+            fsync_dir(self.root)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
 
     def _remove_audio_file(self, name):
         """Remove one uuid-named WAV inside the store and its peaks sidecar."""
