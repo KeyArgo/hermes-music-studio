@@ -53,6 +53,13 @@ async function boot(options = {}) {
       '/api/studio/hardware': { success: true, devices: [], pid_to_gpu: {} },
       '/api/generate': empty,
       '/api/batch': empty,
+      '/api/update': { success: true, project: { project_id: 'p1', title: 'First song',
+        caption: 'quiet', engine: 'ace_local', approved: false, updated_at: 55.5, takes: [] } },
+      '/api/create': { success: true, project: { project_id: 'p1', title: 'First song',
+        caption: 'quiet', engine: 'ace_local', approved: false, updated_at: 55.5, takes: [] } },
+      '/api/approve': { success: true, project: { project_id: 'p1', title: 'First song',
+        caption: 'quiet', engine: 'ace_local', approved: true, updated_at: 55.5, takes: [] } },
+      '/api/studio/assign': { success: true },
     };
     let payload = table[path];
     if (path in (options.overrides || {})) payload = options.overrides[path];
