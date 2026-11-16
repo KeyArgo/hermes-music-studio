@@ -138,6 +138,13 @@ def find_local_comfy_models():
         Path('/opt/ComfyUI/models'),
         Path.home() / 'Documents' / 'ComfyUI' / 'models',
     ]
+    import os
+    onedrive = os.environ.get('OneDrive')
+    appdata = os.environ.get('APPDATA')
+    if onedrive:
+        candidates.append(Path(onedrive) / 'Documents' / 'ComfyUI' / 'models')
+    if appdata:
+        candidates.append(Path(appdata) / 'ComfyUI' / 'models')
     for candidate in candidates:
         if candidate.is_dir():
             return candidate

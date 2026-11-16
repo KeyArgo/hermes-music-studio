@@ -47,7 +47,9 @@ def suggest_models_dir():
 
 
 def plan(models_dir):
-    path = Path(models_dir or '')
+    if not isinstance(models_dir, str) or not models_dir.strip():
+        raise ValueError('Choose the folder ComfyUI calls models.')
+    path = Path(models_dir)
     if not path.is_dir() or not (path.name.lower() == 'models' or
                                  (path / 'diffusion_models').is_dir() or
                                  (path / 'checkpoints').is_dir()):
@@ -58,7 +60,12 @@ def plan(models_dir):
         target = path / item['folder'] / name
         present = target.is_file() and target.stat().st_size == item['size']
         files.append({'name': name, 'folder': item['folder'], 'size': item['size'], 'present': present})
-    need = sum(item['size'] for item in files if not item['present']) + _MARGIN
+    need = _MARGIN
+    for item in files:
+        if not item['present']:
+            part = path / item['folder'] / (item['name'] + '.part')
+            partial = part.stat().st_size if part.is_file() else 0
+            need += item['size'] - (partial if partial <= item['size'] else 0)
     parent = path
     while not parent.exists():
         parent = parent.parent
@@ -81,29 +88,45 @@ def cancel(job_id):
         if job_id not in _jobs:
             raise ValueError('Download not found.')
         _jobs[job_id]['cancel'].set()
+        if _jobs[job_id]['status']['state'] == 'running':
+            _jobs[job_id]['status']['state'] = 'cancelling'
         return dict(_jobs[job_id]['status'])
 
 
 def start(models_dir):
     global _running
-    with _lock:
-        if _running is not None and _jobs[_running]['status']['state'] == 'running':
-            return {'job_id': _running}
-        details = plan(models_dir)
-        if not details['ok']:
-            raise ValueError(details['message'])
-        if not details['enough_space']:
-            raise ValueError(details['message'])
-        job_id = uuid.uuid4().hex
-        state = {'state': 'running', 'file': None, 'done_bytes': 0,
-                 'total_bytes': sum(item['size'] for item in details['files']),
-                 'files_done': 0, 'files_total': len(details['files']),
-                 'error': None, 'message': 'Starting download.'}
-        _jobs[job_id] = {'status': state, 'cancel': threading.Event()}
-        _running = job_id
-        threading.Thread(target=_download, args=(job_id, Path(models_dir)),
-                         name='ms-local-download', daemon=True).start()
-        return {'job_id': job_id}
+    if not isinstance(models_dir, str) or not models_dir.strip():
+        raise ValueError('Choose the folder ComfyUI calls models.')
+    root = Path(models_dir).resolve()
+    while True:
+        with _lock:
+            if _running is not None:
+                job = _jobs[_running]
+                if not job['cancel'].is_set():
+                    if job['models_dir'] != os.path.normcase(str(root)):
+                        raise ValueError(f"Another download is already running for {job['display_dir']}.")
+                    return {'job_id': _running}
+                thread = job['thread']
+            else:
+                details = plan(str(root))
+                if not details['ok'] or not details['enough_space']:
+                    raise ValueError(details['message'])
+                job_id = uuid.uuid4().hex
+                state = {'state': 'running', 'file': None, 'done_bytes': 0,
+                         'total_bytes': sum(item['size'] for item in details['files']),
+                         'files_done': 0, 'files_total': len(details['files']),
+                         'error': None, 'message': 'Starting download.'}
+                thread = threading.Thread(target=_download, args=(job_id, root),
+                                          name='ms-local-download', daemon=True)
+                _jobs[job_id] = {'status': state, 'cancel': threading.Event(),
+                                 'models_dir': os.path.normcase(str(root)),
+                                 'display_dir': str(root), 'thread': thread}
+                _running = job_id
+                thread.start()
+                return {'job_id': job_id}
+        thread.join(timeout=5)
+        if thread.is_alive():
+            raise ValueError('The previous download is still cancelling. Please try again.')
 
 
 def _download(job_id, root):
@@ -126,6 +149,17 @@ def _download(job_id, root):
             if final.exists():
                 if not final.is_file() or final.stat().st_size != item['size']:
                     raise ValueError(f'{name} already exists with a different size.')
+                digest = hashlib.sha256()
+                with final.open('rb') as existing:
+                    while True:
+                        if stop.is_set():
+                            raise InterruptedError()
+                        chunk = existing.read(_CHUNK)
+                        if not chunk:
+                            break
+                        digest.update(chunk)
+                if digest.hexdigest() != item['sha256']:
+                    raise ValueError(f'{name} is already in the folder but is damaged. Delete it and press Resume.')
                 with _lock:
                     state['done_bytes'] += item['size']
                     state['files_done'] += 1
@@ -151,13 +185,20 @@ def _download(job_id, root):
                 headers = {'User-Agent': 'hermes-music-studio'}
                 if offset:
                     headers['Range'] = f'bytes={offset}-'
-                request = urllib.request.Request(BASE_URL.rstrip('/') + '/' + item['path'], headers=headers)
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    if offset and (response.status != 206 or not response.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
-                        with _lock:
-                            state['done_bytes'] -= offset
-                        offset = 0
-                        digest = hashlib.sha256()
+                url = BASE_URL.rstrip('/') + '/' + item['path']
+                request = urllib.request.Request(url, headers=headers)
+                response = urllib.request.urlopen(request, timeout=30)
+                if offset and (response.status != 206 or not response.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
+                    response.close()
+                    with _lock:
+                        state['done_bytes'] -= offset
+                    offset = 0
+                    digest = hashlib.sha256()
+                    with part.open('wb'):
+                        pass
+                    request = urllib.request.Request(url, headers={'User-Agent': 'hermes-music-studio'})
+                    response = urllib.request.urlopen(request, timeout=30)
+                with response:
                     with part.open('ab' if offset else 'wb') as output:
                         while True:
                             if stop.is_set():
@@ -174,7 +215,11 @@ def _download(job_id, root):
                                 break
             if stop.is_set():
                 raise InterruptedError()
-            if offset != item['size'] or digest.hexdigest() != item['sha256']:
+            if offset < item['size']:
+                raise ValueError(f'{name}: connection dropped, press Resume')
+            if offset > item['size']:
+                raise ValueError(f'{name} exceeded the expected size. Please retry.')
+            if digest.hexdigest() != item['sha256']:
                 part.unlink(missing_ok=True)
                 raise ValueError(f'{name} did not pass its size and checksum check. Please retry.')
             if final.exists():
