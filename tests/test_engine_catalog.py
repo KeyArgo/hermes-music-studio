@@ -21,6 +21,9 @@ from music_studio import engine_catalog  # noqa: E402
 from music_studio.engine_catalog import (ACE_NODES, SIGNATURES,  # noqa: E402
                                          UNDETECTABLE_NOTE, detect, load_template,
                                          test_server as probe_server)
+from music_studio.engines.contract import RenderRequest  # noqa: E402
+from music_studio.engines.minimax_m3_comfy import (  # noqa: E402
+    MiniMaxM3ComfyEngine, _combo_options)
 from music_studio.workflows import find_placeholders  # noqa: E402
 
 MINIMAX_UNET = 'diffusion_models/minimax_music3_dit_int8_convrot.safetensors'
@@ -66,6 +69,12 @@ def server_info(*, minimax_missing=(), ace_missing=(), ace_nodes=True,
     if ace_nodes:
         info['TextEncodeAceStepAudio1.5'] = {'input': {'required': {}}}
         info['EmptyAceStep1.5LatentAudio'] = {'input': {'required': {}}}
+    # Every node the shipped graphs use, not only the two model-specific ones:
+    # a server missing SaveAudio/SaveAudioAdvanced can hold the weights and
+    # still fail every render.
+    for node in ('ModelSamplingAuraFlow', 'ConditioningZeroOut', 'KSampler',
+                 'VAEDecodeAudio', 'SaveAudio', 'SaveAudioAdvanced'):
+        info[node] = {'input': {'required': {}}}
     if drop_unet_options:
         info['UNETLoader'] = {'input': {'required': {}}}
     return info
@@ -126,6 +135,98 @@ def test_a_loader_without_the_required_clip_type_is_not_ready():
     ace = row(detect(server_info(dual_types=('minimax',))), 'ace15_turbo')
     assert ace['status'] == 'missing_files'
     assert 'DualCLIPLoader.type=ace' in ace['missing_files']
+
+
+# -- readiness covers the whole shipped graph, not just its model nodes ----
+
+def test_a_missing_save_node_keeps_ace_not_ready():
+    """Weights alone are not a render: SaveAudio must be registered too."""
+    info = server_info()
+    info.pop('SaveAudio')
+    ace = row(detect(info), 'ace15_turbo')
+    assert ace['status'] == 'missing_nodes'
+    assert ace['missing_nodes'] == ['SaveAudio']
+
+
+def test_a_missing_minimax_sampler_node_keeps_it_not_ready():
+    info = server_info()
+    info.pop('SaveAudioAdvanced')
+    minimax = row(detect(info), 'minimax_m3')
+    assert minimax['status'] == 'missing_nodes'
+    assert minimax['missing_nodes'] == ['SaveAudioAdvanced']
+
+
+def test_the_ace_signature_is_exactly_the_shipped_template():
+    """Drift guard: a class_type added to the template must be required here."""
+    classes = {node['class_type'] for node in load_template('ace15_turbo').values()}
+    assert set(SIGNATURES['ace15_turbo']['nodes']) == classes
+
+
+def test_the_minimax_signature_is_exactly_the_graph_the_engine_submits():
+    engine = MiniMaxM3ComfyEngine(base_url='http://127.0.0.1:9')
+    graph = engine.build_workflow(RenderRequest(caption='warm strings',
+                                                duration_seconds=30, seed=7))
+    assert set(SIGNATURES['minimax_m3']['nodes']) == {
+        node['class_type'] for node in graph.values()}
+
+
+# -- the exact loader option a nested name resolved to ---------------------
+
+def test_a_nested_loader_option_is_reported_back_exactly():
+    info = server_info()
+    info['UNETLoader']['input']['required']['unet_name'][0] = [
+        'diffusion_models\\acestep_v1.5_turbo.safetensors']
+    info['DualCLIPLoader']['input']['required']['clip_name1'][0] = [
+        'sub/clip/qwen_0.6b_ace15.safetensors']
+    ace = row(detect(info), 'ace15_turbo')
+    assert ace['status'] == 'ready'
+    assert ace['resolved'] == {
+        'acestep_v1.5_turbo.safetensors': 'diffusion_models\\acestep_v1.5_turbo.safetensors',
+        'qwen_0.6b_ace15.safetensors': 'sub/clip/qwen_0.6b_ace15.safetensors',
+        # Listed under the vae folder, so the bare template name would not match.
+        'ace_1.5_vae.safetensors': 'vae/ace_1.5_vae.safetensors',
+    }
+
+
+def test_a_missing_file_is_not_resolved():
+    ace = row(detect(server_info(ace_missing=(ACE_CLIP_2,))), 'ace15_turbo')
+    assert 'qwen_4b_ace15.safetensors' not in ace['resolved']
+
+
+# -- /object_info shapes that must not crash the detector ------------------
+
+def test_a_loader_entry_that_is_not_a_dict_is_unreadable():
+    info = server_info()
+    info['UNETLoader'] = 'oops'
+    rows = detect(info)
+    assert row(rows, 'ace15_turbo')['status'] == 'unknown'
+    assert row(rows, 'minimax_m3')['status'] == 'unknown'
+
+
+def test_a_non_dict_input_section_is_unreadable():
+    info = server_info()
+    info['UNETLoader'] = {'input': 'x'}
+    assert row(detect(info), 'ace15_turbo')['status'] == 'unknown'
+
+
+def test_a_non_dict_required_section_is_unreadable():
+    info = server_info()
+    info['UNETLoader'] = {'input': {'required': ['unet_name']}}
+    assert row(detect(info), 'ace15_turbo')['status'] == 'unknown'
+
+
+def test_dict_options_without_a_name_are_skipped_not_stringified():
+    malformed = {'N': {'input': {'required': {'field': [[{'content': 'x'}], {}]}}}}
+    assert _combo_options(malformed, 'N', 'field') is None
+    mixed = {'N': {'input': {'required': {'field': [[{'content': 'x'},
+                                                     {'name': 'usable'}], {}]}}}}
+    assert _combo_options(mixed, 'N', 'field') == ('usable',)
+
+
+def test_a_loader_listing_nameless_dicts_is_unknown_not_missing_files():
+    info = server_info()
+    info['UNETLoader']['input']['required']['unet_name'] = [[{'content': 'x'}], {}]
+    assert row(detect(info), 'ace15_turbo')['status'] == 'unknown'
 
 
 def test_yue_and_stable_audio_are_declared_undetectable():
@@ -253,3 +354,63 @@ def test_hosted_keeps_its_own_form():
 def test_an_unknown_kind_is_rejected():
     with pytest.raises(ValueError, match='unknown engine kind'):
         probe_server('lmstudio', 'http://192.0.2.9:1234')
+
+
+# -- the address rule, and the shapes a real server can answer with --------
+
+def test_a_link_local_address_is_refused_before_any_request(monkeypatch):
+    """The same rule add_engine uses: never probe the cloud metadata range."""
+    def refuse(*args, **kwargs):
+        raise AssertionError('a refused address must not be probed')
+
+    monkeypatch.setattr(engine_catalog.setup, '_get', refuse)
+    result = probe_server('comfyui', 'http://169.254.169.254:8188')
+    assert result['ok'] is False
+    assert result['problem'] == 'bad_address'
+    assert 'link-local' in result['message']
+
+
+def test_a_body_that_is_not_json_is_not_comfy(monkeypatch):
+    """It answered, so it is not a firewall problem: it is the wrong service."""
+    monkeypatch.setattr(engine_catalog.setup, '_get', fake_get({
+        '/system_stats': b'<html>hello</html>',
+    }))
+    result = probe_server('comfyui', 'http://192.0.2.9:8188')
+    assert result['ok'] is False
+    assert result['problem'] == 'not_comfy'
+
+
+def test_a_system_stats_without_a_system_object_is_not_comfy(monkeypatch):
+    monkeypatch.setattr(engine_catalog.setup, '_get', fake_get({
+        '/system_stats': {'system': 'x'},
+    }))
+    result = probe_server('comfyui', 'http://192.0.2.9:8188')
+    assert result['ok'] is False
+    assert result['problem'] == 'not_comfy'
+
+
+def test_the_node_list_gets_a_long_timeout(monkeypatch):
+    """A big install answers /object_info slowly; 8 s called a good server bad."""
+    calls = []
+
+    def _get(url, headers=None, timeout=None):
+        calls.append((url, timeout))
+        if url.endswith('/system_stats'):
+            return json.dumps({'system': {}}).encode()
+        return json.dumps(server_info()).encode()
+
+    monkeypatch.setattr(engine_catalog.setup, '_get', _get)
+    assert probe_server('comfyui', 'http://192.0.2.9:8188')['ok'] is True
+    object_info_timeout = next(timeout for url, timeout in calls
+                               if url.endswith('/object_info'))
+    assert object_info_timeout == 30
+
+
+def test_a_connection_error_on_the_node_list_is_no_answer(monkeypatch):
+    monkeypatch.setattr(engine_catalog.setup, '_get', fake_get({
+        '/system_stats': {'system': {}},
+        '/object_info': urllib.error.URLError(ConnectionResetError()),
+    }))
+    result = probe_server('comfyui', 'http://192.0.2.9:8188')
+    assert result['ok'] is False
+    assert result['problem'] == 'no_answer'

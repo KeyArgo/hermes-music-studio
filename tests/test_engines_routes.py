@@ -24,6 +24,7 @@ URL = 'http://192.0.2.50:8188'
 NAME = 'Studio PC'
 MODELS = ['ace15_turbo', 'minimax_m3']
 MODELS_DIR = 'C:/Users/me/Documents/ComfyUI/models'
+EXPORT_TEXT = '{"music_studio_engines": 1, "engines": [], "ace_server": null}'
 
 # method, path, JSON body or None, function name, which stand-in owns it.
 ROUTE_CASES = (
@@ -33,6 +34,9 @@ ROUTE_CASES = (
     ('POST', '/api/studio/engines',
      {'name': NAME, 'url': URL, 'models': MODELS}, 'add_engine', 'catalog'),
     ('DELETE', '/api/studio/engines/tgt-1', None, 'remove_engine', 'catalog'),
+    ('GET', '/api/studio/engines/export', None, 'export_engines', 'catalog'),
+    ('POST', '/api/studio/engines/import',
+     {'text': EXPORT_TEXT}, 'import_engines', 'catalog'),
     ('GET', '/api/studio/install/look-local', None, 'look_local', 'install'),
     ('POST', '/api/studio/install/plan',
      {'models_dir': MODELS_DIR}, 'plan', 'install'),
@@ -53,6 +57,8 @@ RETURNS = {
     'add_engine': {'ok': True, 'target': {'id': 'tgt-1', 'name': NAME, 'url': URL},
                    'workflows': []},
     'remove_engine': {'ok': True},
+    'export_engines': {'text': EXPORT_TEXT},
+    'import_engines': {'added': [NAME], 'skipped': [], 'errors': []},
     'look_local': {'found': [{'url': 'http://127.0.0.1:8188', 'ok': True}],
                    'ports_checked': [8000, 8188]},
     'plan': {'ok': True, 'models_dir': MODELS_DIR, 'files': [], 'need_bytes': 0,
@@ -72,6 +78,8 @@ def _expected(fn, data_dir):
         'test_server': ('test_server', 'comfyui', URL),
         'add_engine': ('add_engine', data_dir, NAME, URL, MODELS),
         'remove_engine': ('remove_engine', data_dir, 'tgt-1'),
+        'export_engines': ('export_engines', data_dir),
+        'import_engines': ('import_engines', data_dir, EXPORT_TEXT),
         'look_local': ('look_local',),
         'plan': ('plan', MODELS_DIR),
         'suggest_models_dir': ('suggest_models_dir',),
@@ -100,13 +108,27 @@ def _install_standins(calls):
         calls.append(('test_server', kind, url))
         return RETURNS['test_server']
 
-    def add_engine(data_dir, *, name, url, models):
-        calls.append(('add_engine', data_dir, name, url, models))
+    def add_engine(data_dir, *, name, url, models, **extra):
+        call = ('add_engine', data_dir, name, url, models)
+        # The page may send the wizard's kind and the detector's resolved
+        # names; the route forwards them and the stand-in records them.
+        for key in ('kind', 'resolved'):
+            if key in extra:
+                call += (extra[key],)
+        calls.append(call)
         return RETURNS['add_engine']
 
     def remove_engine(data_dir, target_id):
         calls.append(('remove_engine', data_dir, target_id))
         return RETURNS['remove_engine']
+
+    def export_engines(data_dir):
+        calls.append(('export_engines', data_dir))
+        return RETURNS['export_engines']
+
+    def import_engines(data_dir, text):
+        calls.append(('import_engines', data_dir, text))
+        return RETURNS['import_engines']
 
     def look_local():
         calls.append(('look_local',))
@@ -136,6 +158,8 @@ def _install_standins(calls):
     catalog.test_server = test_server
     catalog.add_engine = add_engine
     catalog.remove_engine = remove_engine
+    catalog.export_engines = export_engines
+    catalog.import_engines = import_engines
     install.look_local = look_local
     install.plan = plan
     install.suggest_models_dir = suggest_models_dir
@@ -183,7 +207,8 @@ def test_the_router_does_not_import_either_module_at_load():
     ]
     assert not any('engine_catalog' in line or 'local_install' in line for line in top_level)
     for fn in (plugin_api.studio_engines, plugin_api.studio_engines_test,
-               plugin_api.studio_engines_add, plugin_api.studio_engines_remove):
+               plugin_api.studio_engines_add, plugin_api.studio_engines_remove,
+               plugin_api.studio_engines_export, plugin_api.studio_engines_import):
         assert 'from music_studio import engine_catalog' in inspect.getsource(fn)
     for fn in (plugin_api.studio_install_look_local, plugin_api.studio_install_plan,
                plugin_api.studio_install_suggest, plugin_api.studio_install_start,
@@ -244,6 +269,50 @@ def test_a_value_error_about_a_busy_take_stays_a_400(client, engines, monkeypatc
         'success': False,
         'error': 'a queued take is busy; confirm before removing it',
     }
+
+
+@pytest.mark.parametrize(
+    'method, path, body, fn, owner', ROUTE_CASES, ids=[case[3] for case in ROUTE_CASES])
+def test_a_missing_record_is_a_404_not_a_server_error(client, engines, monkeypatch,
+                                                      method, path, body, fn, owner):
+    """``TargetStore.get`` raises KeyError for an id that is not saved.
+
+    Uncaught, that is a 500 with no JSON body, which the page cannot explain.
+    """
+    module = engines[0] if owner == 'catalog' else engines[1]
+
+    def raising(*args, **kwargs):
+        raise KeyError('nope')
+
+    monkeypatch.setattr(module, fn, raising)
+    response = _send(client, method, path, body)
+    assert response.status_code == 404, response.text
+    assert response.json() == {'success': False, 'error': 'Not found.'}
+
+
+def test_the_add_route_forwards_the_wizard_kind_and_resolved_names(client, engines):
+    """The engine the page picked and the loader options detection resolved."""
+    from dashboard.plugin_api import _studio_data
+
+    resolved = {'qwen_0.6b_ace15.safetensors': 'sub/clip/qwen_0.6b_ace15.safetensors'}
+    response = client.post('/api/studio/engines', json={
+        'name': NAME, 'url': URL, 'models': MODELS,
+        'kind': 'comfyui', 'resolved': resolved})
+    assert response.status_code == 200, response.text
+    assert engines[2] == [('add_engine', _studio_data(), NAME, URL, MODELS,
+                           'comfyui', resolved)]
+
+
+def test_the_import_route_surfaces_bad_text_as_a_400(client, engines, monkeypatch):
+    """A pasted export that is not one is the page's sentence to show."""
+    def raising(data_dir, text):
+        raise ValueError('That text is not a list of music engines.')
+
+    monkeypatch.setattr(engines[0], 'import_engines', raising)
+    response = client.post('/api/studio/engines/import', json={'text': 'nope'})
+    assert response.status_code == 400, response.text
+    assert response.json() == {'success': False,
+                              'error': 'That text is not a list of music engines.'}
 
 
 def test_comfy_desktop_port_is_scanned_with_8188_still_first(monkeypatch):
