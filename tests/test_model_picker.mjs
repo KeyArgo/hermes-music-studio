@@ -196,5 +196,5 @@ test('connection status message updates after model load', async t => {
 
   await new Promise(resolve => setTimeout(resolve, 40));
 
-  assert.match(status.textContent, /Choose a configured Hermes model|Checking Hermes/i);
+  assert.match(status.textContent, /Your Hermes model is used unless|Checking Hermes/i);
 });

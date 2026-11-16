@@ -152,6 +152,19 @@ export function Studio({ ctx }) {
           .catch(err => answer(draftFailure(err)))
         return
       }
+      if (data.type === 'hermes-music-studio:models') {
+        // Hermes' provider list lives in this process, not in the loopback host the frame talks to.
+        const reply = payload => {
+          try {
+            frame.contentWindow.postMessage(
+              { type: 'hermes-music-studio:models-result', id: data.id, ...payload }, '*')
+          } catch { /* the frame went away */ }
+        }
+        Promise.resolve(ctx.rest('/studio/models'))
+          .then(choices => reply({ ok: true, choices }))
+          .catch(err => reply({ ok: false, error: String((err && err.message) || err) }))
+        return
+      }
       if (data.type !== 'hermes-music-studio:closed') return
       if (typeof ctx.navigate === 'function') ctx.navigate('/')
     }

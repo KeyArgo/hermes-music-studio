@@ -1839,7 +1839,7 @@ function saveModelPreference() {
 }
 async function loadModels() {
   try {
-    const d = await api('/studio/models');
+    const d = await modelChoices();
     modelCatalog = Array.isArray(d.providers) ? d.providers : [];
     const pref = loadModelPreference();
     fillProviders();
@@ -1970,12 +1970,43 @@ function paneDraft(request) {
       clearTimeout(timer);
       window.removeEventListener('message', onReply);
       if (data.ok) resolve({ draft: data.draft, content: data.content, written_by: 'ctx.llm' });
-      else reject(new Error(data.error || 'drafting failed'));
+      else {
+        const err = new Error(data.error || 'drafting failed');
+        if (Array.isArray(data.commands)) err.commands = data.commands;
+        reject(err);
+      }
     }
     window.addEventListener('message', onReply);
-    parentWindow.postMessage({ type: 'hermes-music-studio:draft', id,
-      prompt: request.prompt, tone: request.tone, style: request.style }, '*');
+    const message = { type: 'hermes-music-studio:draft', id,
+      prompt: request.prompt, tone: request.tone, style: request.style };
+    if (request.provider) message.provider = request.provider;
+    if (request.model) message.model = request.model;
+    parentWindow.postMessage(message, '*');
   });
+}
+
+// The model list has the same split as drafting: Hermes' providers are known in the plugin process,
+// which the pane reaches with ctx.rest. Framed, ask the pane; in a plain tab, ask the host (which can
+// only offer "Your Hermes model").
+function paneModels() {
+  return new Promise((resolve, reject) => {
+    const parentWindow = window.parent;
+    if (!parentWindow || parentWindow === window) { reject(new Error('not framed')); return; }
+    const id = 'models-' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { window.removeEventListener('message', onReply); reject(new Error('the pane did not answer')); }, 8000);
+    function onReply(event) {
+      const data = event && event.data;
+      if (!data || data.type !== 'hermes-music-studio:models-result' || data.id !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onReply);
+      if (data.ok && data.choices) resolve(data.choices); else reject(new Error(data.error || 'no model list'));
+    }
+    window.addEventListener('message', onReply);
+    parentWindow.postMessage({ type: 'hermes-music-studio:models', id }, '*');
+  });
+}
+async function modelChoices() {
+  try { return await paneModels(); } catch (e) { return api('/studio/models'); }
 }
 
 function applySuggestedDraft(draft) {
@@ -1996,9 +2027,10 @@ async function idea(action) {
   $('idea-send').disabled=true;$('idea-apply').disabled=true;$('idea-connection').textContent='Thinking…';
   const tone=$('idea-tone').value.toLowerCase(), style=Number($('idea-style').value);
   let replyNote = '';
-  try {const d = provider && model
-      ? await api('/studio/ideas',{provider,model,messages:conversation.slice(-20),action,tone,style})
-      : await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n')});
+  // Every draft goes through the pane: the host has no model, and a chosen provider/model is an
+  // override Hermes grants (or refuses, with the commands to allow it) in the plugin process.
+  try {const d = await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n'),
+      provider: provider && model ? provider : '', model: provider && model ? model : ''});
     if(action==='chat' && typeof d.content === 'string'){
       conversation.push({role:'assistant',content:d.content.slice(0,4000)});addIdea('assistant',d.content);
     } else if(action==='chat'){

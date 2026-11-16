@@ -296,3 +296,62 @@ def test_the_route_returns_the_choices(monkeypatch):
     assert payload == model_choices.list_choices()
     assert payload["default"] == {"label": "Your Hermes model"}
     assert payload["providers"][0]["slug"] == "acme"
+
+
+def test_owner_providers_come_first_with_names_and_models_only(monkeypatch):
+    """The owner's own Hermes providers are what "what is in Hermes" means; their keys and
+    addresses must never reach the page."""
+    import sys
+    import types
+
+    from music_studio import model_choices
+
+    config = types.ModuleType('hermes_cli.config')
+    config.load_config = lambda: {
+        'model': {'default': 'DeepSeek-V4.1-Flash-1017', 'provider': 'fleet', 'base_url': 'http://10.0.0.1:8890/v1'},
+        'providers': {'fleet': {'name': 'Spark A/B', 'api_key': 'sk-secret-123', 'base_url': 'http://sparka:8890/v1',
+                                'models': ['DeepSeek-V4.1-Flash-1017'], 'default_model': 'DeepSeek-V4.1-Flash-1017'}}}
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', config)
+    monkeypatch.setattr(model_choices, '_providers_module', lambda: None)
+    model_choices.reset_cache()
+    result = model_choices.list_choices()
+    text = repr(result)
+    assert result['default']['label'] == 'Your Hermes model (DeepSeek-V4.1-Flash-1017)'
+    assert result['providers'][0] == {'slug': 'fleet', 'name': 'Spark A/B', 'configured': True,
+                                      'models': ['DeepSeek-V4.1-Flash-1017'], 'source': 'your Hermes setup'}
+    assert 'sk-secret' not in text and 'sparka' not in text and '8890' not in text
+    model_choices.reset_cache()
+
+
+def test_a_slow_public_catalog_does_not_hold_the_picker(monkeypatch):
+    import sys
+    import threading
+    import types
+
+    from music_studio import model_choices
+
+    release = threading.Event()
+
+    class Slow:
+        name, display_name, hidden, env_vars = 'slow', 'Slow', False, ()
+        fallback_models = ('built-in-1',)
+        supports_model_listing = True
+
+        def fetch_models(self, **_):
+            release.wait(5)
+            return ['live-1']
+
+    fake = types.ModuleType('providers')
+    fake.list_providers = lambda: [Slow()]
+    monkeypatch.setattr(model_choices, '_providers_module', lambda: fake)
+    monkeypatch.setattr(model_choices, 'CATALOG_BUDGET_SECONDS', 0.2)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', None)
+    model_choices.reset_cache()
+    import time
+    started = time.monotonic()
+    result = model_choices.list_choices()
+    release.set()
+    assert time.monotonic() - started < 2
+    assert result['providers'][0]['models'] == ['built-in-1']
+    model_choices.reset_cache()
