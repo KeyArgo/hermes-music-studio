@@ -32,7 +32,7 @@
 <button id="nav-create" class="nav active" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span>Create</span></button>
 <button id="nav-library" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16M4 9h5M4 14h5"/></svg><span>Library</span></button>
 <button id="nav-workspaces" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M8 6V4h8v2"/></svg><span>Workspaces</span></button>
-<button id="nav-compute" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span>Compute</span></button>
+<button id="nav-engines" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><span>Music engines</span></button>
 <button id="nav-listen" class="nav" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span>REVamp</span></button>
 </nav>
 <div class="rail-bottom">
@@ -231,10 +231,108 @@
 </form>
 <div id="workspace-list" class="library"></div>
 </section>
-<section id="compute-view" class="page" hidden>
-<div class="eyebrow">04 / COMPUTE</div>
-<h1>Point at a<br><em>renderer.</em></h1>
-<p class="intro">Save named ComfyUI endpoints and check the local GPU inventory. Hermes connects to these servers; it does not launch them.</p>
+<section id="engines-view" class="page" hidden>
+<div class="eyebrow">04 / MUSIC ENGINES</div>
+<h1>Set up an<br><em>audio engine.</em></h1>
+<p class="intro">Use a music server on your network, or install one on this computer.</p>
+<div class="engines-intro">
+<button class="info-toggle" type="button" aria-expanded="false" title="Learn what a music engine is">
+<span class="info-label">What is this?</span>
+<span class="info-icon" aria-hidden="true">?</span>
+</button>
+<div class="info-text" hidden>
+<p>A music engine turns your words into audio. It can run here, on another computer, or online. ComfyUI is one app that runs music engines.</p>
+</div>
+</div>
+<div id="engine-list" class="engine-list" aria-live="polite"></div>
+<div class="engine-actions">
+<button class="button secondary" id="add-server-btn" type="button">Use a server I already have</button>
+<button class="button secondary" id="add-local-btn" type="button">Install on this computer</button>
+</div>
+<div id="server-wizard" class="engine-wizard" hidden>
+<div class="wizard-title">
+<h3>Add a music engine</h3>
+<button class="close-wizard" type="button" aria-label="Close wizard">×</button>
+</div>
+<form id="server-form" class="wizard-form">
+<fieldset>
+<legend>What kind of service do you have?</legend>
+<label class="radio-label"><input type="radio" name="engine-kind" value="comfyui" checked> ComfyUI <span class="radio-help">Runs on a computer you set up</span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="ace_server"> ACE-Step server <span class="radio-help">That project's own address</span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="hosted"> Hosted service <span class="radio-help">A website that needs a key</span></label>
+</fieldset>
+<label>Engine name <input id="server-name" maxlength="80" placeholder="e.g. Studio MiniMax box" title="Choose a name you'll recognize"><button class="help-icon" type="button" aria-describedby="help-name">?</button><span id="help-name" class="sr-only">Choose a name you'll recognize.</span></label>
+<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Examples: http://192.168.1.50:8188 or http://10.0.0.52:8188</span></label>
+<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
+<div class="wizard-actions">
+<button class="button secondary" id="test-server-btn" type="button">Test this address</button>
+</div>
+<div id="test-result" hidden class="test-result"></div>
+<div id="troubleshooting" hidden class="troubleshooting-card"></div>
+<div class="wizard-actions">
+<button class="button primary" id="add-engine-btn" type="button" disabled>Add</button>
+<button class="button secondary" id="cancel-server-btn" type="button">Cancel</button>
+</div>
+</form>
+</div>
+<div id="install-wizard" class="engine-wizard" hidden>
+<div class="wizard-title">
+<h3>Install on this computer</h3>
+<button class="close-wizard" type="button" aria-label="Close wizard">×</button>
+</div>
+<div class="wizard-form">
+<div class="install-step">
+<h4>Step 1: Get ComfyUI Desktop</h4>
+<p class="hint">ComfyUI Desktop is the music engine app. Download it from the official source.</p>
+<button class="button secondary" id="open-comfyui-link" type="button" title="Open the ComfyUI Desktop download page">Get ComfyUI Desktop ↗</button>
+<button class="button secondary" id="look-local-btn" type="button" title="Check this PC only, on ports 8000 and 8188">Look on this computer</button>
+</div>
+<div id="look-local-result" hidden class="look-local-result"></div>
+<div id="install-step-2" class="install-step" hidden>
+<h4>Step 2: Choose models folder</h4>
+<p class="hint">Choose the folder ComfyUI calls models.</p>
+<label>Models folder <input id="models-dir" maxlength="500" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models."><button class="help-icon" type="button" aria-describedby="help-models">?</button><span id="help-models" class="sr-only">Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.</span></label>
+</div>
+<div id="install-step-3" class="install-step" hidden>
+<h4>Step 3: Download files</h4>
+<button class="button secondary" id="check-space-btn" type="button">Check space</button>
+<div id="space-result" hidden class="space-result"></div>
+<div id="download-progress" hidden class="download-progress">
+<div class="progress-track" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar"></div></div>
+<p id="progress-text" class="hint"></p>
+<button class="button secondary" id="cancel-download-btn" type="button">Cancel</button>
+</div>
+<p id="install-message" class="message" role="status"></p>
+</div>
+<div id="install-done" hidden class="install-step">
+<p class="hint">Restart ComfyUI, then press "Look on this computer" to finish setup.</p>
+<button class="button secondary" id="look-again-btn" type="button">Look on this computer</button>
+</div>
+<div class="wizard-actions">
+<button class="button secondary" id="cancel-install-btn" type="button">Cancel</button>
+</div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-title">
+<div>
+<span class="kicker">ADVANCED</span>
+<h2>More options</h2>
+</div>
+</div>
+<details class="advanced-options">
+<summary>Advanced settings</summary>
+<div class="advanced-content">
+<label>Where songs are saved <input id="export-dir" maxlength="500" placeholder="~/Music/Hermes Music Studio"></label>
+<p class="hint">This folder stores the final audio files. Leave blank to use the default.</p>
+<label>Custom workflow <input id="custom-workflow" type="file" accept=".json,application/json"></label>
+<p class="hint">In ComfyUI: Workflow → Export (API). Put {{lyrics}}, {{style}}, {{duration}}, {{seed}} in the fields the studio should fill.</p>
+<div class="settings-actions">
+<button class="button primary" type="button" id="save-advanced">Save</button>
+</div>
+</div>
+</details>
+</div>
 <div class="compute-grid">
 <div class="panel">
 <div class="panel-title">
@@ -367,6 +465,8 @@
 </div>
 <p id="setup-message" class="message" role="status"></p>
 </div>
+<!-- Keep old compute-view ID for backwards compatibility -->
+<div id="compute-view" style="display: none;"></div>
 <div class="panel" id="version-panel">
 <div class="panel-title">
 <div>
