@@ -900,6 +900,7 @@ class Jobs:
             raise ValueError('invalid grace period')
         now = time.time()
         reconciled = 0
+        to_reap = []
         with self.store.locked():
             for p in self.store.all():
                 changed = False
@@ -916,13 +917,15 @@ class Jobs:
                         continue
                     # The owner is gone: never leave its ACE render burning the
                     # GPU behind a lock the kernel has already freed.
-                    self._reap_render(t)
+                    to_reap.append(t.copy())
                     t.update(state='failed', error='worker died', audio_file=None,
                              finished_at=time.time())
                     reconciled += 1
                     changed = True
                 if changed:
                     self.store.save_take(p)
+        for take in to_reap:
+            self._reap_render(take)
         return reconciled
 
     def recover(self, *, grace_seconds=SPAWN_GRACE_SECONDS):
