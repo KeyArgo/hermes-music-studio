@@ -1701,12 +1701,29 @@ function fillWorkflowTargetSelect() {
   targets.forEach(t => { const option = el('option', t.name); option.value = t.id; select.append(option); });
   if (previous && targets.some(t => t.id === previous)) select.value = previous;
 }
+// A workflow the Music engines wizard made belongs to a listed engine: show it as
+// "<model> on <server>". Uploads under More options keep the "Custom workflow:" prefix.
+function wizardWorkflowServer(workflow) {
+  const id = workflow && workflow.id;
+  for (const engine of enginesList || []) {
+    if ((engine && Array.isArray(engine.workflows) ? engine.workflows : []).some(w => w && w.id === id)) {
+      return engine.name || engine.url || '';
+    }
+  }
+  return null;
+}
+function workflowMenuLabel(workflow) {
+  const name = workflow && workflow.name ? String(workflow.name) : '';
+  const server = wizardWorkflowServer(workflow);
+  if (server !== null) return server ? `${name} on ${server}` : name;
+  return 'Custom workflow: ' + name;
+}
 function ensureEngineOption(id) {
   if (!id) return;
   const select = $('engine-select');
   if (!select || [...select.options].some(o => o.value === id)) return;
   const workflow = workflows.find(w => workflowEngineId(w) === id);
-  const option = el('option', workflow ? 'Custom workflow: ' + workflow.name : 'Missing workflow ' + id);
+  const option = el('option', workflow ? workflowMenuLabel(workflow) : 'Missing workflow ' + id);
   option.value = id;
   select.append(option);
 }
@@ -1716,9 +1733,9 @@ function fillWorkflowEngineOptions() {
   const previous = select.value;
   const add = (value, text) => { const option = el('option', text); option.value = value; select.append(option); };
   select.replaceChildren();
-  add('ace_local', 'ACE-Step 1.5');
+  add('ace_local', 'ACE-Step 1.5 (this computer)');
   add('minimax_m3_comfy', 'MiniMax Music 3');
-  workflows.forEach(w => add(workflowEngineId(w), 'Custom workflow: ' + w.name));
+  workflows.forEach(w => add(workflowEngineId(w), workflowMenuLabel(w)));
   if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
   else if (previous) { add(previous, 'Missing workflow ' + previous); select.value = previous; }
 }
@@ -1751,6 +1768,11 @@ async function refreshWorkflows() {
   try {
     const data = await api('/studio/workflows');
     workflows = data.workflows || [];
+    try {
+      const listed = await api('/studio/engines');
+      enginesList = listed.engines || [];
+      renderEngineList();
+    } catch (err) { /* keep the engine names already loaded */ }
     fillWorkflowTargetSelect();
     drawWorkflows();
     fillWorkflowEngineOptions();
@@ -2829,7 +2851,7 @@ if ($('version-panel')) {
   });
 }
 // ---------------------------------------------------------------- engines page
-let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0;
+let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0, engineTestGen = 0, lastEngineTest = null;
 function renderEngineList() {
   const container = $('engine-list');
   if (!container) return;
@@ -2875,6 +2897,7 @@ async function loadEngines() {
     const data = await api('/studio/engines');
     enginesList = data.engines || [];
     renderEngineList();
+    fillWorkflowEngineOptions();
   } catch (err) {
     // Silent fail; show empty list
     enginesList = [];
@@ -2882,17 +2905,28 @@ async function loadEngines() {
   }
 }
 async function testEngine(eng) {
+  const gen = ++engineTestGen;
+  const kind = (eng && eng.kind) || 'comfyui';
+  const url = ((eng && eng.url) || '').trim();
   testingServer = true;
   const result = $('test-result');
   if (result) result.hidden = true;
 
+  let data;
   try {
-    const data = await api('/studio/engines/test', {kind: eng.kind || 'comfyui', url: eng.url});
-    showTestResult(data);
+    data = await api('/studio/engines/test', { kind: kind, url: url });
   } catch (err) {
-    showTestResult({ok: false, message: err.message, problem: 'bad_address'});
+    data = {
+      ok: false,
+      message: err && err.message ? err.message : 'That address could not be tested.',
+      problem: 'bad_address',
+    };
   }
   testingServer = false;
+  if (gen !== engineTestGen) return;
+  lastEngineTest = { kind: kind, url: url, data: data };
+  showTestResult(data);
+  syncServerKind();
 }
 function showTestResult(data) {
   const result = $('test-result');
@@ -2901,17 +2935,20 @@ function showTestResult(data) {
 
   result.hidden = false;
   trouble.hidden = true;
+  trouble.replaceChildren();
 
   result.replaceChildren();
-  const msg = el('p', data.message || '', 'test-message');
-  result.append(msg);
+  const message = data && data.message != null ? String(data.message) : '';
+  result.append(el('p', message, 'test-message'));
 
   if (data.models && Array.isArray(data.models)) {
     const list = el('ul', '', 'model-checklist');
     for (const model of data.models) {
       const item = el('li', '', 'model-item');
-      const icon = el('span', model.status === 'ready' ? '✓' : '–', 'status-icon');
-      const label = el('span', `${model.label || model.id} (${model.status})`);
+      const status = model && model.status != null ? String(model.status) : '';
+      const name = model && (model.label || model.id) != null ? String(model.label || model.id) : '';
+      const icon = el('span', status === 'ready' ? '✓' : '–', 'status-icon');
+      const label = el('span', name + ' (' + status + ')');
       item.append(icon, label);
       list.append(item);
     }
@@ -3200,6 +3237,154 @@ async function lookLocal() {
     installMessage(err.message, true);
   }
 }
+function testedKindUrl() {
+  const form = $('server-form');
+  const picked = form && form.elements['engine-kind'];
+  const kind = picked && picked.value ? picked.value : 'comfyui';
+  const urlField = $('server-url');
+  return { kind: kind, url: urlField ? urlField.value.trim() : '' };
+}
+function readyModelIds(data) {
+  const models = data && Array.isArray(data.models) ? data.models : [];
+  const ids = [];
+  for (const model of models) {
+    if (!model || model.status !== 'ready' || typeof model.id !== 'string') continue;
+    const id = model.id.trim();
+    if (!id || ids.indexOf(id) !== -1) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+// ComfyUI is usable only when this test named a ready model. ACE-Step's check
+// has no model list; ok means that server itself is ready.
+function serverAddReady() {
+  const current = testedKindUrl();
+  if (current.kind === 'hosted' || !lastEngineTest) return false;
+  if (lastEngineTest.kind !== current.kind || lastEngineTest.url !== current.url) return false;
+  const data = lastEngineTest.data;
+  if (!data || data.ok !== true) return false;
+  if (current.kind === 'ace_server') {
+    const models = Array.isArray(data.models) ? data.models : [];
+    if (!models.length) return true;
+    return readyModelIds(data).length > 0;
+  }
+  if (current.kind === 'comfyui') return readyModelIds(data).length > 0;
+  return false;
+}
+function syncServerKind() {
+  const hosted = testedKindUrl().kind === 'hosted';
+  const testBtn = $('test-server-btn');
+  if (testBtn) {
+    testBtn.hidden = hosted;
+    const row = testBtn.closest('.wizard-actions');
+    if (row) row.hidden = hosted;
+  }
+  const keyLabel = $('api-key-label');
+  if (keyLabel) keyLabel.hidden = !hosted;
+  const modelLabel = $('server-model-label');
+  if (modelLabel) modelLabel.hidden = !hosted;
+  const addBtn = $('add-engine-btn');
+  if (addBtn) addBtn.disabled = hosted ? false : !serverAddReady();
+}
+function invalidateEngineTest() {
+  engineTestGen += 1;
+  lastEngineTest = null;
+  const result = $('test-result');
+  if (result) {
+    result.hidden = true;
+    result.replaceChildren();
+  }
+  const trouble = $('troubleshooting');
+  if (trouble) {
+    trouble.hidden = true;
+    trouble.replaceChildren();
+  }
+  syncServerKind();
+}
+function clearHostedKey() {
+  const keyEl = $('server-key');
+  if (keyEl) keyEl.value = '';
+}
+function serverMessage(text, bad = false) {
+  const node = $('server-message');
+  if (!node) return;
+  node.textContent = text == null ? '' : String(text);
+  node.classList.toggle('error', !!bad && node.textContent !== '');
+}
+function moveMessage(text, bad = false) {
+  const node = $('move-engines-message');
+  if (!node) return;
+  node.textContent = text == null ? '' : String(text);
+  node.classList.toggle('error', !!bad && node.textContent !== '');
+}
+function engineNameList(value) {
+  if (!Array.isArray(value)) return '';
+  const names = [];
+  for (const item of value) {
+    if (item == null || item === '') continue;
+    names.push(String(item));
+  }
+  return names.join(', ');
+}
+function dismissServerWizard() {
+  const form = $('server-form');
+  if (form) form.reset();
+  const comfy = document.querySelector('input[name="engine-kind"][value="comfyui"]');
+  if (comfy) comfy.checked = true;
+  clearHostedKey();
+  const modelEl = $('server-model');
+  if (modelEl) modelEl.value = '';
+  invalidateEngineTest();
+  serverMessage('');
+  const wizard = $('server-wizard');
+  if (wizard) wizard.hidden = true;
+}
+async function finishEngineAdd() {
+  dismissServerWizard();
+  await loadEngines();
+  await refreshWorkflows();
+}
+async function addServerEngine() {
+  const current = testedKindUrl();
+  const name = ($('server-name') && $('server-name').value || '').trim();
+  serverMessage('');
+  if (current.kind === 'hosted') {
+    const keyEl = $('server-key');
+    const key = keyEl ? keyEl.value : '';
+    const modelEl = $('server-model');
+    const model = modelEl ? modelEl.value.trim() : '';
+    const saved = await api('/studio/setup/cloud', {
+      name: name, url: current.url, key: key, model: model,
+    });
+    if (!saved || saved.ok !== true) {
+      serverMessage((saved && (saved.message || saved.detail || saved.error)) || 'Could not save that hosted service.', true);
+      return;
+    }
+    clearHostedKey();
+    await finishEngineAdd();
+    return;
+  }
+  if (!serverAddReady()) {
+    serverMessage('Test this address first.', true);
+    return;
+  }
+  if (current.kind === 'ace_server') {
+    const saved = await api('/studio/setup/ace', { url: current.url });
+    if (!saved || saved.ok !== true) {
+      serverMessage((saved && (saved.detail || saved.message || saved.error)) || 'That address is not an ACE-Step server.', true);
+      return;
+    }
+    await finishEngineAdd();
+    return;
+  }
+  const models = readyModelIds(lastEngineTest && lastEngineTest.data);
+  const saved = await api('/studio/engines', { kind: 'comfyui', name: name, url: current.url, models: models });
+  if (saved && saved.ok === false) {
+    serverMessage((saved.error || saved.detail || saved.message) || 'Could not add that engine.', true);
+    return;
+  }
+  await finishEngineAdd();
+}
 function useLocalComfy(url) {
   const wizard = $('server-wizard');
   if (wizard) wizard.hidden = false;
@@ -3207,8 +3392,8 @@ function useLocalComfy(url) {
   if (kind) kind.checked = true;
   const field = $('server-url');
   if (field) field.value = url || '';
-  const key = $('api-key-label');
-  if (key) key.hidden = true;
+  clearHostedKey();
+  invalidateEngineTest();
   testEngine({ kind: 'comfyui', url: url || '' });
 }
 function wireEnginesPage() {
@@ -3232,7 +3417,9 @@ function wireEnginesPage() {
     closeButtons.forEach(btn => {
       btn.addEventListener('click', (e) => {
         const wizard = e.target.closest('.engine-wizard');
-        if (wizard) wizard.hidden = true;
+        if (!wizard) return;
+        if (wizard.id === 'server-wizard') dismissServerWizard();
+        else wizard.hidden = true;
       });
     });
   }
@@ -3256,44 +3443,43 @@ function wireEnginesPage() {
     const addBtn = $('add-engine-btn');
     const cancelBtn = $('cancel-server-btn');
     const kindInputs = serverForm.querySelectorAll('input[name="engine-kind"]');
-    const apiKeyLabel = $('api-key-label');
+    const urlField = $('server-url');
 
-    // Show/hide API key field based on kind
     if (kindInputs && kindInputs.length > 0) {
       kindInputs.forEach(input => {
         input.addEventListener('change', () => {
-          if (apiKeyLabel) apiKeyLabel.hidden = input.value !== 'hosted';
+          if (testedKindUrl().kind !== 'hosted') clearHostedKey();
+          invalidateEngineTest();
+          serverMessage('');
         });
       });
     }
+    if (urlField) urlField.addEventListener('input', () => {
+      invalidateEngineTest();
+      serverMessage('');
+    });
 
     if (testBtn) testBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      const kind = serverForm.elements['engine-kind'].value;
-      const url = $('server-url').value.trim();
-      await testEngine({ kind, url });
-      if (addBtn) addBtn.disabled = false;
+      const current = testedKindUrl();
+      if (current.kind === 'hosted') return;
+      serverMessage('');
+      await testEngine({ kind: current.kind, url: current.url });
     });
 
     if (addBtn) addBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      const name = $('server-name').value.trim();
-      const kind = serverForm.elements['engine-kind'].value;
-      const url = $('server-url').value.trim();
-      const models = ['minimax_m3', 'ace15_turbo'];
       try {
-        await api('/studio/engines', { name, url, kind, models });
-        await loadEngines();
-        serverForm.reset();
-        if (serverWizard) serverWizard.hidden = true;
+        await addServerEngine();
       } catch (err) {
-        // Show error
+        serverMessage(err && err.message ? err.message : 'Could not add that engine.', true);
       }
     });
 
     if (cancelBtn) cancelBtn.addEventListener('click', () => {
-      if (serverWizard) serverWizard.hidden = true;
+      dismissServerWizard();
     });
+    syncServerKind();
   }
 
   const lookLocalBtn = $('look-local-btn');
@@ -3318,6 +3504,58 @@ function wireEnginesPage() {
   if (modelsField) modelsField.addEventListener('input', () => {
     const btn = $('download-ace-btn');
     if (btn) btn.disabled = true;
+  });
+
+  const copyEnginesBtn = $('copy-engines-btn');
+  if (copyEnginesBtn) copyEnginesBtn.addEventListener('click', async () => {
+    moveMessage('');
+    try {
+      const data = await api('/studio/engines/export');
+      const exported = data && typeof data.text === 'string' ? data.text : '';
+      try {
+        const clip = navigator.clipboard;
+        if (!clip || typeof clip.writeText !== 'function') throw new Error('clipboard unavailable');
+        await clip.writeText(exported);
+        const fallback = $('copy-engines-fallback');
+        if (fallback) fallback.hidden = true;
+        moveMessage('Copied. On your other computer, open Music engines and press Paste engines. Keys are not included.');
+      } catch (err) {
+        const fallback = $('copy-engines-fallback');
+        if (fallback) {
+          fallback.hidden = false;
+          fallback.readOnly = true;
+          fallback.value = exported;
+          fallback.focus();
+          fallback.select();
+        }
+        moveMessage('Could not copy automatically. The text is selected so you can copy it. Keys are not included.', true);
+      }
+    } catch (err) {
+      moveMessage(err && err.message ? err.message : 'Could not copy engines.', true);
+    }
+  });
+  const pasteEnginesBtn = $('paste-engines-btn');
+  if (pasteEnginesBtn) pasteEnginesBtn.addEventListener('click', () => {
+    const box = $('paste-engines-box');
+    if (box) box.hidden = false;
+  });
+  const importEnginesBtn = $('import-engines-btn');
+  if (importEnginesBtn) importEnginesBtn.addEventListener('click', async () => {
+    const area = $('paste-engines-text');
+    const text = area ? area.value : '';
+    try {
+      const data = await api('/studio/engines/import', { text: text });
+      const added = engineNameList(data && data.added);
+      const skipped = engineNameList(data && data.skipped);
+      let line = 'Added: ' + added + '  Already here: ' + skipped;
+      const errors = engineNameList(data && data.errors);
+      if (errors) line += '  ' + errors;
+      moveMessage(line);
+      await loadEngines();
+      await refreshWorkflows();
+    } catch (err) {
+      moveMessage(err && err.message ? err.message : 'Could not add those engines.', true);
+    }
   });
 }
 function showLookLocalResult(data) {
