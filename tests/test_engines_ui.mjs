@@ -605,7 +605,9 @@ test('ComfyUI Add posts only the models this test marked ready', async t => {
     ok: true,
     kind: 'comfyui',
     message: 'This is ComfyUI. ACE-Step 1.5 is ready.',
-    models: [{ id: 12, status: 'ready', label: 'not a string' }, ACE_MODEL_READY, MINIMAX_MISSING],
+    models: [{ id: 12, status: 'ready', label: 'not a string' },
+      { ...ACE_MODEL_READY, resolved: { 'qwen_4b_ace15.safetensors': 'ace/qwen_4b_ace15.safetensors' } },
+      { ...MINIMAX_MISSING, resolved: { 'x.safetensors': 'sub/x.safetensors' } }],
   };
   await clickId(doc, 'test-server-btn');
   assert.equal(doc.getElementById('add-engine-btn').disabled, false);
@@ -618,6 +620,8 @@ test('ComfyUI Add posts only the models this test marked ready', async t => {
     name: 'Studio box',
     url: COMFY_URL,
     models: ['ace15_turbo'],
+    // Exact loader names from the ready rows only, so subfolder installs render.
+    resolved: { 'qwen_4b_ace15.safetensors': 'ace/qwen_4b_ace15.safetensors' },
   });
   assert.equal(JSON.stringify(posts[0].body).includes(HOSTED_KEY), false);
   assert.equal(doc.getElementById('server-wizard').hidden, true);
