@@ -6,6 +6,14 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## Unreleased
 
+### Music engines page
+
+- **Three ways to get an engine.** Compute -> Music engines offers: point at a server you already run (ComfyUI or ACE-Step), download ACE-Step 1.5 to this computer from Comfy-Org/ACE-Step-1.5, or a hosted API. Each path tests before saving and names which check failed.
+- **Server test names the ready models.** Test asks the server for its node list and reports which music models are ready to render, for example `MiniMax Music 3` or `ACE-Step 1.5`.
+- **ACE-Step 1.5 ready-made graph.** The Download path finds a local ComfyUI Desktop, checks disk space, downloads the four ACE-Step-1.5 model files (14.7 GB) from Hugging Face at a pinned revision, verifies each by SHA-256, and shows progress. Downloads resume and can be cancelled.
+- **Copy and Paste engines.** Copy my engines exports the names and addresses (never keys) as text; on another computer, Paste engines restores them. Each computer maintains its own list in the plugin data folder, surviving plugin updates.
+- **Ready models appear in Generate menu.** After a test passes, the model names and server appear in the Music engine dropdown as, for example, `ACE-Step 1.5 on studio-pc`. A take is pinned to the engine and address it was generated with.
+
 ### Bring your own ComfyUI workflow
 
 - **Any music model your ComfyUI runs, not just MiniMax.** Settings -> Compute accepts a

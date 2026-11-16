@@ -230,12 +230,22 @@ HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback hos
   Audio is opened with `O_NOFOLLOW`, checked as a regular file, and served with `nosniff`.
   API keys are stored through Hermes' own credential store; the plugin never writes a key to its data
   directory.
-- **Network calls.** The studio calls only endpoints you configure: a ComfyUI server
-  (`COMFYUI_URL` or a saved target; a custom workflow contacts only the endpoint you saved with it), an optional ACE-Step HTTP server (`ACE_REMOTE_URL`), REVamp's
-  local API at `127.0.0.1:8114`, and — only when you press the buttons — your configured Hermes model
-  and image providers (creative partner and cover art) and Hugging Face for weights
-  (`POST /api/studio/setup/hf`). It sends no telemetry and has no cloud audio service. "Check for a
-  newer build" reports that Hermes owns updates; the studio does not fetch or install code itself.
+- **Network calls.** The studio calls only addresses you give it: a ComfyUI server (added on the
+  Music engines page, a saved target, or `COMFYUI_URL`; a custom workflow contacts only the endpoint
+  saved with it), an optional ACE-Step HTTP server (`ACE_REMOTE_URL` or the Music engines page), and
+  REVamp's local API at `127.0.0.1:8114`. **Look on this computer** checks only `127.0.0.1` ports 8000
+  and 8188. Only when you press the buttons does it reach your configured Hermes model and image
+  providers (creative partner and cover art), each Hermes provider's public model list when the model
+  picker loads (no key is sent), and Hugging Face for weights. **Download ACE-Step 1.5** fetches only
+  the four files of `Comfy-Org/ACE-Step-1.5` pinned at revision
+  `371bb1680f8c88d8c1083f6ffb6330d3d55bff76` (`split_files/diffusion_models/acestep_v1.5_turbo.safetensors`,
+  `split_files/text_encoders/qwen_0.6b_ace15.safetensors`, `split_files/text_encoders/qwen_4b_ace15.safetensors`,
+  `split_files/vae/ace_1.5_vae.safetensors`; 14.7 GB in all), and checks each against its SHA-256 before
+  using it. The older Hugging Face download (`POST /api/studio/setup/hf`) fetches the model you name. The
+  studio runs no installer, `git` or `pip`, sends no telemetry and has no cloud audio service. **Copy my
+  engines** puts names and addresses on your clipboard; keys are never included. "Check for a newer
+  build" reports that Hermes owns updates; the studio does not fetch or install code itself. ComfyUI
+  Desktop is installed by you and may update itself.
 - **Background processes.** A detached render worker per render (or batch), an ACE-Step subprocess in
   the runtime's own venv, a loopback studio host (`127.0.0.1`, a free port near 8775), `ffmpeg` for
   MiniMax's FLAC → WAV transcode, and read-only `nvidia-smi` probes for GPU attribution. Cover

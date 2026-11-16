@@ -50,6 +50,9 @@ Version 1.0.0. Measurements are from the machines named in each row.
 - **`ace_remote` is not a usable engine here.** It is registered and probes
   `/health`, but no server is deployed for it in this installation and it has
   never been exercised against a live `acestep.api_server`.
+- **YuE 2 and Stable Audio cannot be detected yet.** The Music engines page's
+  server test detects ComfyUI and ACE-Step by name. Other music models are not
+  yet recognized; you may run them, but the test will not name them.
 - A repaint or extend is only allowed on a `succeeded` take, and the child
   inherits the parent's engine. To edit on a different engine you must generate
   a new parent there.
@@ -86,8 +89,8 @@ Caveats that belong with those numbers:
 
 | Requirement | Detail |
 |---|---|
-| OS | Linux, macOS and Windows; CI runs the suites on all three. Real ACE-Step hardware use has been Linux; local ACE-Step on Windows or macOS is untested |
-| For `ace_local` | CUDA GPU with ~12 GB free, ACE-Step 1.5 runtime venv + checkpoints, ACE source tree |
+| OS | Linux, macOS and Windows; CI runs the suites on all three. Real ACE-Step hardware use has been Linux; local ACE-Step on Windows or macOS is untested. The Music engines page's "Install on this computer" download is tested on Linux; Windows and macOS rely on ComfyUI Desktop and are not yet measured |
+| For `ace_local` | CUDA GPU with ~12 GB free, ACE-Step 1.5 runtime venv + checkpoints, ACE source tree; or ComfyUI Desktop with the ACE-Step 1.5 model downloaded |
 | For `minimax_m3_comfy` | reachable ComfyUI with MiniMax Music 3 nodes and weights; `ffmpeg` on the Hermes host |
 | Users | one OS user, one Hermes profile |
 | Concurrency | one render per profile, process-wide lease |
