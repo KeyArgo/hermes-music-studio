@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from music_studio import llm_bridge
+from music_studio import llm_bridge, model_choices
 
 router = APIRouter()
 
@@ -256,14 +256,15 @@ def _complete(body: dict[str, Any]) -> str:
 
 @router.get("/studio/models")
 def studio_models(refresh: bool = False) -> JSONResponse:
-    """The model picker is empty: Hermes has no public list-models API.
+    """What Hermes knows: the default choice plus public providers and their model IDs.
 
-    A plugin cannot enumerate the owner's providers or models, so drafting uses
-    Hermes' active model. The route stays so an older page still gets a valid,
-    empty answer instead of an error.
+    ``music_studio.model_choices`` reads only the public ``providers`` registry, checks env
+    variables by membership (never their values) and never emits a base URL or config. On the
+    standalone host, where ``providers`` is absent, the answer is the default choice alone.
     """
-    return JSONResponse(content={"providers": [], "count": 0,
-                                 "provider": None, "model": None})
+    if refresh:
+        model_choices.reset_cache()
+    return JSONResponse(content=model_choices.list_choices())
 
 
 @router.post("/studio/ideas")

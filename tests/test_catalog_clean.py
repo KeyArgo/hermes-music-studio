@@ -68,7 +68,7 @@ def test_revamp_uses_only_the_patched_hermes_home(tmp_path, monkeypatch):
     assert revamp._hermes_homes() == [home]
 
 
-def test_studio_models_is_empty_without_a_public_list_api():
+def test_studio_models_returns_the_default_only_without_the_provider_registry():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -77,7 +77,7 @@ def test_studio_models_is_empty_without_a_public_list_api():
     app = FastAPI()
     app.include_router(router)
     payload = TestClient(app).get('/studio/models').json()
-    assert payload == {'providers': [], 'count': 0, 'provider': None, 'model': None}
+    assert payload == {'default': {'label': 'Your Hermes model'}, 'providers': []}
 
 
 def test_ideas_complete_sends_no_provider_or_model_override(monkeypatch):
