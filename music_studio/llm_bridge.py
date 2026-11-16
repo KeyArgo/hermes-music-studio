@@ -13,9 +13,10 @@ calls.
 Two consequences worth stating plainly, because they are visible to a user:
 
 * **Provider/model overrides are gated by the host.** Passing `provider=` or `model=` raises unless the
-  owner has set `plugins.entries.<id>.llm.allow_provider_override` / `allow_model_override`. When that
-  happens the call is retried once without the override, so a picker that is not trusted degrades to the
-  host's default model instead of failing.
+  owner has set `plugins.entries.<id>.llm.allow_provider_override` / `allow_model_override`. A refusal
+  (`PluginLlmTrustError`, or any error that names those flags) becomes ``LlmTrustError``, which carries
+  the two ``hermes config set`` commands. This module does not retry on the host's default model, and
+  it does not write those settings itself.
 * **Drafting needs the plugin process.** `standalone/app.py` is a separate loopback process with no
   `ctx`; a request there answers 503 with a sentence that says where to go, rather than pretending.
 """
@@ -37,8 +38,50 @@ class LlmUnavailable(RuntimeError):
     """No `ctx.llm` was bound — this process is not the plugin host."""
 
 
+# The owner runs these. The plugin must not write `plugins.entries.*.llm.allow_*` itself.
+TRUST_COMMANDS = (
+    "hermes config set plugins.entries.hermes-music-studio.llm.allow_provider_override true",
+    "hermes config set plugins.entries.hermes-music-studio.llm.allow_model_override true",
+)
+
+
 class LlmTrustError(RuntimeError):
-    """The host refused a provider/model override because the plugin is not trusted with it."""
+    """The host refused a provider/model override because the plugin is not trusted with it.
+
+    ``commands`` is the two ``hermes config set`` lines the owner copies. There is no second
+    attempt on the host's default model.
+    """
+
+    def __init__(self) -> None:
+        self.commands = TRUST_COMMANDS
+        super().__init__(
+            "Hermes refused the chosen provider or model. "
+            "Run these two commands, then restart Hermes:\n" + "\n".join(self.commands)
+        )
+
+    def payload(self) -> dict[str, Any]:
+        """The body the page reads: a sentence plus the two commands, as a list."""
+        return {"error": str(self), "commands": list(self.commands)}
+
+
+def _override(value: str | None) -> str | None:
+    """A provider or model id worth sending, or None when the owner left it to Hermes."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _is_trust_refusal(exc: BaseException) -> bool:
+    """Hermes' trust gate, without importing the private ``agent.plugin_llm`` module.
+
+    The host raises ``PluginLlmTrustError``. A message that names ``allow_provider_override`` or
+    ``allow_model_override`` is the same refusal when the class itself is not what was thrown.
+    """
+    if type(exc).__name__ == "PluginLlmTrustError":
+        return True
+    message = str(exc)
+    return "allow_provider_override" in message or "allow_model_override" in message
 
 
 _llm: Any = None
@@ -75,14 +118,15 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    overrides = {key: value for key, value in (("provider", provider), ("model", model)) if value}
+    overrides = {key: text for key, value in (("provider", provider), ("model", model))
+                 if (text := _override(value))}
     try:
         result = llm.complete(**kwargs, **overrides)
     except Exception as exc:  # noqa: BLE001 - the host's trust error is not importable here
-        if not overrides or "trust" not in str(exc).lower() and "override" not in str(exc).lower():
-            raise
-        # Not trusted with the override: the host's own choice is the honest fallback.
-        result = llm.complete(**kwargs)
+        if _is_trust_refusal(exc):
+            # One call. Retrying without the override would silently draft on a different model.
+            raise LlmTrustError() from exc
+        raise
     text = getattr(result, "text", None)
     if text is None and isinstance(result, dict):
         text = result.get("text")

@@ -25,6 +25,22 @@ const bar = { display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px
 const linkButton = { background: 'transparent', border: 'none', color: 'inherit', font: 'inherit',
   fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 }
 
+function draftFailure(err) {
+  // ctx.rest throws "403: {json}" for a 4xx body. Pull the page's {error, commands} back out
+  // so the frame can show the two commands; any other failure stays the host's own sentence.
+  const raw = String((err && err.message) || err)
+  const start = raw.indexOf('{')
+  if (start !== -1) {
+    try {
+      const parsed = JSON.parse(raw.slice(start))
+      if (parsed && typeof parsed.error === 'string' && Array.isArray(parsed.commands)) {
+        return { ok: false, error: parsed.error, commands: parsed.commands }
+      }
+    } catch { /* the host answered in prose */ }
+  }
+  return { ok: false, error: raw }
+}
+
 async function answering(url) {
   try {
     // Opaque on purpose: this page's origin cannot read the host's JSON, it only
@@ -125,12 +141,28 @@ export function Studio({ ctx }) {
               { type: 'hermes-music-studio:draft-result', id: data.id, ...payload }, '*')
           } catch { /* the frame went away while drafting */ }
         }
+        const body = { prompt: data.prompt, tone: data.tone, style: data.style }
+        if (data.provider) body.provider = data.provider
+        if (data.model) body.model = data.model
         Promise.resolve(ctx.rest('/studio/draft', {
           method: 'POST',
-          body: { prompt: data.prompt, tone: data.tone, style: data.style }
+          body
         }))
           .then(reply => answer({ ok: true, draft: reply && reply.draft, content: reply && reply.content }))
-          .catch(err => answer({ ok: false, error: String((err && err.message) || err) }))
+          .catch(err => answer(draftFailure(err)))
+        return
+      }
+      if (data.type === 'hermes-music-studio:models') {
+        // Hermes' provider list lives in this process, not in the loopback host the frame talks to.
+        const reply = payload => {
+          try {
+            frame.contentWindow.postMessage(
+              { type: 'hermes-music-studio:models-result', id: data.id, ...payload }, '*')
+          } catch { /* the frame went away */ }
+        }
+        Promise.resolve(ctx.rest('/studio/models'))
+          .then(choices => reply({ ok: true, choices }))
+          .catch(err => reply({ ok: false, error: String((err && err.message) || err) }))
         return
       }
       if (data.type !== 'hermes-music-studio:closed') return

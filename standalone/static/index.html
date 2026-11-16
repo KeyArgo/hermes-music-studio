@@ -125,18 +125,23 @@
 <label>Workspace<select id="workspace-select">
 <option value="default">My workspace</option>
 </select></label>
+<div class="generate-block">
+<button class="button primary" id="render" type="button">Generate song</button>
+<p id="generate-reason" class="hint generate-reason" role="status" hidden></p>
 <p id="engine-hint" class="hint">Checking engine availability…</p>
+</div>
 <div id="active-take" class="render-status" hidden>
 <div class="render-head"><strong id="active-title">Active render</strong><span id="active-state" class="pill">Queued</span></div>
 <div class="progress-track" role="progressbar" aria-label="Render progress" aria-valuemin="0" aria-valuemax="100"><div id="active-progress-bar" class="progress-bar"></div></div>
 <p id="active-progress" class="hint">Waiting…</p>
 <p id="active-detail" class="hint"></p>
 <p id="active-gpu" class="hint" hidden></p>
+<div id="active-playback" class="active-playback" hidden></div>
 </div>
-<div class="actions">
-<button class="button secondary" type="submit">Save draft</button>
-<button class="button secondary" id="approve" type="button" disabled>Approve draft</button>
-<button class="button secondary" id="preview-chorus" type="button" disabled>▶ &nbsp; Hear the chorus</button>
+<div class="actions song-actions">
+<button class="text-button" id="save-draft" type="submit">Save draft</button>
+<button class="button secondary" id="preview-chorus" type="button" disabled>Preview the chorus (renders audio)</button>
+<span id="chorus-reason" class="hint action-reason" role="status" hidden></span>
 <label class="takes-choice" for="render-takes">Takes
 <select id="render-takes" aria-label="How many takes to render">
 <option value="1">1</option>
@@ -144,7 +149,6 @@
 <option value="3">3</option>
 <option value="4">4</option>
 </select></label>
-<button class="button primary" id="render" type="button" disabled>✦ &nbsp; Build the full song</button>
 </div>
 <p id="form-message" class="message" role="status" aria-live="polite"></p>
 </form>
@@ -197,8 +201,8 @@
 <img id="cover-preview" alt="Current cover art" hidden>
 <span id="cover-placeholder">♫<small>YOUR ARTWORK</small></span>
 </div>
-<p class="hint">Generate with your configured Hermes image provider or upload your own image. Generation may use a paid provider.</p>
-<label>Or choose an image<input id="cover-input" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<p class="hint" id="cover-copy">Upload artwork for this song (PNG, JPEG or WebP, up to 2 MB).</p>
+<label>Choose an image<input id="cover-input" type="file" accept="image/png,image/jpeg,image/webp"></label>
 <button id="cover-save" class="button secondary" type="button">Save cover</button>
 <p id="cover-message" class="hint" role="status"></p>
 </div>

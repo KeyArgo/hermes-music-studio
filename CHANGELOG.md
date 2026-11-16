@@ -6,6 +6,18 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## Unreleased
 
+### Model picker and provider override
+
+- **Choose any model your Hermes knows.** The Create pane shows a model picker with your Hermes model marked recommended. After running two `hermes config set` commands and restarting Hermes, you can select any provider and model. Your choice is remembered in your browser. Configured providers are marked ready; unconfigured ones show their setup steps.
+- **Trust gates for provider and model override.** If you choose a provider or model Hermes has not approved for the plugin, the studio shows the exact commands to run. This keeps the plugin from using credentials you did not authorize.
+- **The studio connects through Hermes only.** API keys stay in Hermes' credential store. The studio never writes credentials to its own folder.
+
+### One button: Generate song
+
+- **Press Generate song to save, approve and render.** The button appears under the draft fields. It handles the save, approval with a fresh token, and render in one action. Progress is shown in a panel; the take plays and links to the library when it finishes. **Preview the chorus** remains a separate button for quick 25 second samples.
+- **Set up a music engine when you need one.** When no engine is ready, the button shows **Set up a music engine** and explains what is needed. Press it to install locally, connect to ComfyUI, or add a hosted API.
+- **Disabled states explain why.** If the button is unavailable, it shows the reason: write lyrics first, rendering in progress, or engine not ready.
+
 ### Bring your own ComfyUI workflow
 
 - **Any music model your ComfyUI runs, not just MiniMax.** Settings -> Compute accepts a

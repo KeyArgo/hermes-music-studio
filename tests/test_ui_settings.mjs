@@ -570,11 +570,14 @@ test('the create screen offers a chorus before the whole song', async t => {
   const chorus = doc.getElementById('preview-chorus');
   const render = doc.getElementById('render');
   assert.ok(chorus, 'there is a button to hear the chorus');
-  assert.match(text(chorus), /Hear the chorus/);
-  assert.match(text(render), /Build the full song/, 'the big button says what it now does');
-  // Neither is usable until a draft exists — no silent click that does nothing.
+  assert.match(text(chorus), /Preview the chorus \(renders audio\)/);
+  // This fixture has no ready engine, so the primary action is setup rather than a dead Generate.
+  assert.match(text(render), /Set up a music engine/, 'the big button says what it now does');
+  assert.equal(render.disabled, false, 'setup stays clickable');
+  const reason = text(doc.getElementById('generate-reason'));
+  assert.ok(reason, 'the line under the button says why Generate is not the action');
+  // The chorus still does nothing until a draft exists — no silent click.
   assert.equal(chorus.disabled, true);
-  assert.equal(render.disabled, true);
 });
 
 test('changing a draft in plain words posts the instruction and shows the result', async t => {

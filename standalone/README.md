@@ -30,9 +30,7 @@ the same root allows access to the same project files.
   0.5 to 3.0 and is saved with the take. ACE-Step turbo does not support that
   adjustment, so it is not offered for ACE.
 - Workspaces group songs. Cover art can be uploaded (PNG, JPEG or WebP, up to
-  2 MiB) or generated with the configured Hermes image provider. Image
-  generation may incur provider charges and requires a working Hermes image
-  backend. It is not needed for normal song creation.
+  2 MiB). The agent can save a picture as the cover.
 - The alternate 17-second instrumental sample was generated locally with
   ACE-Step 1.5 turbo and trimmed to remove its quiet tail. The original demo
   fixture remains available for existing tests and compatibility.

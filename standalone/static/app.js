@@ -36,7 +36,11 @@ async function api(path, data, method, options) {
   opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
-  if (!res.ok || value.success === false) throw new Error(value.detail || value.error || 'Request failed');
+  if (!res.ok || value.success === false) {
+    const err = new Error(value.detail || value.error || 'Request failed');
+    err.commands = value.commands;
+    throw err;
+  }
   return value;
 }
 // The desktop pane frames this page without allow-modals, so window.confirm() silently says no
@@ -81,20 +85,114 @@ function askConfirm(message, options = {}) {
     cancel.focus();
   });
 }
+function selectedEngine() {
+  return engines.find(e => e.id === form.elements.engine.value) || null;
+}
+// ComfyUI engines are MiniMax and uploaded workflows. ACE-Step is not one of them, so a missing
+// ComfyUI must not be announced while ACE is the engine on screen.
+function isComfyEngine(id) {
+  const engineId = id == null ? form.elements.engine.value : id;
+  if (engineId === 'minimax_m3_comfy' || String(engineId).startsWith('comfy_workflow:')) return true;
+  const engine = engines.find(e => e.id === engineId);
+  if (!engine) return false;
+  return [engine.label, ...(engine.requirements || [])].join(' ').toLowerCase().includes('comfy');
+}
+function engineReady() {
+  const engineId = form.elements.engine.value;
+  const targetId = form.elements.comfy_target_id ? form.elements.comfy_target_id.value : '';
+  if (engineId === 'minimax_m3_comfy' && targetId) return targetProbes[targetId]?.available === true;
+  return !!selectedEngine()?.available;
+}
+// The reason a person can act on. /status sends selectable_reason; `reason` is not a field.
+function engineProblem() {
+  const engineId = form.elements.engine.value;
+  const engine = selectedEngine();
+  if (engineId === 'minimax_m3_comfy' && form.elements.comfy_target_id.value) {
+    const targetId = form.elements.comfy_target_id.value;
+    const name = targetName(targetId) || targetId;
+    const probe = targetProbes[targetId];
+    if (!probe) return `Target ${name} has not been tested; test it before rendering.`;
+    if (!probe.available) return `Target ${name} unavailable${probe.detail ? ': ' + probe.detail : '; test it again.'}`;
+    return '';
+  }
+  if (!engine) return 'Engine status unavailable; check setup.';
+  if (engine.available) return '';
+  return engine.selectable_reason || (engine.status && engine.status.detail) || engine.error || 'check setup';
+}
+function engineStatusLine() {
+  const engine = selectedEngine();
+  const isMini = form.elements.engine.value === 'minimax_m3_comfy';
+  const problem = engineProblem();
+  if (isMini && form.elements.comfy_target_id.value) {
+    if (!problem) {
+      const name = targetName(form.elements.comfy_target_id.value) || form.elements.comfy_target_id.value;
+      return `Target ${name} is available.`;
+    }
+    return problem;
+  }
+  if (!engine) return problem || 'Engine status unavailable; check setup.';
+  if (!problem) return isMini ? `${engine.label || engine.id} default endpoint is ready.` : `${engine.label || engine.id} is ready.`;
+  return isMini
+    ? `${engine.label || engine.id} default endpoint unavailable: ${problem}`
+    : `${engine.label || engine.id} unavailable: ${problem}`;
+}
+function draftNeedsWords() {
+  return !form.elements.caption.value.trim() && !form.elements.lyrics.value.trim();
+}
 function buttons() {
-  form.querySelector('[type=submit]').disabled = busy;
+  const submit = form.querySelector('[type=submit]');
+  if (submit) submit.disabled = busy;
   $('new-song').disabled = busy;
   $('nav-library').disabled = busy;
   $('nav-workspaces').disabled = busy;
   $('nav-compute').disabled = busy;
   $('nav-listen').disabled = busy;
-  $('approve').disabled = busy || !current || dirty || current.approved;
-  const engineId = form.elements.engine.value, engine = engines.find(e => e.id === engineId), targetId = form.elements.comfy_target_id.value;
-  const ready = engineId === 'minimax_m3_comfy' && targetId ? targetProbes[targetId]?.available === true : !!engine?.available;
-  $('render').disabled = busy || !current || dirty || !current.approved || !ready;
-  // A chorus preview needs the draft saved, not approved: it renders four lines, and the person
-  // hearing it is the approval the full render still waits for.
-  if ($('preview-chorus')) $('preview-chorus').disabled = busy || !current || dirty || !ready;
+  const ready = engineReady();
+  const wordsMissing = draftNeedsWords();
+  const renderBtn = $('render');
+  const reason = $('generate-reason');
+  let why = '';
+  if (!ready) {
+    // The same button is the way out: setup, not a disabled Generate that explains nothing.
+    renderBtn.textContent = 'Set up a music engine';
+    renderBtn.disabled = false;
+    why = engineProblem();
+  } else if (busy) {
+    renderBtn.textContent = 'Generate song';
+    renderBtn.disabled = true;
+    why = 'Rendering…';
+  } else if (wordsMissing) {
+    renderBtn.textContent = 'Generate song';
+    renderBtn.disabled = true;
+    why = 'Write a style or lyrics first';
+  } else {
+    renderBtn.textContent = 'Generate song';
+    renderBtn.disabled = false;
+  }
+  if (reason) {
+    reason.textContent = why;
+    reason.hidden = !why;
+  }
+  renderBtn.title = why;
+  if (why) renderBtn.setAttribute('aria-describedby', 'generate-reason');
+  else renderBtn.removeAttribute('aria-describedby');
+  const chorus = $('preview-chorus');
+  const chorusReason = $('chorus-reason');
+  if (chorus) {
+    // A chorus preview still needs a saved draft: it renders four lines of that saved text.
+    let chorusWhy = '';
+    if (busy) chorusWhy = 'Rendering…';
+    else if (!ready) chorusWhy = why || 'Set up a music engine before previewing the chorus.';
+    else if (wordsMissing) chorusWhy = 'Write a style or lyrics first';
+    else if (!current || dirty) chorusWhy = 'Save the draft before previewing the chorus.';
+    chorus.disabled = !!(busy || !ready || wordsMissing || !current || dirty);
+    chorus.title = chorus.disabled ? chorusWhy : '';
+    if (chorusReason) {
+      const duplicate = !!(why && chorusWhy === why);
+      chorusReason.hidden = !chorusWhy || duplicate;
+      chorusReason.textContent = duplicate ? '' : chorusWhy;
+    }
+  }
   if ($('render-takes')) $('render-takes').disabled = busy;
   $('draft-state').textContent = !current ? 'New idea' : dirty ? 'Unsaved changes' : current.approved ? 'Approved' : 'Draft saved';
 }
@@ -188,6 +286,7 @@ async function deletePreset() {
 }
 async function loadProject(p) {
   if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return;
+  followed = null;
   current = p;
   try { localStorage.setItem('studio.lastProject', p.project_id); } catch (e) {}
   ensureEngineOption(p.engine);
@@ -204,20 +303,10 @@ async function loadProject(p) {
   dirty = false; engineHint(); buttons(); show('create'); message('Draft loaded.');
 }
 function engineHint() {
-  const engine = form.elements.engine.value, e = engines.find(x => x.id === engine), isMini = engine === 'minimax_m3_comfy';
+  const isMini = form.elements.engine.value === 'minimax_m3_comfy';
   $('minimax-guidance-row').hidden = !isMini;
   $('target-row').hidden = !isMini;
-  if (isMini) {
-    const targetId = form.elements.comfy_target_id.value;
-    if (targetId) {
-      const name = targetName(targetId) || targetId, probe = targetProbes[targetId];
-      $('engine-hint').textContent = !probe ? `Target ${name} has not been tested; test it before rendering.` : probe.available ? `Target ${name} is available.` : `Target ${name} unavailable${probe.detail ? ': ' + probe.detail : '; test it again.'}`;
-      return;
-    }
-    $('engine-hint').textContent = e ? (e.available ? `${e.label || e.id} default endpoint is ready.` : `${e.label || e.id} default endpoint unavailable: ${e.reason || e.error || 'check setup'}`) : 'Engine status unavailable; check setup.';
-    return;
-  }
-  $('engine-hint').textContent = e ? (e.available ? `${e.label || e.id} is ready.` : `${e.label || e.id} unavailable: ${e.reason || e.error || 'check setup'}`) : 'Engine status unavailable; check setup.';
+  $('engine-hint').textContent = engineStatusLine();
 }
 function show(view) {
   for (const name of ['create','library','workspaces','compute','listen']) { $(name+'-view').hidden = view !== name; $('nav-'+name).classList.toggle('active',view === name); }
@@ -1016,6 +1105,9 @@ function takeCapabilities(engineId) {
   const engine = engineFor(engineId);
   return engine ? {engine, capabilities: engine.capabilities || {}} : null;
 }
+// The take this page just asked for. Progress and the finished player stay on Create until
+// the person opens something else.
+let followed = null;
 function findActiveTake() {
   const live = take => take && (take.state === 'running' || take.state === 'queued');
   if (current) {
@@ -1043,10 +1135,10 @@ function gpuForTake(take) {
   }
   return null;
 }
-function renderActiveTake() {
-  const panel = $('active-take'), active = findActiveTake();
-  if (!active) { panel.hidden = true; return; }
-  const {project, take} = active, running = take.state === 'running';
+function paintActive(project, take) {
+  const panel = $('active-take'), running = take.state === 'running';
+  const playback = $('active-playback');
+  if (playback) playback.hidden = true;
   const progress = running ? Math.max(0, Math.min(99, Number(take.progress) || 0)) : 0;
   panel.hidden = false;
   $('active-title').textContent = (project.title || 'Untitled') + ' · Take ' + ((project.takes || []).findIndex(t => t.take_id === take.take_id) + 1);
@@ -1064,6 +1156,81 @@ function renderActiveTake() {
   $('active-gpu').hidden = !running;
   if (gpu) $('active-gpu').textContent = `GPU ${gpu.index}: ${gpu.name} · PID ${gpu.pid} matched in nvidia-smi`;
   else if (running) $('active-gpu').textContent = 'GPU not identified';
+}
+function playTake(project, take, index) {
+  play(STUDIO.api + `/projects/${encodeURIComponent(project.project_id)}/takes/${encodeURIComponent(take.take_id)}/audio`,
+    project.title || 'Untitled', `Take ${index}`, take.playable_edit_id);
+}
+function showFinishedTake(project, takes) {
+  const panel = $('active-take');
+  const succeeded = takes.filter(t => t.state === 'succeeded');
+  const take = succeeded[succeeded.length - 1];
+  if (!panel || !take) return;
+  const index = Math.max(1, (project.takes || []).findIndex(t => t.take_id === take.take_id) + 1);
+  panel.hidden = false;
+  $('active-title').textContent = `${project.title || 'Untitled'} · Take ${index}`;
+  $('active-state').textContent = 'Ready';
+  $('active-progress-bar').style.width = '100%';
+  $('active-progress-bar').parentElement.setAttribute('aria-valuenow', '100');
+  $('active-progress').textContent = succeeded.length > 1 ? `${succeeded.length} takes are ready to play.` : 'Finished. Play it here.';
+  $('active-detail').textContent = '';
+  $('active-gpu').hidden = true;
+  const box = $('active-playback');
+  if (!box) return;
+  box.hidden = false;
+  box.replaceChildren();
+  const playBtn = el('button', '▶ Play', 'button secondary');
+  playBtn.type = 'button';
+  playBtn.id = 'active-play';
+  playBtn.addEventListener('click', () => playTake(project, take, index));
+  const lib = el('button', 'Open in Library', 'link-button');
+  lib.type = 'button';
+  lib.id = 'active-library';
+  lib.addEventListener('click', () => { libraryFilter = null; library(); show('library'); });
+  box.append(playBtn, lib);
+  if (followed && !followed.played) {
+    followed.played = true;
+    playTake(project, take, index);
+    message('Your song is ready. It is playing here, and it is in the Library.');
+  }
+}
+function showFailedTake(takes) {
+  const panel = $('active-take');
+  const take = takes.find(t => t.state === 'failed') || takes[0];
+  if (!panel) return;
+  panel.hidden = false;
+  const box = $('active-playback');
+  if (box) box.hidden = true;
+  $('active-state').textContent = 'Failed';
+  $('active-title').textContent = 'Render failed';
+  $('active-progress-bar').style.width = '0%';
+  $('active-progress').textContent = (take && take.error) || 'The render failed.';
+  $('active-detail').textContent = '';
+  $('active-gpu').hidden = true;
+  if (followed && !followed.failed) {
+    followed.failed = true;
+    message($('active-progress').textContent, true);
+  }
+}
+function renderActiveTake() {
+  const panel = $('active-take');
+  if (!panel) return;
+  if (followed) {
+    const project = projects.find(p => p.project_id === followed.projectId);
+    const mine = project ? (project.takes || []).filter(t => followed.ids.includes(t.take_id)) : [];
+    const live = mine.find(t => t.state === 'running') || mine.find(t => t.state === 'queued');
+    if (live && project) { paintActive(project, live); return; }
+    if (mine.length && mine.every(t => t.state === 'succeeded' || t.state === 'failed')) {
+      if (mine.some(t => t.state === 'succeeded')) { showFinishedTake(project, mine); return; }
+      showFailedTake(mine);
+      return;
+    }
+  }
+  const playback = $('active-playback');
+  if (playback) playback.hidden = true;
+  const active = findActiveTake();
+  if (!active) { panel.hidden = true; return; }
+  paintActive(active.project, active.take);
 }
 async function loadHardware(force = false) {
   if (!force && Date.now() - hardwareFetchedAt < 5000) return hardware;
@@ -1085,7 +1252,9 @@ function scheduleRefresh(delay) {
 // answer; if there are several, say so and let them choose. Never overwrites a saved address.
 let autoDetected = false;
 async function autoDetectEngine() {
-  if (autoDetected) return;
+  // Only a ComfyUI engine is looking for ComfyUI. ACE-Step has its own setup, and telling
+  // that person that no ComfyUI answered sends them to the wrong place.
+  if (autoDetected || !isComfyEngine(form.elements.engine.value)) return;
   autoDetected = true;
   try {
     const configured = (await api('/settings')).settings || {};
@@ -1134,12 +1303,21 @@ $('preset-save-cancel').addEventListener('click', () => { $('preset-save-row').h
 $('preset-name').addEventListener('input', e => e.stopPropagation());
 $('preset-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); savePreset(); } });
 $('preset-delete').addEventListener('click', deletePreset);
-form.elements.engine.addEventListener('change',engineHint);
+form.elements.engine.addEventListener('change', () => {
+  engineHint();
+  buttons();
+  if (!isComfyEngine(form.elements.engine.value)) {
+    const node = $('form-message');
+    if (node && /No ComfyUI answered|Found \d+ ComfyUI|Found ComfyUI at/.test(node.textContent)) node.textContent = '';
+    return;
+  }
+  if (!engines.some(e => e.available)) autoDetectEngine();
+});
 form.elements.comfy_target_id.addEventListener('change',()=>{targetProbes={};engineHint();buttons();});
 form.elements.minimax_guidance.addEventListener('input',()=>{$('minimax-guidance-value').value=form.elements.minimax_guidance.value;});
 // Autosave. Two failures this prevents: closing the pane mid-thought loses the draft, and a
 // person cannot tell whether their typing reached the library. Debounced, silent, never an
-// approval — a saved draft is still unapproved, and rendering still needs the button.
+// approval — a saved draft is still unapproved until Generate song approves it.
 let autosaveTimer = null, autosaving = false, lastSavedAt = 0;
 function draftHasContent(d) { return Boolean((d.title || '').trim() || (d.caption || '').trim() || (d.lyrics || '').trim()); }
 function draftStateLabel(text) { const pill = $('draft-state'); if (pill) pill.textContent = text; }
@@ -1216,8 +1394,124 @@ form.addEventListener('input', () => {
 window.addEventListener('pagehide', flushNow);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
 
-form.addEventListener('submit', async e => { e.preventDefault(); if (busy) return; const savedRevision=revision; const draft=fields(); const workspace=$('workspace-select').value; busy=true; buttons(); try { const data=current ? await api('/update',{project_id:current.project_id,base_updated_at:current.updated_at,draft}) : await api('/create',{draft}); current=data.project; dirty=revision!==savedRevision; await api('/studio/assign',{project_id:current.project_id,workspace_id:workspace}); message(dirty ? 'The earlier draft was saved. Save your newer edits before approval.' : 'Draft saved. Review it before approval.'); await refreshWorkspaces(); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
-$('approve').addEventListener('click', async () => { if(busy || !current || dirty) return; busy=true; buttons(); try { const data=await api('/approve',{project_id:current.project_id,base_updated_at:current.updated_at}); current=data.project; message(dirty ? 'The saved draft was approved; newer edits still need saving.' : 'Draft approved. You can render when ready.'); await refresh(); } catch(err){message(err.message,true);} finally {busy=false; buttons();} });
+function isStale(err) {
+  return /stale draft/i.test((err && err.message) || '');
+}
+function staleExplanation() {
+  return 'This draft changed before it could be approved (stale draft), so nothing was rendered. Open the latest version from the Library and press Generate song again.';
+}
+// The token /approve compares with !== inside the write lock, so it has to be the number the
+// save just returned — not a string, and not the token from before this save.
+function versionToken(project) {
+  const token = project && project.updated_at;
+  if (typeof token === 'number' && Number.isFinite(token)) return token;
+  const number = typeof token === 'string' && token.trim() !== '' ? Number(token) : NaN;
+  if (!Number.isFinite(number)) throw new Error('The saved draft has no version number, so it was not approved or rendered.');
+  return number;
+}
+async function persistDraft() {
+  const savedRevision = revision;
+  const draft = fields();
+  const workspace = $('workspace-select').value;
+  const data = current
+    ? await api('/update', {project_id: current.project_id, base_updated_at: current.updated_at, draft})
+    : await api('/create', {draft});
+  if (!data || !data.project || !data.project.project_id) throw new Error('The draft was not saved.');
+  current = data.project;
+  dirty = revision !== savedRevision;
+  try {
+    localStorage.setItem('studio.lastProject', current.project_id);
+    if (!dirty) localStorage.removeItem('studio.draftBackup');
+  } catch (e) {}
+  await api('/studio/assign', {project_id: current.project_id, workspace_id: workspace});
+  return current;
+}
+function noteFollowed(projectId, payload) {
+  const list = payload && Array.isArray(payload.takes) ? payload.takes
+    : (payload && payload.take ? [payload.take] : []);
+  const ids = list.map(take => take && take.take_id).filter(Boolean);
+  if (!ids.length) { followed = null; return; }
+  followed = {projectId, ids, played: false, failed: false};
+}
+// ACE-Step local is configured in the setup panel. MiniMax and custom workflows use Compute.
+function opensAceSetup(id) {
+  return id === 'ace_local' || id === 'ace';
+}
+async function openEngineSetup() {
+  const id = form.elements.engine.value;
+  const ace = opensAceSetup(id);
+  show('compute');
+  const view = $('compute-view');
+  if (view) view.dataset.setup = ace ? 'ace' : 'compute';
+  try { await refreshTargets(); } catch (err) {}
+  try { await refreshWorkflows(); } catch (err) {}
+  try { await loadHardware(true); } catch (err) {}
+  try { await loadSettings(); } catch (err) {}
+  try { loadDoctor(); } catch (err) {}
+  if (ace) {
+    const tab = document.querySelector('.setup-tab[data-path="server"]');
+    if (tab) tab.click();
+    const panel = $('setup-panel');
+    if (panel && typeof panel.scrollIntoView === 'function') panel.scrollIntoView({block: 'start'});
+  }
+  const focusId = ace ? 'setup-server-url'
+    : (String(id).startsWith('comfy_workflow:') ? 'workflow-name' : 'settings-comfy-url');
+  const field = $(focusId);
+  if (field && typeof field.focus === 'function') field.focus();
+}
+async function generateSong() {
+  if (!engineReady()) { await openEngineSetup(); return; }
+  if (busy || draftNeedsWords()) return;
+  busy = true; buttons();
+  try {
+    message('Saving your draft…');
+    await persistDraft();
+    if (dirty) {
+      message('Newer edits arrived while the draft was saving, so nothing was rendered. Press Generate song again.', true);
+      return;
+    }
+    const token = versionToken(current);
+    let approved;
+    try {
+      approved = await api('/approve', {project_id: current.project_id, base_updated_at: token});
+    } catch (err) {
+      if (isStale(err)) { message(staleExplanation(), true); return; }
+      throw err;
+    }
+    if (approved && approved.project) current = approved.project;
+    const count = renderTakes(), engine_id = form.elements.engine.value;
+    let queued;
+    if (count > 1) {
+      queued = await api('/batch', {project_id: current.project_id, count, engine_id});
+      message(`Rendering ${count} takes, one after another. Follow their progress here, or open the Library.`);
+    } else {
+      const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+      queued = await api('/generate', {project_id: current.project_id, engine_id, seed});
+      message('Rendering your song. Progress shows here, and the finished take plays on this page.');
+    }
+    noteFollowed(current.project_id, queued);
+    renderActiveTake();
+    await refresh();
+  } catch (err) {
+    if (isStale(err)) message(staleExplanation(), true);
+    else message(err.message, true);
+  } finally { busy = false; buttons(); }
+}
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (busy) return;
+  busy = true; buttons();
+  try {
+    await persistDraft();
+    message(dirty ? 'The earlier draft was saved. Save your newer edits before generating.' : 'Draft saved.');
+    await refreshWorkspaces();
+    await refresh();
+  } catch (err) {
+    message(isStale(err)
+      ? 'This draft changed on the server (stale draft), so it was not overwritten. Open the latest version from the Library.'
+      : err.message, true);
+  } finally { busy = false; buttons(); }
+});
 // The decision point: four lines and 25 seconds, instead of three minutes of a whole song the
 // person has not heard yet. Polls its own take and plays it the moment it is ready.
 $('preview-chorus').addEventListener('click', async () => {
@@ -1238,7 +1532,7 @@ $('preview-chorus').addEventListener('click', async () => {
         if (take.state === 'succeeded') {
           play(STUDIO.api + `/projects/${encodeURIComponent(preview.preview_project_id)}/takes/${encodeURIComponent(takeId)}/audio`,
             (current.title || 'Untitled') + ' — chorus', 'Preview · 25 s');
-          message('That is the chorus. Like it? “Build the full song” renders the whole thing.');
+          message('That is the chorus. Like it? “Generate song” renders the whole thing.');
           await refresh();
           return;
         }
@@ -1259,23 +1553,8 @@ if (takesField) {
   try { const saved = Number(localStorage.getItem('studio.takes')); if (saved >= 1 && saved <= 4) takesField.value = String(saved); } catch (e) {}
   takesField.addEventListener('change', () => { try { localStorage.setItem('studio.takes', takesField.value); } catch (e) {} });
 }
-$('render').addEventListener('click', async () => {
-  if (busy || !current || dirty || !current.approved) return;
-  busy = true; buttons();
-  try {
-    const count = renderTakes(), engine_id = form.elements.engine.value;
-    if (count > 1) {
-      await api('/batch', {project_id:current.project_id, count, engine_id});
-      message(`Rendering ${count} takes, one after another. Follow their progress in your library.`);
-    } else {
-      const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-      await api('/generate', {project_id:current.project_id, engine_id, seed});
-      message('Take queued. Follow its progress in your library.');
-    }
-    await refresh();
-  } catch (err) { message(err.message, true); } finally { busy = false; buttons(); }
-});
-$('new-song').addEventListener('click', async () => { if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); try { localStorage.removeItem('studio.lastProject'); localStorage.removeItem('studio.draftBackup'); } catch (e) {}
+$('render').addEventListener('click', () => { generateSong(); });
+$('new-song').addEventListener('click', async () => { if (dirty && !(await askConfirm('Discard unsaved changes?', {confirmLabel:'Discard', danger:true}))) return; followed=null; current=null; form.reset(); dirty=false; showCover(null); buttons(); engineHint(); try { localStorage.removeItem('studio.lastProject'); localStorage.removeItem('studio.draftBackup'); } catch (e) {}
   clearTimeout(autosaveTimer); draftStateLabel('New idea'); message('New draft.'); show('create'); });
 for (const [id, event] of [['library-search','input'], ['library-sort','change']]) {
   const node = $(id); if (node) node.addEventListener(event, () => {
@@ -1549,24 +1828,126 @@ $('simple-mode').onclick=()=>{$('custom-fields').hidden=true;$('simple-mode').cl
 $('custom-mode').onclick=()=>{$('custom-fields').hidden=false;$('custom-mode').classList.add('active');$('simple-mode').classList.remove('active');$('mode-help').textContent='Shape the details of your song.';};
 $('metadata-toggle').onclick=()=>{const box=$('metadata-fields');box.hidden=!box.hidden;$('metadata-toggle').setAttribute('aria-expanded',String(!box.hidden));};
 $('idea-style').oninput=()=>{$('idea-style-value').value=$('idea-style').value;};
+// Load saved model choice from localStorage
+function loadModelPreference() {
+  try { return JSON.parse(localStorage.getItem('studio.modelChoice')) || {}; } catch (e) { return {}; }
+}
+function saveModelPreference() {
+  try { localStorage.setItem('studio.modelChoice', JSON.stringify({
+    provider: $('idea-provider').value, model: $('idea-model').value
+  })); } catch (e) {}
+}
 async function loadModels() {
-  try { const d=await api('/studio/models'); modelCatalog=Array.isArray(d.providers)?d.providers:[]; const select=$('idea-provider');select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);modelCatalog.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});
-    // The host is not allowed to enumerate the owner's providers; an empty list is normal and
-    // drafting goes through the Hermes agent, so it is not a connection failure.
-    if(!modelCatalog.length){$('idea-connection').textContent='Drafting goes through Hermes; write an idea and press Discuss idea or Fill my draft.';fillModels();return;}
-    if(modelCatalog.some(p=>p.slug===d.provider))select.value=d.provider; $('idea-connection').textContent='Choose a configured Hermes model.';fillModels(d.model);
-  } catch(e) { $('idea-connection').textContent='Hermes model connection unavailable. Check the Hermes installation and setup guide.'; }
+  try {
+    const d = await modelChoices();
+    modelCatalog = Array.isArray(d.providers) ? d.providers : [];
+    const pref = loadModelPreference();
+    fillProviders();
+    if (!modelCatalog.length) {
+      $('idea-connection').textContent = 'Drafting goes through Hermes; write an idea and press Discuss idea or Fill my draft.';
+      fillModels();
+      return;
+    }
+    $('idea-connection').textContent = 'Your Hermes model is used unless you pick another provider and model.';
+    // Try to restore saved preference, otherwise use first provider
+    if (pref.provider && modelCatalog.some(p => p.slug === pref.provider)) {
+      $('idea-provider').value = pref.provider;
+      fillModels(pref.model);
+    } else {
+      fillModels();
+    }
+  } catch (e) {
+    $('idea-connection').textContent = 'Hermes model connection unavailable. Check the Hermes installation and setup guide.';
+  }
 }
 // One filter over both lists: 400+ models across several providers is not something a person
 // scrolls. It matches the provider name, the model id, and 'free'.
-function ideaQuery(){const input=$('idea-filter');return (input?.value || '').trim().toLowerCase();}
-function modelMatches(p, id){const q=ideaQuery();if(!q)return true;return (id||'').toLowerCase().includes(q) || (p?.slug||'').toLowerCase().includes(q) || (p?.name||'').toLowerCase().includes(q) || (q==='free' && /(^|[-_/])free([-_/]|$)/i.test(id||''));}
-function fillProviders(preferred){const select=$('idea-provider');if(!select)return;const had=select.value;select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);const q=ideaQuery();const rows=modelCatalog.filter(p=>!q || (p.models||[]).some(m=>modelMatches(p,typeof m==='string'?m:(m.id||m.name))));rows.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});if(typeof preferred==='string' && rows.some(p=>p.slug===preferred))select.value=preferred;else if(rows.some(p=>p.slug===had))select.value=had;else if(rows.length===1)select.value=rows[0].slug;}
-function fillModels(preferred){fillProviders();const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;if(!modelMatches(p,id))return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
-$('idea-provider').onchange=()=>fillModels();
-$('idea-filter').oninput=()=>{fillProviders();fillModels();};
-$('idea-filter').onkeydown=e=>{if(e.key==='Enter' && $('idea-model').options.length>1 && !$('idea-model').value){$('idea-model').selectedIndex=1;fillModels($('idea-model').value);}};
+function ideaQuery() { const input = $('idea-filter'); return (input?.value || '').trim().toLowerCase(); }
+function modelMatches(p, id) {
+  const q = ideaQuery();
+  if (!q) return true;
+  return (id || '').toLowerCase().includes(q) || (p?.slug || '').toLowerCase().includes(q) ||
+    (p?.name || '').toLowerCase().includes(q) || (q === 'free' && /(^|[-_/])free([-_/]|$)/i.test(id || ''));
+}
+function fillProviders(preferred) {
+  const select = $('idea-provider');
+  if (!select) return;
+  const had = select.value;
+  select.replaceChildren();
+  const defaultOption = el('option', 'Your Hermes model (recommended)');
+  defaultOption.value = '';
+  select.append(defaultOption);
+  const q = ideaQuery();
+  const rows = modelCatalog.filter(p => !q || (p.models || []).some(m => modelMatches(p, typeof m === 'string' ? m : (m.id || m.name))));
+  rows.forEach(p => {
+    const label = p.name || p.slug;
+    const ready = p.configured === true ? ' (ready)' : '';
+    const o = el('option', label + ready);
+    o.value = p.slug;
+    select.append(o);
+  });
+  if (typeof preferred === 'string' && rows.some(p => p.slug === preferred)) select.value = preferred;
+  else if (rows.some(p => p.slug === had)) select.value = had;
+  else if (rows.length === 1) select.value = rows[0].slug;
+}
+function fillModels(preferred) {
+  fillProviders();
+  const p = modelCatalog.find(x => x.slug === $('idea-provider').value);
+  const select = $('idea-model');
+  select.replaceChildren();
+  const placeholder = el('option', 'Select a model');
+  placeholder.value = '';
+  select.append(placeholder);
+  (p?.models || []).forEach(m => {
+    const id = typeof m === 'string' ? m : (m.id || m.name);
+    if (!id) return;
+    if (!modelMatches(p, id)) return;
+    const option = el('option', id);
+    option.value = id;
+    select.append(option);
+  });
+  if (typeof preferred === 'string' && [...select.options].some(o => o.value === preferred)) select.value = preferred;
+  saveModelPreference();
+}
+$('idea-provider').onchange = () => { fillModels(); saveModelPreference(); };
+$('idea-model').onchange = () => { saveModelPreference(); };
+$('idea-filter').oninput = () => { fillProviders(); fillModels(); };
+$('idea-filter').onkeydown = e => {
+  if (e.key === 'Enter' && $('idea-model').options.length > 1 && !$('idea-model').value) {
+    $('idea-model').selectedIndex = 1;
+    fillModels($('idea-model').value);
+  }
+};
 function addIdea(role, text){const p=el('p',text,role==='user'?'human':'assistant');$('idea-messages').append(p);$('idea-messages').scrollTop=$('idea-messages').scrollHeight;}
+function addIdeaError(message, commands) {
+  const div = el('div', '', 'assistant error-message');
+  const msg = el('p', message);
+  div.append(msg);
+  if (Array.isArray(commands) && commands.length > 0) {
+    const cmds = el('pre', commands.join('\n'), 'commands');
+    const btn = el('button', 'Copy', 'button secondary copy-cmd');
+    btn.type = 'button';
+    btn.onclick = async () => {
+      const text = commands.join('\n');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+        } else {
+          cmds.select?.();
+          document.execCommand('copy');
+        }
+      } catch (e) {
+        cmds.select?.();
+        try { document.execCommand('copy'); } catch (e2) {}
+      }
+    };
+    div.append(cmds, btn);
+  }
+  $('idea-messages').append(div);
+  $('idea-messages').scrollTop = $('idea-messages').scrollHeight;
+}
 // A standalone host has no model of its own: the model lives in the Hermes plugin process. When the
 // page is framed by the desktop pane, it asks the pane (postMessage) and the pane calls its own
 // plugin route — the one place ctx.llm exists. In a plain browser tab there is no pane to ask, and
@@ -1589,12 +1970,43 @@ function paneDraft(request) {
       clearTimeout(timer);
       window.removeEventListener('message', onReply);
       if (data.ok) resolve({ draft: data.draft, content: data.content, written_by: 'ctx.llm' });
-      else reject(new Error(data.error || 'drafting failed'));
+      else {
+        const err = new Error(data.error || 'drafting failed');
+        if (Array.isArray(data.commands)) err.commands = data.commands;
+        reject(err);
+      }
     }
     window.addEventListener('message', onReply);
-    parentWindow.postMessage({ type: 'hermes-music-studio:draft', id,
-      prompt: request.prompt, tone: request.tone, style: request.style }, '*');
+    const message = { type: 'hermes-music-studio:draft', id,
+      prompt: request.prompt, tone: request.tone, style: request.style };
+    if (request.provider) message.provider = request.provider;
+    if (request.model) message.model = request.model;
+    parentWindow.postMessage(message, '*');
   });
+}
+
+// The model list has the same split as drafting: Hermes' providers are known in the plugin process,
+// which the pane reaches with ctx.rest. Framed, ask the pane; in a plain tab, ask the host (which can
+// only offer "Your Hermes model").
+function paneModels() {
+  return new Promise((resolve, reject) => {
+    const parentWindow = window.parent;
+    if (!parentWindow || parentWindow === window) { reject(new Error('not framed')); return; }
+    const id = 'models-' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { window.removeEventListener('message', onReply); reject(new Error('the pane did not answer')); }, 8000);
+    function onReply(event) {
+      const data = event && event.data;
+      if (!data || data.type !== 'hermes-music-studio:models-result' || data.id !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onReply);
+      if (data.ok && data.choices) resolve(data.choices); else reject(new Error(data.error || 'no model list'));
+    }
+    window.addEventListener('message', onReply);
+    parentWindow.postMessage({ type: 'hermes-music-studio:models', id }, '*');
+  });
+}
+async function modelChoices() {
+  try { return await paneModels(); } catch (e) { return api('/studio/models'); }
 }
 
 function applySuggestedDraft(draft) {
@@ -1604,6 +2016,10 @@ function applySuggestedDraft(draft) {
   dirty=true;revision++;buttons();
 }
 
+async function confirmDraftReplace() {
+  if (!(form.elements.caption.value || form.elements.lyrics.value)) return true;
+  return askConfirm('Replace the current draft fields with the suggested draft?', {confirmLabel:'Replace'});
+}
 async function idea(action) {
   const input=$('idea-input').value.trim(); if(input){conversation.push({role:'user',content:input});addIdea('user',input);$('idea-input').value='';}
   if(!conversation.some(m=>m.role==='user')){$('idea-connection').textContent='Tell me a little about the song first.';return;}
@@ -1611,26 +2027,37 @@ async function idea(action) {
   $('idea-send').disabled=true;$('idea-apply').disabled=true;$('idea-connection').textContent='Thinking…';
   const tone=$('idea-tone').value.toLowerCase(), style=Number($('idea-style').value);
   let replyNote = '';
-  try {const d = provider && model
-      ? await api('/studio/ideas',{provider,model,messages:conversation.slice(-20),action,tone,style})
-      : await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n')});
+  // Every draft goes through the pane: the host has no model, and a chosen provider/model is an
+  // override Hermes grants (or refuses, with the commands to allow it) in the plugin process.
+  try {const d = await paneDraft({action, tone, style, prompt: conversation.map(m => m.content).join('\n'),
+      provider: provider && model ? provider : '', model: provider && model ? model : ''});
     if(action==='chat' && typeof d.content === 'string'){
       conversation.push({role:'assistant',content:d.content.slice(0,4000)});addIdea('assistant',d.content);
     } else if(action==='chat'){
       // The pane's /studio/draft route returns only a draft, with no chat text. Fill the form
-      // from it and say so instead of throwing on the missing `content`.
+      // from it and say so instead of throwing on the missing `content`. A draft that is already
+      // written is not replaced until the person confirms, same as Fill my draft.
+      if (!(await confirmDraftReplace())) return;
       applySuggestedDraft(d.draft);
       replyNote = 'The Hermes agent returned a draft, not a chat reply; it is in your draft fields. Review and save it.';
       addIdea('assistant', replyNote); message(replyNote); show('create');
     } else {
-      if((form.elements.caption.value || form.elements.lyrics.value) && !(await askConfirm('Replace the current draft fields with the suggested draft?', {confirmLabel:'Replace'})))return;
+      if (!(await confirmDraftReplace())) return;
       applySuggestedDraft(d.draft);
       message('Suggested draft added. Review and save it.');show('create');
     }
     $('idea-connection').textContent = replyNote || (provider && model
       ? 'Using ' + provider + ' / ' + model + '.'
       : 'Drafted by the Hermes agent (its own model).');
-  } catch(e) {$('idea-connection').textContent=e.message;}
+  } catch(e) {
+    if (e.commands && Array.isArray(e.commands) && e.commands.length > 0) {
+      addIdeaError(e.message + '. Then restart Hermes.', e.commands);
+      $('idea-connection').textContent = 'Check the commands above and try again after restarting Hermes.';
+    } else {
+      $('idea-connection').textContent = e.message;
+      addIdea('assistant', 'Error: ' + e.message);
+    }
+  }
   finally {$('idea-send').disabled=false;$('idea-apply').disabled=false;}
 }
 $('idea-send').onclick=()=>idea('chat');$('idea-apply').onclick=()=>idea('draft');

@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from music_studio import llm_bridge
+from music_studio import llm_bridge, model_choices
 
 router = APIRouter()
 
@@ -76,9 +76,9 @@ class ChatMessage(BaseModel):
 
 
 class IdeaRequest(BaseModel):
-    # Optional since review item 1: the host's `ctx.llm` chooses the provider and model, and an override
-    # is only honoured when the owner has trusted this plugin with one. A picker that is not trusted
-    # therefore degrades to the default instead of refusing to draft.
+    # Empty means Hermes' active model. A chosen provider and model are forwarded to ctx.llm; if the
+    # host has not allowed the override, the route returns the two commands instead of drafting on
+    # a different model.
     provider: str | None = Field(default=None, max_length=MAX_NAME_CHARS)
     model: str | None = Field(default=None, max_length=MAX_NAME_CHARS)
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
@@ -184,9 +184,8 @@ def build_request(
 ) -> dict[str, Any]:
     """Build a bounded chat payload for the host's LLM facade.
 
-    ``provider`` and ``model`` are *requests*, not instructions: `ctx.llm` honours them only when the
-    owner has trusted this plugin with an override, and uses the host's own choice otherwise. Empty (or
-    missing) means "you decide", which is the default and the only behaviour without that trust.
+    ``provider`` and ``model`` are the owner's choice and are kept on the payload so ``_complete``
+    can forward them. Empty (or missing) means Hermes' active model: no override is sent.
     """
     provider = _bounded_text(provider or "", "provider", MAX_NAME_CHARS)
     model = _bounded_text(model or "", "model", MAX_NAME_CHARS)
@@ -229,22 +228,37 @@ def build_request(
     }
 
 
-def _complete(body: dict[str, Any]) -> str:
-    """Draft through the host's LLM facade, and say what is missing when there is no host.
+def _chosen(value: Any) -> str | None:
+    """A provider or model id to forward, or None when the owner left the choice to Hermes."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
-    There is no public list-models API, so the host's active model is the only honest choice:
-    no provider or model override is sent.
+
+def trust_error_response(exc: llm_bridge.LlmTrustError) -> JSONResponse:
+    """The page reads ``{error, commands}`` from a 4xx body. No fallback draft."""
+    return JSONResponse(status_code=403, content=exc.payload())
+
+
+def _complete(body: dict[str, Any]) -> str:
+    """Draft through the host's LLM facade, forwarding a chosen provider and model.
+
+    A trust refusal propagates so the route can answer with the two commands. It is not
+    turned into a draft on the host's default model.
     """
     try:
         return llm_bridge.complete(
             body["messages"],
+            provider=_chosen(body.get("provider")),
+            model=_chosen(body.get("model")),
             max_tokens=int(body.get("max_tokens") or 1200),
             temperature=float(body.get("temperature") or 0.7),
         )
     except llm_bridge.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
-    except llm_bridge.LlmTrustError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except llm_bridge.LlmTrustError:
+        raise
     except HTTPException:
         raise
     except Exception:
@@ -256,14 +270,15 @@ def _complete(body: dict[str, Any]) -> str:
 
 @router.get("/studio/models")
 def studio_models(refresh: bool = False) -> JSONResponse:
-    """The model picker is empty: Hermes has no public list-models API.
+    """What Hermes knows: the default choice plus public providers and their model IDs.
 
-    A plugin cannot enumerate the owner's providers or models, so drafting uses
-    Hermes' active model. The route stays so an older page still gets a valid,
-    empty answer instead of an error.
+    ``music_studio.model_choices`` reads only the public ``providers`` registry, checks env
+    variables by membership (never their values) and never emits a base URL or config. On the
+    standalone host, where ``providers`` is absent, the answer is the default choice alone.
     """
-    return JSONResponse(content={"providers": [], "count": 0,
-                                 "provider": None, "model": None})
+    if refresh:
+        model_choices.reset_cache()
+    return JSONResponse(content=model_choices.list_choices())
 
 
 @router.post("/studio/ideas")
@@ -281,7 +296,10 @@ def studio_ideas(payload: IdeaRequest) -> JSONResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    content = _complete(body)
+    try:
+        content = _complete(body)
+    except llm_bridge.LlmTrustError as exc:
+        return trust_error_response(exc)
     if not content.strip():
         raise HTTPException(status_code=502, detail="Hermes returned no content")
     if len(content) > MAX_REPLY_CHARS:
