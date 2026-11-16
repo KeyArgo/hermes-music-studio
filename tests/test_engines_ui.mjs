@@ -932,11 +932,40 @@ test('Paste engines imports the list and reloads the song menu', async t => {
   assert.equal(posted.length, 1);
   assert.deepEqual(posted[0].body, { text: pasted });
   assert.equal(doc.getElementById('move-engines-message').textContent,
-    'Added: Studio box  Already here: Old box  line 3 skipped');
+    'Added: Studio box. Already here: Old box. line 3 skipped');
   assert.match(text(doc.getElementById('engine-list')), /Studio box/);
   assert.match(optionByValue(doc, 'comfy_workflow:wf-ace').textContent, /^ACE-Step 1\.5 on /);
   const importAt = booted.calls.findIndex(c => c.path === '/api/studio/engines/import');
   const after = booted.calls.slice(importAt + 1);
   assert.ok(after.some(c => c.path === '/api/studio/engines' && c.method === 'GET'));
   assert.ok(after.some(c => c.path === '/api/studio/workflows' && c.method === 'GET'));
+});
+
+// Found in the 11-16 browser run: after adding an engine, Generate song still used the status
+// from before the Add, called the engine not ready, and opened setup with the old 'compute' view
+// name, which hid every page.
+test('a successful Add asks for fresh engine status', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  setValue(doc, 'server-name', 'Studio box');
+  setValue(doc, 'server-url', COMFY_URL);
+  booted.state.testReply = { ok: true, kind: 'comfyui', message: 'This is ComfyUI. ACE-Step 1.5 is ready.',
+    models: [ACE_MODEL_READY] };
+  await clickId(doc, 'test-server-btn');
+  await clickId(doc, 'add-engine-btn');
+  await pause(80);
+  const addAt = booted.calls.findIndex(c => c.path === '/api/studio/engines' && c.method === 'POST');
+  assert.ok(addAt >= 0);
+  assert.ok(booted.calls.slice(addAt + 1).some(c => c.path === '/api/status' && c.method === 'GET'));
+});
+
+test('opening setup by its old name shows the Music engines page, never a blank screen', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
+  await clickId(doc, 'manage-targets');
+  await pause(40);
+  const visible = [...doc.querySelectorAll('section.page')].filter(s => !s.hidden).map(s => s.id);
+  assert.deepEqual(visible, ['engines-view']);
 });

@@ -312,6 +312,8 @@ function engineHint() {
   $('engine-hint').textContent = engineStatusLine();
 }
 function show(view) {
+  // Compute became the Music engines page; older callers still ask for 'compute'.
+  if (view === 'compute') view = 'engines';
   for (const name of ['create','library','workspaces','engines','listen']) {
     const viewEl = $(name+'-view') || (name === 'engines' ? $('compute-view') : null);
     if (viewEl) viewEl.hidden = view !== name;
@@ -1276,6 +1278,11 @@ async function autoDetectEngine() {
     await refresh();
   } catch (e) { /* discovery is a convenience, never a failure the person must read */ }
 }
+// refresh() skips while one is in flight; this waits for it so the result is current.
+async function refreshNow() {
+  for (let i = 0; i < 50 && refreshing; i++) await new Promise(r => setTimeout(r, 100));
+  await refresh();
+}
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -1468,6 +1475,9 @@ async function openEngineSetup() {
   if (field && typeof field.focus === 'function') field.focus();
 }
 async function generateSong() {
+  // An engine added a moment ago is not in the last status yet: ask once before sending
+  // the person to setup.
+  if (!engineReady()) await refreshNow();
   if (!engineReady()) { await openEngineSetup(); return; }
   if (busy || draftNeedsWords()) return;
   busy = true; buttons();
@@ -3343,6 +3353,7 @@ async function finishEngineAdd() {
   dismissServerWizard();
   await loadEngines();
   await refreshWorkflows();
+  await refreshNow();
 }
 async function addServerEngine() {
   const current = testedKindUrl();
@@ -3554,12 +3565,15 @@ function wireEnginesPage() {
       const data = await api('/studio/engines/import', { text: text });
       const added = engineNameList(data && data.added);
       const skipped = engineNameList(data && data.skipped);
-      let line = 'Added: ' + added + '  Already here: ' + skipped;
       const errors = engineNameList(data && data.errors);
-      if (errors) line += '  ' + errors;
-      moveMessage(line);
+      const parts = [];
+      if (added) parts.push('Added: ' + added + '.');
+      if (skipped) parts.push('Already here: ' + skipped + '.');
+      if (errors) parts.push(errors);
+      moveMessage(parts.join(' ') || 'There were no engines in that text.');
       await loadEngines();
       await refreshWorkflows();
+      await refreshNow();
     } catch (err) {
       moveMessage(err && err.message ? err.message : 'Could not add those engines.', true);
     }
