@@ -257,18 +257,20 @@
 <form id="server-form" class="wizard-form">
 <fieldset>
 <legend>What kind of service do you have?</legend>
-<label class="radio-label"><input type="radio" name="engine-kind" value="comfyui" checked> ComfyUI <span class="radio-help">Runs on a computer you set up</span></label>
-<label class="radio-label"><input type="radio" name="engine-kind" value="ace_server"> ACE-Step server <span class="radio-help">That project's own address</span></label>
-<label class="radio-label"><input type="radio" name="engine-kind" value="hosted"> Hosted service <span class="radio-help">A website that needs a key</span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="comfyui" checked><span class="radio-copy">ComfyUI<span class="radio-help">Runs on a computer you set up</span></span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="ace_server"><span class="radio-copy">ACE-Step server<span class="radio-help">That project's own address</span></span></label>
+<label class="radio-label"><input type="radio" name="engine-kind" value="hosted"><span class="radio-copy">Hosted service<span class="radio-help">A website that needs a key</span></span></label>
 </fieldset>
 <label>Engine name <input id="server-name" maxlength="80" placeholder="e.g. Studio MiniMax box" title="Choose a name you'll recognize"><button class="help-icon" type="button" aria-describedby="help-name">?</button><span id="help-name" class="sr-only">Choose a name you'll recognize.</span></label>
-<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Examples: http://192.168.1.50:8188 or http://10.0.0.52:8188</span></label>
-<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
+<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Example: http://192.168.1.50:8188</span></label>
+<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" autocomplete="off" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
+<label id="server-model-label" hidden>Model <input id="server-model" maxlength="120" placeholder="optional" autocomplete="off" title="The model name your provider expects. Leave this blank if you do not have one."><button class="help-icon" type="button" aria-describedby="help-model">?</button><span id="help-model" class="sr-only">The model name your provider expects. Leave this blank if you do not have one.</span></label>
 <div class="wizard-actions">
 <button class="button secondary" id="test-server-btn" type="button">Test this address</button>
 </div>
 <div id="test-result" hidden class="test-result"></div>
 <div id="troubleshooting" hidden class="troubleshooting-card"></div>
+<p id="server-message" class="message" role="status"></p>
 <div class="wizard-actions">
 <button class="button primary" id="add-engine-btn" type="button" disabled>Add</button>
 <button class="button secondary" id="cancel-server-btn" type="button">Cancel</button>
@@ -345,6 +347,34 @@
 <span id="help-cancel-install" class="sr-only">Closes this guide. A download that already started keeps going until you press Cancel beside the progress.</span>
 </div>
 </div>
+</div>
+<div class="panel" id="move-engines">
+<div class="panel-title">
+<div>
+<span class="kicker">ANOTHER COMPUTER</span>
+<h2>Move to another computer</h2>
+</div>
+</div>
+<div class="control-row">
+<button class="button secondary" id="copy-engines-btn" type="button" title="Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied." aria-describedby="help-copy-engines">Copy my engines</button>
+<button class="help-icon" type="button" title="Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied." aria-describedby="help-copy-engines">?</button>
+<span id="help-copy-engines" class="sr-only">Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied.</span>
+</div>
+<div class="control-row">
+<button class="button secondary" id="paste-engines-btn" type="button" title="Paste engines you copied from another computer, then add them here. Keys are not included." aria-describedby="help-paste-engines">Paste engines</button>
+<button class="help-icon" type="button" title="Paste engines you copied from another computer, then add them here. Keys are not included." aria-describedby="help-paste-engines">?</button>
+<span id="help-paste-engines" class="sr-only">Paste engines you copied from another computer, then add them here. Keys are not included.</span>
+</div>
+<div id="paste-engines-box" hidden>
+<label>Engines to add <textarea id="paste-engines-text" rows="6" title="The list from Copy my engines on the other computer" aria-describedby="help-paste-text"></textarea><button class="help-icon" type="button" title="The list from Copy my engines on the other computer" aria-describedby="help-paste-text">?</button><span id="help-paste-text" class="sr-only">The list from Copy my engines on the other computer. Keys are not included.</span></label>
+<div class="control-row">
+<button class="button primary" id="import-engines-btn" type="button" title="Add the engines in this box. Engines already on this computer stay as they are." aria-describedby="help-import-engines">Add these engines</button>
+<button class="help-icon" type="button" title="Add the engines in this box. Engines already on this computer stay as they are." aria-describedby="help-import-engines">?</button>
+<span id="help-import-engines" class="sr-only">Add the engines in this box. Engines already on this computer stay as they are.</span>
+</div>
+</div>
+<textarea id="copy-engines-fallback" readonly hidden aria-label="Engines to copy"></textarea>
+<p id="move-engines-message" class="message" role="status"></p>
 </div>
 <div class="panel">
 <div class="panel-title">

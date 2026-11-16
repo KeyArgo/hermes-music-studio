@@ -17,6 +17,7 @@ try {
 
 const html = await readFile(new URL('../standalone/static/index.html', import.meta.url), 'utf8');
 const appjs = await readFile(new URL('../standalone/static/app.js', import.meta.url), 'utf8');
+const css = await readFile(new URL('../standalone/static/style.css', import.meta.url), 'utf8');
 
 test('engines page has nav-engines button with Music engines text', async t => {
   assert.match(html, /id="nav-engines"/);
@@ -169,12 +170,14 @@ function installState() {
   };
 }
 
-async function boot() {
+async function boot(extra = {}) {
   const dom = new JSDOM(html, { url: 'http://127.0.0.1:8794/', runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
   const calls = [];
   const state = {
     install: installState(),
+    workflows: extra.workflows ? extra.workflows.slice() : [],
+    engines: extra.engines ? extra.engines.slice() : [],
     hardware: {
       success: true,
       available: true,
@@ -183,6 +186,14 @@ async function boot() {
       pid_to_gpu: {},
       error: null,
     },
+    testReply: null,
+    failAdd: '',
+    failAce: '',
+    aceSoft: null,
+    failCloud: '',
+    exportText: 'Studio box http://192.168.1.50:8188',
+    importResult: { added: ['Studio box'], skipped: ['Old box'], errors: [] },
+    importError: '',
   };
   window.HTMLMediaElement.prototype.play = function () { this.__played = true; return Promise.resolve(); };
   window.HTMLMediaElement.prototype.load = function () {};
@@ -214,6 +225,65 @@ async function boot() {
     }
     if (path === '/api/studio/hardware') {
       return { ok: true, status: 200, json: async () => state.hardware };
+    }
+    if (path === '/api/studio/engines/test' && method === 'POST') {
+      const reply = state.testReply || { ok: false, message: 'Not tested.', problem: 'no_answer', models: [] };
+      return { ok: true, status: 200, json: async () => ({ success: true, ...reply }) };
+    }
+    if (path === '/api/studio/engines' && method === 'POST') {
+      if (state.failAdd) {
+        return { ok: false, status: 400, json: async () => ({ success: false, error: state.failAdd }) };
+      }
+      const models = body && Array.isArray(body.models) ? body.models : [];
+      const made = models.indexOf('ace15_turbo') !== -1
+        ? [{ id: 'wf-ace', name: 'ACE-Step 1.5', engine_id: 'comfy_workflow:wf-ace' }]
+        : [];
+      if (made.length) {
+        state.workflows = [{ id: 'wf-ace', name: 'ACE-Step 1.5', target_id: 'tgt-1', placeholders: [] }];
+      }
+      state.engines = [{
+        id: 'tgt-1', kind: 'comfyui', name: body && body.name, url: body && body.url, status: 'ready',
+        workflows: made,
+      }];
+      return { ok: true, status: 200, json: async () => ({
+        success: true, ok: true,
+        target: { id: 'tgt-1', name: body && body.name, url: body && body.url },
+        workflows: state.workflows,
+      }) };
+    }
+    if (path === '/api/studio/engines' && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ success: true, engines: (state.engines || []).slice() }) };
+    }
+    if (path === '/api/studio/workflows' && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ success: true, workflows: (state.workflows || []).slice() }) };
+    }
+    if (path === '/api/studio/setup/ace' && method === 'POST') {
+      if (state.failAce) {
+        return { ok: false, status: 400, json: async () => ({ success: false, error: state.failAce }) };
+      }
+      if (state.aceSoft) {
+        const soft = state.aceSoft;
+        return { ok: true, status: 200, json: async () => ({ ...soft }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, saved: true, url: body && body.url, detail: 'ACE server answers' }) };
+    }
+    if (path === '/api/studio/setup/cloud' && method === 'POST') {
+      if (state.failCloud) {
+        return { ok: false, status: 400, json: async () => ({ success: false, error: state.failCloud }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true, name: body && body.name, url: body && body.url, has_key: true }) };
+    }
+    if (path === '/api/studio/setup/cloud' && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ success: true, endpoints: [] }) };
+    }
+    if (path === '/api/studio/engines/export' && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ text: state.exportText }) };
+    }
+    if (path === '/api/studio/engines/import' && method === 'POST') {
+      if (state.importError) {
+        return { ok: false, status: 400, json: async () => ({ success: false, error: state.importError }) };
+      }
+      return { ok: true, status: 200, json: async () => state.importResult };
     }
     const settings = { success: true, settings: { minimax: {} },
       samplers: ['euler'], schedulers: ['simple'],
@@ -406,4 +476,463 @@ test('cancel stops the download and offers Resume', async t => {
   const posts = booted.calls.filter(c => c.path === '/api/studio/install/jobs' && c.method === 'POST');
   assert.equal(posts.length, 2);
   assert.equal(posts[1].body.models_dir, SUGGEST_DIR);
+});
+
+const COMFY_URL = 'http://192.168.1.50:8188';
+const ACE_URL = 'http://192.168.1.40:8000';
+const HOSTED_URL = 'https://api.example.com/v1';
+const HOSTED_KEY = 'super-secret-key-9f3a';
+const MINIMAX_MISSING = { id: 'minimax_m3', label: 'MiniMax Music 3', status: 'missing_files' };
+const ACE_MODEL_MISSING = { id: 'ace15_turbo', label: 'ACE-Step 1.5', status: 'missing_files' };
+const ACE_MODEL_READY = { id: 'ace15_turbo', label: 'ACE-Step 1.5', status: 'ready' };
+const MINIMAX_READY = { id: 'minimax_m3', label: 'MiniMax Music 3', status: 'ready' };
+
+function callsTo(calls, path, method) {
+  return calls.filter(c => c.path === path && c.method === method);
+}
+
+function setValue(doc, id, value) {
+  const field = doc.getElementById(id);
+  assert.ok(field, id);
+  field.value = value;
+  field.dispatchEvent(new doc.defaultView.Event('input', { bubbles: true }));
+  return field;
+}
+
+function pickKind(doc, value) {
+  const input = doc.querySelector('input[name="engine-kind"][value="' + value + '"]');
+  assert.ok(input, value);
+  input.checked = true;
+  input.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
+  return input;
+}
+
+async function openServer(booted) {
+  const doc = booted.window.document;
+  doc.getElementById('nav-engines').click();
+  await pause(80);
+  doc.getElementById('add-server-btn').click();
+  return doc;
+}
+
+async function clickId(doc, id) {
+  doc.getElementById(id).click();
+  await pause(80);
+}
+
+test('Add stays off until the current kind and address test ready', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  const add = doc.getElementById('add-engine-btn');
+  assert.equal(add.disabled, true);
+
+  setValue(doc, 'server-name', 'Studio box');
+  setValue(doc, 'server-url', COMFY_URL);
+  booted.state.testReply = {
+    ok: false,
+    message: 'Nothing answered at that address.',
+    problem: 'no_answer',
+    models: [ACE_MODEL_READY],
+  };
+  await clickId(doc, 'test-server-btn');
+  assert.equal(add.disabled, true);
+  assert.equal(doc.getElementById('troubleshooting').hidden, false);
+  assert.match(text(doc.getElementById('troubleshooting')), /Firewall blocking/);
+  assert.match(text(doc.getElementById('test-result')), /Nothing answered at that address/);
+
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. Neither music model is ready.',
+    models: [MINIMAX_MISSING, ACE_MODEL_MISSING],
+  };
+  await clickId(doc, 'test-server-btn');
+  assert.equal(add.disabled, true);
+
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. <b>ACE-Step 1.5</b> is ready.',
+    models: [{ id: 'ace15_turbo', label: 'ACE <i>Step</i>', status: 'ready' }, MINIMAX_MISSING],
+  };
+  await clickId(doc, 'test-server-btn');
+  const result = doc.getElementById('test-result');
+  assert.equal(add.disabled, false);
+  assert.match(text(result), /<b>ACE-Step 1\.5<\/b>/);
+  assert.match(text(result), /ACE <i>Step<\/i>/);
+  assert.equal(result.querySelector('b'), null);
+  assert.equal(result.querySelector('i'), null);
+  assert.deepEqual(callsTo(booted.calls, '/api/studio/engines/test', 'POST').pop().body, {
+    kind: 'comfyui', url: COMFY_URL,
+  });
+
+  setValue(doc, 'server-url', COMFY_URL + '/x');
+  assert.equal(add.disabled, true);
+  assert.equal(doc.getElementById('test-result').hidden, true);
+  assert.equal(text(doc.getElementById('test-result')), '');
+  assert.equal(doc.getElementById('troubleshooting').hidden, true);
+
+  setValue(doc, 'server-url', COMFY_URL);
+  assert.equal(add.disabled, true);
+  assert.equal(text(doc.getElementById('test-result')), '');
+
+  await clickId(doc, 'test-server-btn');
+  assert.equal(add.disabled, false);
+  assert.deepEqual(callsTo(booted.calls, '/api/studio/engines/test', 'POST').pop().body, {
+    kind: 'comfyui', url: COMFY_URL,
+  });
+
+  pickKind(doc, 'ace_server');
+  assert.equal(add.disabled, true);
+  assert.equal(doc.getElementById('test-result').hidden, true);
+  assert.equal(text(doc.getElementById('test-result')), '');
+  assert.equal(text(doc.getElementById('troubleshooting')), '');
+
+  pickKind(doc, 'comfyui');
+  assert.equal(add.disabled, true);
+  assert.equal(doc.getElementById('test-server-btn').hidden, false);
+});
+
+test('ComfyUI Add posts only the models this test marked ready', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  setValue(doc, 'server-name', 'Studio box');
+  setValue(doc, 'server-url', COMFY_URL);
+  setValue(doc, 'server-key', HOSTED_KEY);
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. ACE-Step 1.5 is ready.',
+    models: [{ id: 12, status: 'ready', label: 'not a string' }, ACE_MODEL_READY, MINIMAX_MISSING],
+  };
+  await clickId(doc, 'test-server-btn');
+  assert.equal(doc.getElementById('add-engine-btn').disabled, false);
+  await clickId(doc, 'add-engine-btn');
+
+  let posts = callsTo(booted.calls, '/api/studio/engines', 'POST');
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].body, {
+    kind: 'comfyui',
+    name: 'Studio box',
+    url: COMFY_URL,
+    models: ['ace15_turbo'],
+  });
+  assert.equal(JSON.stringify(posts[0].body).includes(HOSTED_KEY), false);
+  assert.equal(doc.getElementById('server-wizard').hidden, true);
+
+  doc.getElementById('add-server-btn').click();
+  setValue(doc, 'server-name', 'Other box');
+  setValue(doc, 'server-url', COMFY_URL);
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. MiniMax Music 3 is ready.',
+    models: [MINIMAX_READY, ACE_MODEL_MISSING],
+  };
+  await clickId(doc, 'test-server-btn');
+  await clickId(doc, 'add-engine-btn');
+  posts = callsTo(booted.calls, '/api/studio/engines', 'POST');
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts[1].body, {
+    kind: 'comfyui',
+    name: 'Other box',
+    url: COMFY_URL,
+    models: ['minimax_m3'],
+  });
+});
+
+test('ACE-Step server is tested as ace_server and saved with setup/ace', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  pickKind(doc, 'ace_server');
+  setValue(doc, 'server-name', 'ACE box');
+  setValue(doc, 'server-url', ACE_URL);
+
+  booted.state.testReply = {
+    ok: false,
+    kind: 'ace_server',
+    message: 'That address is not an ACE-Step server.',
+    problem: 'not_ace',
+    models: [],
+  };
+  await clickId(doc, 'test-server-btn');
+  assert.equal(doc.getElementById('add-engine-btn').disabled, true);
+  assert.match(text(doc.getElementById('troubleshooting')), /Not an ACE server/);
+
+  booted.state.testReply = {
+    ok: true,
+    kind: 'ace_server',
+    message: 'This is an ACE-Step server.',
+    models: [],
+  };
+  await clickId(doc, 'test-server-btn');
+  assert.equal(doc.getElementById('add-engine-btn').disabled, false);
+  assert.match(text(doc.getElementById('test-result')), /This is an ACE-Step server\./);
+  assert.deepEqual(callsTo(booted.calls, '/api/studio/engines/test', 'POST').map(c => c.body), [
+    { kind: 'ace_server', url: ACE_URL },
+    { kind: 'ace_server', url: ACE_URL },
+  ]);
+
+  booted.state.aceSoft = { ok: false, detail: 'nothing answered at the address' };
+  await clickId(doc, 'add-engine-btn');
+  assert.equal(doc.getElementById('server-wizard').hidden, false);
+  const message = doc.getElementById('server-message');
+  assert.ok(message);
+  assert.equal(message.classList.contains('error'), true);
+  assert.equal(message.textContent, 'nothing answered at the address');
+  assert.equal(message.querySelector('img'), null);
+  assert.equal(callsTo(booted.calls, '/api/studio/engines', 'POST').length, 0);
+
+  booted.state.aceSoft = null;
+  await clickId(doc, 'add-engine-btn');
+  assert.equal(doc.getElementById('server-wizard').hidden, true);
+  assert.deepEqual(callsTo(booted.calls, '/api/studio/setup/ace', 'POST').map(c => c.body), [
+    { url: ACE_URL },
+    { url: ACE_URL },
+  ]);
+  assert.equal(callsTo(booted.calls, '/api/studio/engines', 'POST').length, 0);
+});
+
+test('a hosted service posts the key only to setup/cloud and then clears it', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  pickKind(doc, 'hosted');
+  assert.equal(doc.getElementById('test-server-btn').hidden, true);
+  assert.equal(doc.getElementById('add-engine-btn').disabled, false);
+  assert.equal(doc.getElementById('api-key-label').hidden, false);
+  const modelLabel = doc.getElementById('server-model-label');
+  assert.ok(modelLabel);
+  assert.equal(modelLabel.hidden, false);
+
+  setValue(doc, 'server-name', 'Hosted box');
+  setValue(doc, 'server-url', HOSTED_URL);
+  setValue(doc, 'server-model', 'music-large');
+  setValue(doc, 'server-key', HOSTED_KEY);
+  booted.state.failCloud = 'an API key is required for a hosted endpoint';
+  await clickId(doc, 'add-engine-btn');
+  assert.equal(doc.getElementById('server-wizard').hidden, false);
+  const message = doc.getElementById('server-message');
+  assert.equal(message.textContent, 'an API key is required for a hosted endpoint');
+  assert.equal(message.classList.contains('error'), true);
+  assert.equal(doc.getElementById('server-key').value, HOSTED_KEY);
+  assert.equal(callsTo(booted.calls, '/api/studio/engines', 'POST').length, 0);
+  assert.equal(callsTo(booted.calls, '/api/studio/engines/test', 'POST').length, 0);
+
+  booted.state.failCloud = '';
+  await clickId(doc, 'add-engine-btn');
+  const cloud = callsTo(booted.calls, '/api/studio/setup/cloud', 'POST');
+  assert.deepEqual(cloud.map(c => c.body), [
+    { name: 'Hosted box', url: HOSTED_URL, key: HOSTED_KEY, model: 'music-large' },
+    { name: 'Hosted box', url: HOSTED_URL, key: HOSTED_KEY, model: 'music-large' },
+  ]);
+  const leaked = booted.calls.filter(c => JSON.stringify(c).includes(HOSTED_KEY));
+  assert.equal(leaked.length, 2);
+  assert.ok(leaked.every(c => c.path === '/api/studio/setup/cloud' && c.method === 'POST'));
+  assert.equal(doc.getElementById('server-key').value, '');
+  assert.equal(doc.body.textContent.includes(HOSTED_KEY), false);
+  assert.equal(doc.getElementById('server-wizard').innerHTML.includes(HOSTED_KEY), false);
+  assert.equal(doc.getElementById('server-wizard').hidden, true);
+  assert.equal(doc.getElementById('test-server-btn').hidden, false);
+  assert.equal(doc.getElementById('api-key-label').hidden, true);
+});
+
+test('a successful Add closes the wizard, reloads engines, and shows the new workflow', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  const name = 'Studio <b>box</b>';
+  setValue(doc, 'server-name', name);
+  setValue(doc, 'server-url', COMFY_URL);
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. ACE-Step 1.5 is ready.',
+    models: [ACE_MODEL_READY, MINIMAX_MISSING],
+  };
+  await clickId(doc, 'test-server-btn');
+  await clickId(doc, 'add-engine-btn');
+
+  assert.equal(doc.getElementById('server-wizard').hidden, true);
+  const addAt = booted.calls.findIndex(c => c.path === '/api/studio/engines' && c.method === 'POST');
+  assert.ok(addAt >= 0);
+  const after = booted.calls.slice(addAt + 1);
+  assert.ok(after.some(c => c.path === '/api/studio/engines' && c.method === 'GET'));
+  assert.ok(after.some(c => c.path === '/api/studio/workflows' && c.method === 'GET'));
+  const list = doc.getElementById('engine-list');
+  assert.match(text(list), /Studio <b>box<\/b>/);
+  assert.equal(list.querySelector('b'), null);
+  const added = [...doc.getElementById('engine-select').options].find(o => o.value === 'comfy_workflow:wf-ace');
+  assert.ok(added);
+  assert.match(added.textContent, /^ACE-Step 1\.5 on /);
+  assert.equal([...doc.getElementById('engine-select').options].some(o => o.textContent === 'Custom workflow: ACE-Step 1.5'), false);
+});
+
+test('a failed Add stays in the wizard and shows the server error as text', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = await openServer(booted);
+  setValue(doc, 'server-name', 'Studio box');
+  setValue(doc, 'server-url', COMFY_URL);
+  booted.state.testReply = {
+    ok: true,
+    kind: 'comfyui',
+    message: 'This is ComfyUI. ACE-Step 1.5 is ready.',
+    models: [ACE_MODEL_READY],
+  };
+  await clickId(doc, 'test-server-btn');
+  const fail = 'Could not save <img src=x onerror=alert(1)>';
+  booted.state.failAdd = fail;
+  await clickId(doc, 'add-engine-btn');
+
+  assert.equal(doc.getElementById('server-wizard').hidden, false);
+  const message = doc.getElementById('server-message');
+  assert.ok(message);
+  assert.equal(message.classList.contains('error'), true);
+  assert.equal(message.textContent, fail);
+  assert.equal(message.querySelector('img'), null);
+  assert.equal(doc.querySelector('#server-wizard img'), null);
+  assert.equal(doc.getElementById('add-engine-btn').disabled, false);
+  const addAt = booted.calls.findIndex(c => c.path === '/api/studio/engines' && c.method === 'POST');
+  assert.ok(addAt >= 0);
+  assert.equal(booted.calls.slice(addAt + 1).some(c => c.path === '/api/studio/workflows'), false);
+});
+
+test('the ui does not show the private example address', () => {
+  assert.doesNotMatch(html, /10\.0\.0\.52/);
+  assert.doesNotMatch(appjs, /10\.0\.0\.52/);
+  assert.doesNotMatch(css, /10\.0\.0\.52/);
+  assert.match(html, /placeholder="http:\/\/192\.168\.1\.50:8188"/);
+  assert.match(html, /Example: http:\/\/192\.168\.1\.50:8188/);
+});
+
+test('wizard-made ACE-Step 1.5 is listed by name and uploads keep the prefix', async t => {
+  const booted = await boot({
+    workflows: [
+      { id: 'wf-ace', name: 'ACE-Step 1.5', target_id: 't1' },
+      { id: 'wf-up', name: 'Night bus', target_id: 't1' },
+    ],
+    engines: [{
+      id: 't1', name: 'Studio', url: COMFY_URL, kind: 'comfyui',
+      workflows: [
+        { id: 'wf-ace', name: 'ACE-Step 1.5', engine_id: 'comfy_workflow:wf-ace' },
+      ],
+    }],
+  });
+  t.after(() => booted.window.close());
+  await pause(80);
+  const doc = booted.window.document;
+  const option = value => [...doc.getElementById('engine-select').options].find(item => item.value === value);
+  assert.equal(option('ace_local').textContent, 'ACE-Step 1.5 (this computer)');
+  assert.equal(option('minimax_m3_comfy').textContent, 'MiniMax Music 3');
+  assert.equal(option('comfy_workflow:wf-ace').textContent, 'ACE-Step 1.5 on Studio');
+  assert.equal(option('comfy_workflow:wf-up').textContent, 'Custom workflow: Night bus');
+
+});
+
+test('engine kind radios keep the circle beside the title', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
+  const style = doc.createElement('style');
+  style.textContent = css;
+  doc.head.appendChild(style);
+  const label = doc.querySelector('#server-form label.radio-label');
+  const input = label.querySelector('input[type="radio"]');
+  const copy = label.querySelector('.radio-copy');
+  assert.equal(label.firstElementChild, input);
+  assert.equal(copy.textContent, 'ComfyUIRuns on a computer you set up');
+  assert.equal(copy.querySelector('.radio-help').textContent, 'Runs on a computer you set up');
+  const view = booted.window.getComputedStyle(label);
+  assert.equal(view.display, 'flex');
+  assert.equal(view.flexDirection, 'row');
+  const radio = booted.window.getComputedStyle(input);
+  assert.notEqual(radio.width, '100%');
+  assert.match(css, /\.wizard-form label\.radio-label \{[^}]*display:\s*flex/);
+  assert.match(css, /\.wizard-form label\.radio-label input\[type="radio"\] \{[^}]*width:\s*auto/);
+});
+
+function optionByValue(doc, value) {
+  return [...doc.getElementById('engine-select').options].find(item => item.value === value);
+}
+
+test('Copy my engines copies the export text and falls back to a selected box', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
+  doc.getElementById('nav-engines').click();
+  await pause(80);
+  const copied = [];
+  Object.defineProperty(booted.window.navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: value => { copied.push(value); return Promise.resolve(); } },
+  });
+  const button = doc.getElementById('copy-engines-btn');
+  const help = 'Copies the names and addresses of your engines so you can paste them on another computer. Keys are not copied.';
+  assert.equal(button.textContent, 'Copy my engines');
+  assert.equal(button.title, help);
+  assert.equal(doc.getElementById(button.getAttribute('aria-describedby')).textContent, help);
+  await clickId(doc, 'copy-engines-btn');
+  assert.deepEqual(copied, ['Studio box http://192.168.1.50:8188']);
+  assert.equal(callsTo(booted.calls, '/api/studio/engines/export', 'GET').length, 1);
+  assert.equal(doc.getElementById('move-engines-message').textContent,
+    'Copied. On your other computer, open Music engines and press Paste engines. Keys are not included.');
+  assert.equal(doc.getElementById('copy-engines-fallback').hidden, true);
+
+  Object.defineProperty(booted.window.navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: () => Promise.reject(new Error('denied')) },
+  });
+  await clickId(doc, 'copy-engines-btn');
+  const fallback = doc.getElementById('copy-engines-fallback');
+  assert.equal(fallback.hidden, false);
+  assert.equal(fallback.readOnly, true);
+  assert.equal(fallback.value, 'Studio box http://192.168.1.50:8188');
+  assert.equal(fallback.selectionStart, 0);
+  assert.equal(fallback.selectionEnd, fallback.value.length);
+  assert.match(doc.getElementById('move-engines-message').textContent, /Could not copy automatically/);
+  assert.equal(doc.getElementById('move-engines-message').textContent.includes('Copied. On your other computer'), false);
+});
+
+test('Paste engines imports the list and reloads the song menu', async t => {
+  const booted = await boot();
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
+  doc.getElementById('nav-engines').click();
+  await pause(80);
+  const paste = doc.getElementById('paste-engines-btn');
+  assert.equal(paste.textContent, 'Paste engines');
+  assert.ok(paste.title);
+  assert.ok(doc.getElementById(paste.getAttribute('aria-describedby')));
+  const addThese = doc.getElementById('import-engines-btn');
+  assert.equal(addThese.textContent, 'Add these engines');
+  assert.ok(addThese.title);
+  assert.ok(doc.getElementById(addThese.getAttribute('aria-describedby')));
+  assert.equal(doc.getElementById('paste-engines-box').hidden, true);
+  paste.click();
+  assert.equal(doc.getElementById('paste-engines-box').hidden, false);
+  const pasted = 'Studio box http://192.168.1.9:8188';
+  doc.getElementById('paste-engines-text').value = pasted;
+  booted.state.importResult = { added: ['Studio box'], skipped: ['Old box'], errors: ['line 3 skipped'] };
+  booted.state.workflows = [{ id: 'wf-ace', name: 'ACE-Step 1.5', target_id: 't9' }];
+  booted.state.engines = [{
+    id: 't9', name: 'Studio box', url: 'http://192.168.1.9:8188', kind: 'comfyui',
+    workflows: [{ id: 'wf-ace', name: 'ACE-Step 1.5', engine_id: 'comfy_workflow:wf-ace' }],
+  }];
+  assert.equal(optionByValue(doc, 'comfy_workflow:wf-ace'), undefined);
+  await clickId(doc, 'import-engines-btn');
+  const posted = callsTo(booted.calls, '/api/studio/engines/import', 'POST');
+  assert.equal(posted.length, 1);
+  assert.deepEqual(posted[0].body, { text: pasted });
+  assert.equal(doc.getElementById('move-engines-message').textContent,
+    'Added: Studio box  Already here: Old box  line 3 skipped');
+  assert.match(text(doc.getElementById('engine-list')), /Studio box/);
+  assert.match(optionByValue(doc, 'comfy_workflow:wf-ace').textContent, /^ACE-Step 1\.5 on /);
+  const importAt = booted.calls.findIndex(c => c.path === '/api/studio/engines/import');
+  const after = booted.calls.slice(importAt + 1);
+  assert.ok(after.some(c => c.path === '/api/studio/engines' && c.method === 'GET'));
+  assert.ok(after.some(c => c.path === '/api/studio/workflows' && c.method === 'GET'));
 });
