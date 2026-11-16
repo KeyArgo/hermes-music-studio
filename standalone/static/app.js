@@ -36,7 +36,11 @@ async function api(path, data, method, options) {
   opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
-  if (!res.ok || value.success === false) throw new Error(value.detail || value.error || 'Request failed');
+  if (!res.ok || value.success === false) {
+    const err = new Error(value.detail || value.error || 'Request failed');
+    err.commands = value.commands;
+    throw err;
+  }
   return value;
 }
 // The desktop pane frames this page without allow-modals, so window.confirm() silently says no
@@ -1549,24 +1553,126 @@ $('simple-mode').onclick=()=>{$('custom-fields').hidden=true;$('simple-mode').cl
 $('custom-mode').onclick=()=>{$('custom-fields').hidden=false;$('custom-mode').classList.add('active');$('simple-mode').classList.remove('active');$('mode-help').textContent='Shape the details of your song.';};
 $('metadata-toggle').onclick=()=>{const box=$('metadata-fields');box.hidden=!box.hidden;$('metadata-toggle').setAttribute('aria-expanded',String(!box.hidden));};
 $('idea-style').oninput=()=>{$('idea-style-value').value=$('idea-style').value;};
+// Load saved model choice from localStorage
+function loadModelPreference() {
+  try { return JSON.parse(localStorage.getItem('studio.modelChoice')) || {}; } catch (e) { return {}; }
+}
+function saveModelPreference() {
+  try { localStorage.setItem('studio.modelChoice', JSON.stringify({
+    provider: $('idea-provider').value, model: $('idea-model').value
+  })); } catch (e) {}
+}
 async function loadModels() {
-  try { const d=await api('/studio/models'); modelCatalog=Array.isArray(d.providers)?d.providers:[]; const select=$('idea-provider');select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);modelCatalog.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});
-    // The host is not allowed to enumerate the owner's providers; an empty list is normal and
-    // drafting goes through the Hermes agent, so it is not a connection failure.
-    if(!modelCatalog.length){$('idea-connection').textContent='Drafting goes through Hermes; write an idea and press Discuss idea or Fill my draft.';fillModels();return;}
-    if(modelCatalog.some(p=>p.slug===d.provider))select.value=d.provider; $('idea-connection').textContent='Choose a configured Hermes model.';fillModels(d.model);
-  } catch(e) { $('idea-connection').textContent='Hermes model connection unavailable. Check the Hermes installation and setup guide.'; }
+  try {
+    const d = await api('/studio/models');
+    modelCatalog = Array.isArray(d.providers) ? d.providers : [];
+    const pref = loadModelPreference();
+    fillProviders();
+    if (!modelCatalog.length) {
+      $('idea-connection').textContent = 'Drafting goes through Hermes; write an idea and press Discuss idea or Fill my draft.';
+      fillModels();
+      return;
+    }
+    $('idea-connection').textContent = 'Your Hermes model is used unless you pick another provider and model.';
+    // Try to restore saved preference, otherwise use first provider
+    if (pref.provider && modelCatalog.some(p => p.slug === pref.provider)) {
+      $('idea-provider').value = pref.provider;
+      fillModels(pref.model);
+    } else {
+      fillModels();
+    }
+  } catch (e) {
+    $('idea-connection').textContent = 'Hermes model connection unavailable. Check the Hermes installation and setup guide.';
+  }
 }
 // One filter over both lists: 400+ models across several providers is not something a person
 // scrolls. It matches the provider name, the model id, and 'free'.
-function ideaQuery(){const input=$('idea-filter');return (input?.value || '').trim().toLowerCase();}
-function modelMatches(p, id){const q=ideaQuery();if(!q)return true;return (id||'').toLowerCase().includes(q) || (p?.slug||'').toLowerCase().includes(q) || (p?.name||'').toLowerCase().includes(q) || (q==='free' && /(^|[-_/])free([-_/]|$)/i.test(id||''));}
-function fillProviders(preferred){const select=$('idea-provider');if(!select)return;const had=select.value;select.replaceChildren();const placeholder=el('option','Select a provider');placeholder.value='';select.append(placeholder);const q=ideaQuery();const rows=modelCatalog.filter(p=>!q || (p.models||[]).some(m=>modelMatches(p,typeof m==='string'?m:(m.id||m.name))));rows.forEach(p=>{const o=el('option',p.name || p.slug);o.value=p.slug;select.append(o);});if(typeof preferred==='string' && rows.some(p=>p.slug===preferred))select.value=preferred;else if(rows.some(p=>p.slug===had))select.value=had;else if(rows.length===1)select.value=rows[0].slug;}
-function fillModels(preferred){fillProviders();const p=modelCatalog.find(x=>x.slug===$('idea-provider').value), select=$('idea-model');select.replaceChildren();const placeholder=el('option','Select a model');placeholder.value='';select.append(placeholder);(p?.models || []).forEach(m=>{const id=typeof m==='string'?m:(m.id || m.name);if(!id)return;if(!modelMatches(p,id))return;const option=el('option',id);option.value=id;select.append(option);});if(typeof preferred==='string' && [...select.options].some(o=>o.value===preferred))select.value=preferred;}
-$('idea-provider').onchange=()=>fillModels();
-$('idea-filter').oninput=()=>{fillProviders();fillModels();};
-$('idea-filter').onkeydown=e=>{if(e.key==='Enter' && $('idea-model').options.length>1 && !$('idea-model').value){$('idea-model').selectedIndex=1;fillModels($('idea-model').value);}};
+function ideaQuery() { const input = $('idea-filter'); return (input?.value || '').trim().toLowerCase(); }
+function modelMatches(p, id) {
+  const q = ideaQuery();
+  if (!q) return true;
+  return (id || '').toLowerCase().includes(q) || (p?.slug || '').toLowerCase().includes(q) ||
+    (p?.name || '').toLowerCase().includes(q) || (q === 'free' && /(^|[-_/])free([-_/]|$)/i.test(id || ''));
+}
+function fillProviders(preferred) {
+  const select = $('idea-provider');
+  if (!select) return;
+  const had = select.value;
+  select.replaceChildren();
+  const defaultOption = el('option', 'Your Hermes model (recommended)');
+  defaultOption.value = '';
+  select.append(defaultOption);
+  const q = ideaQuery();
+  const rows = modelCatalog.filter(p => !q || (p.models || []).some(m => modelMatches(p, typeof m === 'string' ? m : (m.id || m.name))));
+  rows.forEach(p => {
+    const label = p.name || p.slug;
+    const ready = p.configured === true ? ' (ready)' : '';
+    const o = el('option', label + ready);
+    o.value = p.slug;
+    select.append(o);
+  });
+  if (typeof preferred === 'string' && rows.some(p => p.slug === preferred)) select.value = preferred;
+  else if (rows.some(p => p.slug === had)) select.value = had;
+  else if (rows.length === 1) select.value = rows[0].slug;
+}
+function fillModels(preferred) {
+  fillProviders();
+  const p = modelCatalog.find(x => x.slug === $('idea-provider').value);
+  const select = $('idea-model');
+  select.replaceChildren();
+  const placeholder = el('option', 'Select a model');
+  placeholder.value = '';
+  select.append(placeholder);
+  (p?.models || []).forEach(m => {
+    const id = typeof m === 'string' ? m : (m.id || m.name);
+    if (!id) return;
+    if (!modelMatches(p, id)) return;
+    const option = el('option', id);
+    option.value = id;
+    select.append(option);
+  });
+  if (typeof preferred === 'string' && [...select.options].some(o => o.value === preferred)) select.value = preferred;
+  saveModelPreference();
+}
+$('idea-provider').onchange = () => { fillModels(); saveModelPreference(); };
+$('idea-model').onchange = () => { saveModelPreference(); };
+$('idea-filter').oninput = () => { fillProviders(); fillModels(); };
+$('idea-filter').onkeydown = e => {
+  if (e.key === 'Enter' && $('idea-model').options.length > 1 && !$('idea-model').value) {
+    $('idea-model').selectedIndex = 1;
+    fillModels($('idea-model').value);
+  }
+};
 function addIdea(role, text){const p=el('p',text,role==='user'?'human':'assistant');$('idea-messages').append(p);$('idea-messages').scrollTop=$('idea-messages').scrollHeight;}
+function addIdeaError(message, commands) {
+  const div = el('div', '', 'assistant error-message');
+  const msg = el('p', message);
+  div.append(msg);
+  if (Array.isArray(commands) && commands.length > 0) {
+    const cmds = el('pre', commands.join('\n'), 'commands');
+    const btn = el('button', 'Copy', 'button secondary copy-cmd');
+    btn.type = 'button';
+    btn.onclick = async () => {
+      const text = commands.join('\n');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+        } else {
+          cmds.select?.();
+          document.execCommand('copy');
+        }
+      } catch (e) {
+        cmds.select?.();
+        try { document.execCommand('copy'); } catch (e2) {}
+      }
+    };
+    div.append(cmds, btn);
+  }
+  $('idea-messages').append(div);
+  $('idea-messages').scrollTop = $('idea-messages').scrollHeight;
+}
 // A standalone host has no model of its own: the model lives in the Hermes plugin process. When the
 // page is framed by the desktop pane, it asks the pane (postMessage) and the pane calls its own
 // plugin route — the one place ctx.llm exists. In a plain browser tab there is no pane to ask, and
@@ -1630,7 +1736,15 @@ async function idea(action) {
     $('idea-connection').textContent = replyNote || (provider && model
       ? 'Using ' + provider + ' / ' + model + '.'
       : 'Drafted by the Hermes agent (its own model).');
-  } catch(e) {$('idea-connection').textContent=e.message;}
+  } catch(e) {
+    if (e.commands && Array.isArray(e.commands) && e.commands.length > 0) {
+      addIdeaError(e.message + '. Then restart Hermes.', e.commands);
+      $('idea-connection').textContent = 'Check the commands above and try again after restarting Hermes.';
+    } else {
+      $('idea-connection').textContent = e.message;
+      addIdea('assistant', 'Error: ' + e.message);
+    }
+  }
   finally {$('idea-send').disabled=false;$('idea-apply').disabled=false;}
 }
 $('idea-send').onclick=()=>idea('chat');$('idea-apply').onclick=()=>idea('draft');
