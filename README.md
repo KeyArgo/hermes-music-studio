@@ -74,8 +74,7 @@ accident. The library, the worker and the audio stay on your machine.
   saved style presets, and an A/B compare across ready engines.
 - **A real player.** Play/pause, −10 s / +10 s, a scrubber that moves the audio, elapsed and total
   time, and a volume slider. Exported songs are ordinary `.wav` files.
-- **Workspaces and cover art.** Group songs; upload PNG/JPEG/WebP up to 2 MiB, or let the agent save a picture it made as the cover (`set_cover`)
-  through your configured Hermes image provider.
+- **Workspaces and cover art.** Group songs; upload PNG/JPEG/WebP up to 2 MiB. The agent can save a picture as the cover with the `set_cover` action.
 - **REVamp is optional.** Create a playlist from exported takes; with REVamp absent the screen says so
   and playing and exporting still work.
 - **Chat and shell clients.** The `music_studio` tool has 20 actions, `/song` drives the same studio
@@ -200,6 +199,19 @@ can end immediately. `music_studio/jobs.py` owns the state machine, `music_studi
 render loop, and `music_studio/engines/` is the only place that knows a backend. The UI is plain
 HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback host.
 
+## Choosing a model
+
+By default, the studio uses your Hermes model. To use a different provider or model, run these commands once:
+
+```bash
+hermes config set plugins.entries.hermes-music-studio.llm.allow_provider_override true
+hermes config set plugins.entries.hermes-music-studio.llm.allow_model_override true
+```
+
+Then restart Hermes. The model picker in Create always lists Hermes' providers and their models; without these two settings Hermes only lets the studio use your Hermes model, and the studio tells you so instead of quietly switching. Pick any provider and model, or type a provider and model id. Your choice is remembered in your browser.
+
+Providers you have set up in Hermes are marked ready. The studio connects through your Hermes installation, never directly; API keys stay in Hermes' credential store.
+
 ## Documentation
 
 | Document | What it covers |
@@ -232,8 +244,9 @@ HTML/CSS/JS with no build step; `desktop/plugin.js` only frames the loopback hos
   directory.
 - **Network calls.** The studio calls only endpoints you configure: a ComfyUI server
   (`COMFYUI_URL` or a saved target; a custom workflow contacts only the endpoint you saved with it), an optional ACE-Step HTTP server (`ACE_REMOTE_URL`), REVamp's
-  local API at `127.0.0.1:8114`, and — only when you press the buttons — your configured Hermes model
-  and image providers (creative partner and cover art) and Hugging Face for weights
+  local API at `127.0.0.1:8114`, each Hermes provider's public model list when the model picker loads
+  (no key is sent), and — only when you press the buttons — your Hermes model (creative partner) and
+  Hugging Face for weights
   (`POST /api/studio/setup/hf`). It sends no telemetry and has no cloud audio service. "Check for a
   newer build" reports that Hermes owns updates; the studio does not fetch or install code itself.
 - **Background processes.** A detached render worker per render (or batch), an ACE-Step subprocess in

@@ -45,22 +45,36 @@ and unchanged; an edit revokes the approval. **Build the full song** is disabled
 approved and the selected engine is ready. **Hear the chorus** renders a 25 s preview without
 approving the full song.
 
+### Choosing a model
+
+The studio uses your Hermes model by default. To use a different provider or model, run these commands once:
+
+```bash
+hermes config set plugins.entries.hermes-music-studio.llm.allow_provider_override true
+hermes config set plugins.entries.hermes-music-studio.llm.allow_model_override true
+```
+
+Then restart Hermes. The picker always lists Hermes' providers and their models; without these two settings Hermes only lets the studio use your Hermes model, and the studio says so instead of quietly switching. Pick any provider and model, or type an id. Your choice is saved in your browser. Providers you have set up in Hermes are marked ready.
+
 ### Creative partner
 
-The right-hand panel talks to the model Hermes is currently using. There is no public list-models API
-for plugins, so the panel does not enumerate providers or models: it sends the conversation and your
-tone/style influence to Hermes' active model and shows a suggested draft. **Fill my draft** copies the
-suggestion into the form; it does not save or approve it. Model use may incur the provider's ordinary
-charges. With no Hermes model available, the panel says so and the rest of the studio still works.
+The right-hand panel talks to your chosen model. It sends the conversation and your tone/style influence to the model and shows a suggested draft. **Fill my draft** copies the suggestion into the form without saving or approving. Model use follows the provider's ordinary charges. With no model available, the panel says so.
+
+### Making a song
+
+After you save and approve the draft, press the **Generate song** button. It saves your draft, approves it with a fresh token, and starts the render. The progress panel shows queued, running, and estimated time. When it finishes, the take appears in the library and plays in the footer. You can also render a preview with **Preview the chorus**, which produces a 25 second sample without a full approval.
+
+### Set up a music engine
+
+With no engine installed, the Create button shows **Set up a music engine**. Press it to install one:
+
+- **Local GPU:** Install ACE-Step 1.5 on this machine. The setup walks through downloading weights and testing the local runtime.
+- **ComfyUI server:** Point to a server that runs ComfyUI with MiniMax Music 3. The studio tests the connection and lists available models.
+- **Hosted API:** Enter an endpoint and API key for a remote music service. The studio tests the key and saves it to Hermes' credential store.
 
 ### Cover art
 
-Upload a PNG, JPEG or WebP up to 2 MiB, or generate one with your configured Hermes image provider.
-Cover art arrives two ways, both without the studio spending model credits itself: upload a PNG, JPEG or
-WebP (2 MiB) in the project, or ask the assistant for a picture and let it save the file it makes as the
-cover (`set_cover`). The studio only accepts an image from the studio folder, the temp directory or
-Hermes' own image cache (``<hermes home>/cache/images``), and it reads the bytes rather than the
-extension. The cover is stored with the project and shown in the library.
+Upload a PNG, JPEG or WebP up to 2 MiB. The studio only accepts images from the studio folder, the temp directory or Hermes' cache (``<hermes home>/cache/images``). It reads the file bytes, not the extension. The agent can save a picture as the cover using the `set_cover` action. The cover is stored with the project and shown in the library.
 
 ## Library
 
