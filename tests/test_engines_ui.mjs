@@ -969,3 +969,13 @@ test('opening setup by its old name shows the Music engines page, never a blank 
   const visible = [...doc.querySelectorAll('section.page')].filter(s => !s.hidden).map(s => s.id);
   assert.deepEqual(visible, ['engines-view']);
 });
+
+test('a saved engine is checked when the list loads, so its pill is not stuck on Not tested', async t => {
+  const booted = await boot({ engines: [{ id: 't1', name: 'Studio', url: COMFY_URL, kind: 'comfyui', workflows: [] }] });
+  t.after(() => booted.window.close());
+  booted.state.testReply = { ok: true, kind: 'comfyui', message: 'This is ComfyUI.', models: [ACE_MODEL_READY] };
+  const doc = await openServer(booted);
+  await pause(120);
+  assert.ok(booted.calls.some(c => c.path === '/api/studio/engines/test' && c.body && c.body.url === COMFY_URL));
+  assert.match(text(doc.getElementById('engine-list')), /Ready/);
+});

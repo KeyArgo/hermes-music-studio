@@ -2879,15 +2879,18 @@ function renderEngineList() {
     info.append(name, addr);
 
     const pill = el('span', '', 'engine-pill');
-    if (eng.status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
-    else if (eng.status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
-    else if (eng.status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
+    const status = eng.status || engineRowStatus[eng.url];
+    if (status === 'checking') { pill.textContent = 'Checking…'; pill.classList.add('not-tested'); }
+    else if (status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
+    else if (status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
+    else if (status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
     else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
 
     const testBtn = el('button', 'Test', 'button secondary');
     testBtn.type = 'button';
+    testBtn.title = 'Ask this server again which music models it can run.';
     testBtn.addEventListener('click', async () => {
-      await testEngine(eng);
+      await checkEngineRow(eng, true);
     });
 
     const removeBtn = el('button', 'Remove', 'button secondary');
@@ -2902,12 +2905,34 @@ function renderEngineList() {
     container.append(row);
   }
 }
+// What each saved server answered this session, by address: 'checking', 'ready',
+// 'missing_files' or 'cant_reach'. A saved engine is checked once when the list loads, so
+// the pill tells the truth instead of "Not tested".
+const engineRowStatus = {};
+function rowStatusFrom(data) {
+  if (!data || data.ok !== true) return 'cant_reach';
+  const models = Array.isArray(data.models) ? data.models : [];
+  if (!models.length || models.some(m => m && m.status === 'ready')) return 'ready';
+  return 'missing_files';
+}
+async function checkEngineRow(eng, force) {
+  const url = eng && eng.url;
+  if (!url || (!force && engineRowStatus[url])) return;
+  engineRowStatus[url] = 'checking';
+  renderEngineList();
+  let data;
+  try { data = await api('/studio/engines/test', { kind: eng.kind || 'comfyui', url: url }); }
+  catch (err) { data = { ok: false }; }
+  engineRowStatus[url] = rowStatusFrom(data);
+  renderEngineList();
+}
 async function loadEngines() {
   try {
     const data = await api('/studio/engines');
     enginesList = data.engines || [];
     renderEngineList();
     fillWorkflowEngineOptions();
+    enginesList.forEach(eng => { checkEngineRow(eng, false); });
   } catch (err) {
     // Silent fail; show empty list
     enginesList = [];
@@ -3350,6 +3375,7 @@ function dismissServerWizard() {
   if (wizard) wizard.hidden = true;
 }
 async function finishEngineAdd() {
+  if (lastEngineTest && lastEngineTest.url) engineRowStatus[lastEngineTest.url] = rowStatusFrom(lastEngineTest.data);
   dismissServerWizard();
   await loadEngines();
   await refreshWorkflows();
