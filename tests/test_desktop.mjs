@@ -220,7 +220,8 @@ test('a draft request from the frame is answered through the plugin route', asyn
   const posted = [];
   frame.contentWindow.postMessage = message => posted.push(message);
   window.dispatchEvent(new dom.window.MessageEvent('message', {
-    data: { type: 'hermes-music-studio:draft', id: 'd1', prompt: 'a night drive', tone: 'warm', style: 70 },
+    data: { type: 'hermes-music-studio:draft', id: 'd1', prompt: 'a night drive', tone: 'warm', style: 70,
+            provider: 'nous', model: 'model-x' },
     source: frame.contentWindow
   }));
   await waitFor(() => assert.ok(posted.length, 'the frame was answered'));
@@ -228,7 +229,44 @@ test('a draft request from the frame is answered through the plugin route', asyn
   assert.ok(draftCall, 'drafting goes to the route that owns the model');
   assert.equal(draftCall.options.method, 'POST');
   assert.equal(draftCall.options.body.prompt, 'a night drive');
+  assert.equal(draftCall.options.body.provider, 'nous');
+  assert.equal(draftCall.options.body.model, 'model-x');
   assert.equal(posted[0].type, 'hermes-music-studio:draft-result');
   assert.equal(posted[0].id, 'd1');
   assert.equal(posted[0].draft.title, 'Night Drive');
+});
+
+test('a refused model override reaches the frame with the two commands', async () => {
+  const commands = [
+    'hermes config set plugins.entries.hermes-music-studio.llm.allow_provider_override true',
+    'hermes config set plugins.entries.hermes-music-studio.llm.allow_model_override true'
+  ];
+  const contributions = [];
+  plugin.register({
+    register: c => contributions.push(c),
+    rest: async (path) => {
+      if (path === '/studio/host') return { url: 'http://127.0.0.1:8775', token: 'tok' };
+      const error = new Error('403: ' + JSON.stringify({
+        error: 'Hermes refused the chosen provider or model. Run these two commands, then restart Hermes.',
+        commands
+      }));
+      throw error;
+    }
+  });
+  render(contributions.find(c => c.area === 'routes').render());
+  const frame = await waitFor(() => {
+    const found = document.querySelector('iframe');
+    assert.ok(found, 'the studio is framed');
+    return found;
+  });
+  const posted = [];
+  frame.contentWindow.postMessage = message => posted.push(message);
+  window.dispatchEvent(new dom.window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:draft', id: 'd2', prompt: 'a night drive', provider: 'nous', model: 'model-x' },
+    source: frame.contentWindow
+  }));
+  await waitFor(() => assert.ok(posted.length, 'the frame was answered'));
+  assert.equal(posted[0].ok, false);
+  assert.match(posted[0].error, /then restart Hermes/);
+  assert.deepEqual(posted[0].commands, commands);
 });

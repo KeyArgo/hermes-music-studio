@@ -772,7 +772,7 @@ def studio_draft(body: dict = Depends(json_body)):
     posts the answer back. One model path, one place it lives.
     """
     from music_studio import llm_bridge
-    from standalone.ideas import build_request, parse_draft
+    from standalone.ideas import build_request, parse_draft, trust_error_response
 
     prompt = str(body.get('prompt') or '').strip()
     if not prompt:
@@ -792,7 +792,7 @@ def studio_draft(body: dict = Depends(json_body)):
     except llm_bridge.LlmUnavailable as exc:
         raise HTTPException(503, str(exc)) from None
     except llm_bridge.LlmTrustError as exc:
-        raise HTTPException(403, str(exc)) from None
+        return trust_error_response(exc)
     except RuntimeError as exc:
         # An empty or unusable host reply is an upstream failure, not a crash.
         raise HTTPException(502, str(exc)) from None

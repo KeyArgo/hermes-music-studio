@@ -54,14 +54,14 @@ def test_completion_goes_through_the_bound_facade():
     assert llm.calls and llm.calls[0]["messages"][0]["content"] == "hi"
 
 
-def test_an_untrusted_override_falls_back_to_the_host_default():
+def test_an_untrusted_override_is_a_trust_error_not_a_silent_retry():
     llm = FakeLlm('{"title": "Fallback"}', refuse_override=True)
     llm_bridge.bind(llm)
-    assert llm_bridge.complete([{"role": "user", "content": "hi"}], model="some-model") == '{"title": "Fallback"}'
-    assert len(llm.calls) == 2
-    assert "model" in llm.calls[0] and "model" not in llm.calls[1], (
-        "the retry must drop the override, not fail the draft"
-    )
+    with pytest.raises(llm_bridge.LlmTrustError) as caught:
+        llm_bridge.complete([{"role": "user", "content": "hi"}], model="some-model")
+    assert len(llm.calls) == 1, "a refused override must not be retried on the host default"
+    assert "model" in llm.calls[0]
+    assert any("allow_model_override true" in command for command in caught.value.commands)
 
 
 def test_without_a_host_the_error_says_where_to_draft():
