@@ -14,9 +14,10 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-# Ports ComfyUI is launched on in practice: its own default, the next ones people pick
-# when 8188 is taken, and the port a `--port 7860` Gradio-style launch uses.
-PORTS = (8188, 8189, 8190, 7860)
+# Ports ComfyUI is launched on in practice: its own default (8188), Comfy Desktop's
+# default (8000), the next ones people pick when 8188 is taken, and the port a
+# `--port 7860` Gradio-style launch uses.
+PORTS = (8188, 8000, 8189, 8190, 7860)
 MINIMAX_NODES = ('MiniMaxMusic3TextEncode', 'EmptyMiniMaxMusic3LatentAudio')
 
 
