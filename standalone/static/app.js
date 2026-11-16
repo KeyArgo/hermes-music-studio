@@ -145,7 +145,8 @@ function buttons() {
   $('new-song').disabled = busy;
   $('nav-library').disabled = busy;
   $('nav-workspaces').disabled = busy;
-  $('nav-compute').disabled = busy;
+  const navEngines = $('nav-engines') || $('nav-compute');
+  if (navEngines) navEngines.disabled = busy;
   $('nav-listen').disabled = busy;
   const ready = engineReady();
   const wordsMissing = draftNeedsWords();
@@ -309,7 +310,12 @@ function engineHint() {
   $('engine-hint').textContent = engineStatusLine();
 }
 function show(view) {
-  for (const name of ['create','library','workspaces','compute','listen']) { $(name+'-view').hidden = view !== name; $('nav-'+name).classList.toggle('active',view === name); }
+  for (const name of ['create','library','workspaces','engines','listen']) {
+    const viewEl = $(name+'-view') || (name === 'engines' ? $('compute-view') : null);
+    if (viewEl) viewEl.hidden = view !== name;
+    const navEl = $('nav-'+name) || (name === 'engines' ? $('nav-compute') : null);
+    if (navEl) navEl.classList.toggle('active',view === name);
+  }
 }
 function clock(value) {
   const total = Number.isFinite(value) && value > 0 ? value : 0;
@@ -1562,9 +1568,18 @@ for (const [id, event] of [['library-search','input'], ['library-sort','change']
     library(); });
 }
 try { const saved = localStorage.getItem('studio.librarySort'); if (saved && $('library-sort')) $('library-sort').value = saved; } catch (e) {}
-$('nav-create').addEventListener('click',() => show('create')); $('nav-library').addEventListener('click',() => {libraryFilter=null;library();show('library');});
-$('nav-workspaces').addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
-$('nav-compute').addEventListener('click',async()=>{show('compute');await refreshTargets();await refreshWorkflows();await loadHardware(true);});
+const navCreate = $('nav-create');
+if (navCreate) navCreate.addEventListener('click',() => show('create'));
+const navLibrary = $('nav-library');
+if (navLibrary) navLibrary.addEventListener('click',() => {libraryFilter=null;library();show('library');});
+const navWorkspaces = $('nav-workspaces');
+if (navWorkspaces) navWorkspaces.addEventListener('click',()=>{drawWorkspaces();show('workspaces');});
+const navEngines = $('nav-engines');
+if (navEngines) navEngines.addEventListener('click',async()=>{show('engines');await loadEngines();wireEnginesPage();});
+const navCompute = $('nav-compute');
+if (navCompute && navCompute !== navEngines) {
+  navCompute.addEventListener('click',async()=>{show('engines');await loadEngines();wireEnginesPage();});
+}
 function showCover(id) {
   const image=$('cover-preview'), placeholder=$('cover-placeholder');
   if(!id) { image.hidden=true; placeholder.hidden=false; image.removeAttribute('src'); return; }
@@ -2338,7 +2353,8 @@ if ($('discover-renderers')) $('discover-renderers').addEventListener('click', f
 $('library-copy').addEventListener('click', () => relocateLibrary('copy'));
 $('library-move').addEventListener('click', () => relocateLibrary('move'));
 $('library-reset').addEventListener('click', resetLibrary);
-$('nav-compute').addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); loadDoctor(); });
+const settingsNavBtn = $('nav-compute');
+if (settingsNavBtn) settingsNavBtn.addEventListener('click', () => { loadSettings().catch(err => { $('settings-message').textContent = err.message; }); loadDoctor(); });
 loadSettings().catch(err => { const node = $('settings-message'); if (node) node.textContent = err.message; });
 loadDoctor();
 
@@ -2810,6 +2826,241 @@ if ($('version-panel')) {
     }
   });
 }
+// ---------------------------------------------------------------- engines page
+let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false;
+function renderEngineList() {
+  const container = $('engine-list');
+  if (!container) return;
+  container.replaceChildren();
+  if (!enginesList.length) {
+    const empty = el('p', 'No music engines set up yet. Add one to get started.', 'hint');
+    container.append(empty);
+    return;
+  }
+  for (const eng of enginesList) {
+    const row = el('div', '', 'engine-row');
+    const info = el('div', '', 'engine-info');
+    const name = el('div', eng.name || eng.url, 'engine-name');
+    const addr = el('div', eng.url || '(unknown address)', 'engine-address');
+    info.append(name, addr);
+
+    const pill = el('span', '', 'engine-pill');
+    if (eng.status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
+    else if (eng.status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
+    else if (eng.status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
+    else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
+
+    const testBtn = el('button', 'Test', 'button secondary');
+    testBtn.type = 'button';
+    testBtn.addEventListener('click', async () => {
+      await testEngine(eng);
+    });
+
+    const removeBtn = el('button', 'Remove', 'button secondary');
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', async () => {
+      if (await askConfirm(`Remove ${eng.name || eng.url}?`, {confirmLabel: 'Remove', danger: true})) {
+        await removeEngine(eng.id);
+      }
+    });
+
+    row.append(info, pill, testBtn, removeBtn);
+    container.append(row);
+  }
+}
+async function loadEngines() {
+  try {
+    const data = await api('/studio/engines');
+    enginesList = data.engines || [];
+    renderEngineList();
+  } catch (err) {
+    // Silent fail; show empty list
+    enginesList = [];
+    renderEngineList();
+  }
+}
+async function testEngine(eng) {
+  testingServer = true;
+  const result = $('test-result');
+  if (result) result.hidden = true;
+
+  try {
+    const data = await api('/studio/engines/test', {kind: eng.kind || 'comfyui', url: eng.url});
+    showTestResult(data);
+  } catch (err) {
+    showTestResult({ok: false, message: err.message, problem: 'bad_address'});
+  }
+  testingServer = false;
+}
+function showTestResult(data) {
+  const result = $('test-result');
+  const trouble = $('troubleshooting');
+  if (!result || !trouble) return;
+
+  result.hidden = false;
+  trouble.hidden = true;
+
+  result.replaceChildren();
+  const msg = el('p', data.message || '', 'test-message');
+  result.append(msg);
+
+  if (data.models && Array.isArray(data.models)) {
+    const list = el('ul', '', 'model-checklist');
+    for (const model of data.models) {
+      const item = el('li', '', 'model-item');
+      const icon = el('span', model.status === 'ready' ? '✓' : '–', 'status-icon');
+      const label = el('span', `${model.label || model.id} (${model.status})`);
+      item.append(icon, label);
+      list.append(item);
+    }
+    result.append(list);
+  }
+
+  if (data.problem && TROUBLESHOOTING[data.problem]) {
+    trouble.hidden = false;
+    const card = TROUBLESHOOTING[data.problem];
+    trouble.replaceChildren(
+      el('h4', card.title),
+      el('p', card.text)
+    );
+  }
+}
+const TROUBLESHOOTING = {
+  bad_address: { title: 'Wrong address', text: 'Nothing answered. Include http:// and the port, like http://192.168.1.50:8188.' },
+  no_answer: { title: 'Firewall blocking', text: "The other computer's firewall is blocking the port. Allow 8188, or 8000, for your local network." },
+  not_comfy: { title: 'Not ComfyUI', text: 'That address answered but is not ComfyUI or ACE-Step server. Check the address.' },
+  not_ace: { title: 'Not an ACE server', text: 'That address is not an ACE-Step server.' },
+  missing_files: { title: 'Missing model files', text: 'ComfyUI knows the model, and these files are not on it. Put them in that computer\'s models folder, then test again.' },
+  no_gpu: { title: 'No GPU available', text: 'The graphics card that matters is on the machine running the model. This PC does not need one when the server is elsewhere.' }
+};
+async function removeEngine(engineId) {
+  try {
+    await api(`/studio/engines/${encodeURIComponent(engineId)}`, undefined, 'DELETE');
+    await loadEngines();
+  } catch (err) {
+    // Silent fail
+  }
+}
+function wireEnginesPage() {
+  if (enginesPageWired) return;
+  enginesPageWired = true;
+
+  const addServerBtn = $('add-server-btn');
+  const addLocalBtn = $('add-local-btn');
+  const serverWizard = $('server-wizard');
+  const installWizard = $('install-wizard');
+
+  if (addServerBtn) addServerBtn.addEventListener('click', () => {
+    if (serverWizard) serverWizard.hidden = false;
+  });
+
+  if (addLocalBtn) addLocalBtn.addEventListener('click', () => {
+    if (installWizard) installWizard.hidden = false;
+  });
+
+  // Close buttons
+  const closeButtons = document.querySelectorAll('.close-wizard');
+  if (closeButtons && closeButtons.length > 0) {
+    closeButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const wizard = e.target.closest('.engine-wizard');
+        if (wizard) wizard.hidden = true;
+      });
+    });
+  }
+
+  // Info toggle
+  const infoToggle = document.querySelector('.info-toggle');
+  if (infoToggle) {
+    const infoText = infoToggle.parentElement?.querySelector('.info-text');
+    if (infoText) {
+      infoToggle.addEventListener('click', () => {
+        infoText.hidden = !infoText.hidden;
+        infoToggle.setAttribute('aria-expanded', String(!infoText.hidden));
+      });
+    }
+  }
+
+  // Server form
+  const serverForm = $('server-form');
+  if (serverForm) {
+    const testBtn = $('test-server-btn');
+    const addBtn = $('add-engine-btn');
+    const cancelBtn = $('cancel-server-btn');
+    const kindInputs = serverForm.querySelectorAll('input[name="engine-kind"]');
+    const apiKeyLabel = $('api-key-label');
+
+    // Show/hide API key field based on kind
+    if (kindInputs && kindInputs.length > 0) {
+      kindInputs.forEach(input => {
+        input.addEventListener('change', () => {
+          if (apiKeyLabel) apiKeyLabel.hidden = input.value !== 'hosted';
+        });
+      });
+    }
+
+    if (testBtn) testBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const kind = serverForm.elements['engine-kind'].value;
+      const url = $('server-url').value.trim();
+      await testEngine({ kind, url });
+      if (addBtn) addBtn.disabled = false;
+    });
+
+    if (addBtn) addBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const name = $('server-name').value.trim();
+      const kind = serverForm.elements['engine-kind'].value;
+      const url = $('server-url').value.trim();
+      const models = ['minimax_m3', 'ace15_turbo'];
+      try {
+        await api('/studio/engines', { name, url, kind, models });
+        await loadEngines();
+        serverForm.reset();
+        if (serverWizard) serverWizard.hidden = true;
+      } catch (err) {
+        // Show error
+      }
+    });
+
+    if (cancelBtn) cancelBtn.addEventListener('click', () => {
+      if (serverWizard) serverWizard.hidden = true;
+    });
+  }
+
+  // Install form
+  const lookLocalBtn = $('look-local-btn');
+  if (lookLocalBtn) {
+    lookLocalBtn.addEventListener('click', async () => {
+      try {
+        const data = await api('/studio/install/look-local');
+        showLookLocalResult(data);
+      } catch (err) {
+        // Show error
+      }
+    });
+  }
+}
+function showLookLocalResult(data) {
+  const container = $('look-local-result');
+  if (!container) return;
+  container.hidden = false;
+  container.replaceChildren();
+
+  if (data.found && Array.isArray(data.found)) {
+    for (const server of data.found) {
+      if (server.ok) {
+        const div = el('div', '', 'found-server');
+        div.append(
+          el('div', `Found: ${server.url}`, 'server-label'),
+          el('div', server.url, 'server-url')
+        );
+        container.append(div);
+      }
+    }
+  }
+}
+
 // An open "More" menu closes when you click anywhere else, like any menu.
 document.addEventListener('click', e => {
   document.querySelectorAll('details.take-more[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
