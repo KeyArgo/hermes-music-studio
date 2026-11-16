@@ -36,9 +36,11 @@ async function api(path, data, method, options) {
   opts.headers = withToken(opts.headers);
   const res = await fetch(STUDIO.api + path, opts);
   const value = await res.json();
-  if (!res.ok || value.success === false) {
-    const err = new Error(value.detail || value.error || 'Request failed');
-    err.commands = value.commands;
+  // Suggest may answer with a string or null. Only an object carries success, detail, or error.
+  const failed = !!(value && typeof value === 'object' && value.success === false);
+  if (!res.ok || failed) {
+    const err = new Error((value && (value.detail || value.error)) || 'Request failed');
+    err.commands = value && value.commands;
     throw err;
   }
   return value;
@@ -2827,7 +2829,7 @@ if ($('version-panel')) {
   });
 }
 // ---------------------------------------------------------------- engines page
-let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false;
+let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0;
 function renderEngineList() {
   const container = $('engine-list');
   if (!container) return;
@@ -2941,6 +2943,274 @@ async function removeEngine(engineId) {
     // Silent fail
   }
 }
+function installMessage(text, bad = false) {
+  const node = $('install-message');
+  if (!node) return;
+  node.textContent = text || '';
+  node.classList.toggle('error', !!bad);
+}
+function suggestedModelsDir(data) {
+  if (typeof data === 'string') return data.trim();
+  if (data && typeof data.models_dir === 'string') return data.models_dir.trim();
+  return '';
+}
+// Decimal gigabytes, so the sizes match the 14.7 GB on the download button.
+function bytesToGb(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return '0.0 GB';
+  return (n / 1e9).toFixed(1) + ' GB';
+}
+function spaceLine(label, value) {
+  const row = el('div', '', 'space-item');
+  row.append(el('span', label, 'label'), el('span', value, 'value'));
+  return row;
+}
+function showResume(on) {
+  const btn = $('resume-download-btn');
+  if (btn) {
+    btn.hidden = !on;
+    const row = btn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = !on;
+  }
+  const help = $('resume-help-btn');
+  if (help) help.hidden = !on;
+}
+function showCancelDownload(on) {
+  const btn = $('cancel-download-btn');
+  if (!btn) return;
+  btn.hidden = !on;
+  const row = btn.parentElement;
+  if (row && row.classList.contains('control-row')) row.hidden = !on;
+}
+function showGpuLine(text) {
+  const node = $('install-gpu');
+  if (!node) return;
+  node.textContent = text || '';
+  node.hidden = !text;
+}
+function gpuLineText(hw) {
+  if (!hw || typeof hw !== 'object') return '';
+  const devices = Array.isArray(hw.devices) ? hw.devices : [];
+  if (!devices.length) {
+    if (hw.error) return String(hw.error);
+    return 'No graphics card reported on this computer.';
+  }
+  return devices.map(device => {
+    const name = device.name || 'Graphics card';
+    const index = device.index == null || device.index === '' ? '' : String(device.index);
+    let line = index === '' ? name : ('GPU ' + index + ' · ' + name);
+    if (device.memory_total_mb != null) {
+      const used = device.memory_used_mb == null ? '—' : String(device.memory_used_mb);
+      line += ' · ' + used + ' / ' + device.memory_total_mb + ' MiB';
+    }
+    return line;
+  }).join('; ');
+}
+async function loadInstallGpu() {
+  try {
+    return await api('/studio/hardware');
+  } catch (err) {
+    const missing = /not found/i.test((err && err.message) || '');
+    if (missing) return null;
+    return { error: err && err.message ? err.message : 'Could not read the graphics card.', devices: [] };
+  }
+}
+function renderInstallPlan(plan) {
+  const box = $('space-result');
+  const downloadBtn = $('download-ace-btn');
+  const data = plan || {};
+  if (box) {
+    box.hidden = false;
+    box.replaceChildren();
+    const files = Array.isArray(data.files) ? data.files : [];
+    let downloadBytes = 0;
+    for (const file of files) {
+      const name = file && file.name ? file.name : 'file';
+      const present = !!(file && file.present);
+      if (!present) downloadBytes += Number(file && file.size) || 0;
+      const size = bytesToGb(file && file.size);
+      box.append(spaceLine(name, present ? (size + ' · already there') : size));
+    }
+    box.append(spaceLine('Total to download', bytesToGb(downloadBytes)));
+    box.append(spaceLine('Free space', bytesToGb(data.free_bytes)));
+    if (data.message) {
+      const msg = el('p', data.message, 'message space-message' + (data.ok === false ? ' error' : ''));
+      box.append(msg);
+    }
+  }
+  if (downloadBtn) {
+    downloadBtn.hidden = false;
+    const row = downloadBtn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = false;
+    downloadBtn.disabled = !(data.ok === true && data.enough_space === true);
+  }
+}
+async function openInstallWizard() {
+  const wizard = $('install-wizard');
+  if (wizard) wizard.hidden = false;
+  const step2 = $('install-step-2');
+  const step3 = $('install-step-3');
+  if (step2) step2.hidden = false;
+  if (step3) step3.hidden = false;
+  installMessage('');
+  const field = $('models-dir');
+  try {
+    const data = await api('/studio/install/suggest');
+    const dir = suggestedModelsDir(data);
+    if (field && dir) field.value = dir;
+  } catch (err) {
+    installMessage(err.message, true);
+  }
+}
+async function checkInstallSpace() {
+  const field = $('models-dir');
+  const modelsDir = field ? field.value.trim() : '';
+  installMessage('');
+  const gpuPromise = loadInstallGpu();
+  try {
+    const plan = await api('/studio/install/plan', { models_dir: modelsDir });
+    renderInstallPlan(plan);
+  } catch (err) {
+    installMessage(err.message, true);
+    const downloadBtn = $('download-ace-btn');
+    if (downloadBtn) downloadBtn.disabled = true;
+  }
+  const hw = await gpuPromise;
+  showGpuLine(hw ? gpuLineText(hw) : '');
+}
+function stopInstallPoll() {
+  installPollGen += 1;
+  if (installPollTimer) {
+    clearTimeout(installPollTimer);
+    installPollTimer = null;
+  }
+}
+function applyInstallStatus(status) {
+  const state = status && status.state;
+  const box = $('download-progress');
+  if (box) box.hidden = false;
+  const doneBytes = Number(status && status.done_bytes) || 0;
+  const totalBytes = Number(status && status.total_bytes) || 0;
+  const pct = totalBytes > 0 ? Math.max(0, Math.min(100, Math.round((doneBytes / totalBytes) * 100))) : 0;
+  const bar = $('install-progress-bar');
+  if (bar) {
+    bar.style.width = pct + '%';
+    const track = bar.parentElement;
+    if (track) track.setAttribute('aria-valuenow', String(pct));
+  }
+  const file = (status && status.file) || '';
+  const filesDone = status && status.files_done != null ? status.files_done : 0;
+  const filesTotal = status && status.files_total != null ? status.files_total : 0;
+  const msg = (status && status.message) || '';
+  const parts = [];
+  if (file) parts.push(file);
+  parts.push(String(filesDone) + ' of ' + String(filesTotal));
+  if (msg) parts.push(msg);
+  const progressText = $('progress-text');
+  if (progressText) progressText.textContent = parts.join(' · ');
+  const doneBox = $('install-done');
+  if (state === 'done') {
+    showResume(false);
+    showCancelDownload(false);
+    if (doneBox) doneBox.hidden = false;
+    installMessage('');
+    return true;
+  }
+  if (state === 'failed' || state === 'cancelled') {
+    showResume(true);
+    showCancelDownload(false);
+    if (doneBox) doneBox.hidden = true;
+    if (state === 'failed') installMessage((status && (status.error || status.message)) || 'The download failed.', true);
+    else installMessage((status && status.message) || 'Download cancelled. Press Resume download to continue.');
+    return true;
+  }
+  showResume(false);
+  showCancelDownload(true);
+  if (doneBox) doneBox.hidden = true;
+  installMessage('');
+  return false;
+}
+async function pollInstallJob(jobId, gen) {
+  if (gen !== installPollGen) return;
+  let status;
+  try {
+    status = await api('/studio/install/jobs/' + encodeURIComponent(jobId));
+  } catch (err) {
+    if (gen !== installPollGen) return;
+    installMessage(err.message, true);
+    showResume(true);
+    return;
+  }
+  if (gen !== installPollGen) return;
+  const terminal = applyInstallStatus(status);
+  if (gen !== installPollGen || terminal) return;
+  installPollTimer = setTimeout(() => { pollInstallJob(jobId, gen); }, 1000);
+}
+async function startInstallDownload() {
+  const field = $('models-dir');
+  const modelsDir = field ? field.value.trim() : '';
+  installMessage('');
+  let data;
+  try {
+    data = await api('/studio/install/jobs', { models_dir: modelsDir });
+  } catch (err) {
+    installMessage(err.message, true);
+    return;
+  }
+  const jobId = data && data.job_id;
+  if (!jobId) {
+    installMessage('The download did not start.', true);
+    return;
+  }
+  downloadJobId = jobId;
+  const progress = $('download-progress');
+  if (progress) progress.hidden = false;
+  const downloadBtn = $('download-ace-btn');
+  if (downloadBtn) {
+    downloadBtn.hidden = true;
+    const row = downloadBtn.parentElement;
+    if (row && row.classList.contains('control-row')) row.hidden = true;
+  }
+  showResume(false);
+  showCancelDownload(true);
+  const doneBox = $('install-done');
+  if (doneBox) doneBox.hidden = true;
+  stopInstallPoll();
+  const gen = installPollGen;
+  await pollInstallJob(jobId, gen);
+}
+async function cancelInstallDownload() {
+  if (!downloadJobId) return;
+  try {
+    await api('/studio/install/jobs/' + encodeURIComponent(downloadJobId) + '/cancel', undefined, 'POST');
+  } catch (err) {
+    installMessage(err.message, true);
+    return;
+  }
+  stopInstallPoll();
+  const gen = installPollGen;
+  await pollInstallJob(downloadJobId, gen);
+}
+async function lookLocal() {
+  installMessage('');
+  try {
+    const data = await api('/studio/install/look-local');
+    showLookLocalResult(data);
+  } catch (err) {
+    installMessage(err.message, true);
+  }
+}
+function useLocalComfy(url) {
+  const wizard = $('server-wizard');
+  if (wizard) wizard.hidden = false;
+  const kind = document.querySelector('input[name="engine-kind"][value="comfyui"]');
+  if (kind) kind.checked = true;
+  const field = $('server-url');
+  if (field) field.value = url || '';
+  const key = $('api-key-label');
+  if (key) key.hidden = true;
+  testEngine({ kind: 'comfyui', url: url || '' });
+}
 function wireEnginesPage() {
   if (enginesPageWired) return;
   enginesPageWired = true;
@@ -2954,9 +3224,7 @@ function wireEnginesPage() {
     if (serverWizard) serverWizard.hidden = false;
   });
 
-  if (addLocalBtn) addLocalBtn.addEventListener('click', () => {
-    if (installWizard) installWizard.hidden = false;
-  });
+  if (addLocalBtn) addLocalBtn.addEventListener('click', () => { openInstallWizard(); });
 
   // Close buttons
   const closeButtons = document.querySelectorAll('.close-wizard');
@@ -3028,37 +3296,61 @@ function wireEnginesPage() {
     });
   }
 
-  // Install form
   const lookLocalBtn = $('look-local-btn');
-  if (lookLocalBtn) {
-    lookLocalBtn.addEventListener('click', async () => {
-      try {
-        const data = await api('/studio/install/look-local');
-        showLookLocalResult(data);
-      } catch (err) {
-        // Show error
-      }
-    });
-  }
+  if (lookLocalBtn) lookLocalBtn.addEventListener('click', () => { lookLocal(); });
+  const lookAgainBtn = $('look-again-btn');
+  if (lookAgainBtn) lookAgainBtn.addEventListener('click', () => { lookLocal(); });
+  const comfyLink = $('open-comfyui-link');
+  if (comfyLink) comfyLink.addEventListener('click', () => openLink('https://www.comfy.org/download'));
+  const checkSpaceBtn = $('check-space-btn');
+  if (checkSpaceBtn) checkSpaceBtn.addEventListener('click', () => { checkInstallSpace(); });
+  const downloadBtn = $('download-ace-btn');
+  if (downloadBtn) downloadBtn.addEventListener('click', () => { startInstallDownload(); });
+  const resumeBtn = $('resume-download-btn');
+  if (resumeBtn) resumeBtn.addEventListener('click', () => { startInstallDownload(); });
+  const cancelDownloadBtn = $('cancel-download-btn');
+  if (cancelDownloadBtn) cancelDownloadBtn.addEventListener('click', () => { cancelInstallDownload(); });
+  const cancelInstallBtn = $('cancel-install-btn');
+  if (cancelInstallBtn) cancelInstallBtn.addEventListener('click', () => {
+    if (installWizard) installWizard.hidden = true;
+  });
+  const modelsField = $('models-dir');
+  if (modelsField) modelsField.addEventListener('input', () => {
+    const btn = $('download-ace-btn');
+    if (btn) btn.disabled = true;
+  });
 }
 function showLookLocalResult(data) {
   const container = $('look-local-result');
   if (!container) return;
   container.hidden = false;
   container.replaceChildren();
-
-  if (data.found && Array.isArray(data.found)) {
-    for (const server of data.found) {
-      if (server.ok) {
-        const div = el('div', '', 'found-server');
-        div.append(
-          el('div', `Found: ${server.url}`, 'server-label'),
-          el('div', server.url, 'server-url')
-        );
-        container.append(div);
-      }
-    }
+  const found = data && Array.isArray(data.found) ? data.found : [];
+  const ready = found.filter(server => server && server.ok === true && server.url);
+  if (!ready.length) {
+    container.append(el('p', 'No ComfyUI is running on this computer yet. Start ComfyUI, then look again.', 'hint'));
+    return;
   }
+  ready.forEach((server, index) => {
+    const div = el('div', '', 'found-server');
+    div.append(el('div', 'Found: ' + server.url, 'server-label'));
+    const helpId = 'help-use-comfy-' + index;
+    const row = el('div', '', 'control-row');
+    const btn = el('button', 'Use this ComfyUI', 'button secondary');
+    btn.type = 'button';
+    btn.title = 'Use this address and test it';
+    btn.setAttribute('aria-describedby', helpId);
+    btn.addEventListener('click', () => useLocalComfy(server.url));
+    const help = el('button', '?', 'help-icon');
+    help.type = 'button';
+    help.title = 'Use this address and test it';
+    help.setAttribute('aria-describedby', helpId);
+    const note = el('span', 'Opens the server form with this address filled in, then tests it. We do not make a song.', 'sr-only');
+    note.id = helpId;
+    row.append(btn, help, note);
+    div.append(row);
+    container.append(div);
+  });
 }
 
 // An open "More" menu closes when you click anywhere else, like any menu.

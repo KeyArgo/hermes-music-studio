@@ -284,32 +284,65 @@
 <div class="install-step">
 <h4>Step 1: Get ComfyUI Desktop</h4>
 <p class="hint">ComfyUI Desktop is the music engine app. Download it from the official source.</p>
-<button class="button secondary" id="open-comfyui-link" type="button" title="Open the ComfyUI Desktop download page">Get ComfyUI Desktop ↗</button>
-<button class="button secondary" id="look-local-btn" type="button" title="Check this PC only, on ports 8000 and 8188">Look on this computer</button>
+<div class="control-row">
+<button class="button secondary" id="open-comfyui-link" type="button" title="Open the ComfyUI Desktop download page" aria-describedby="help-comfy-link">Get ComfyUI Desktop ↗</button>
+<button class="help-icon" type="button" title="Open the ComfyUI Desktop download page" aria-describedby="help-comfy-link">?</button>
+<span id="help-comfy-link" class="sr-only">Opens the official ComfyUI download page in your browser. This studio does not install the app for you.</span>
+</div>
+<div class="control-row">
+<button class="button secondary" id="look-local-btn" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-local">Look on this computer</button>
+<button class="help-icon" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-local">?</button>
+<span id="help-look-local" class="sr-only">Checks this PC only, on ports 8000 and 8188.</span>
+</div>
 </div>
 <div id="look-local-result" hidden class="look-local-result"></div>
-<div id="install-step-2" class="install-step" hidden>
+<div id="install-step-2" class="install-step">
 <h4>Step 2: Choose models folder</h4>
 <p class="hint">Choose the folder ComfyUI calls models.</p>
-<label>Models folder <input id="models-dir" maxlength="500" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models."><button class="help-icon" type="button" aria-describedby="help-models">?</button><span id="help-models" class="sr-only">Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.</span></label>
+<label>Models folder <input id="models-dir" maxlength="500" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models."><button class="help-icon" type="button" aria-describedby="help-models" title="Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.">?</button><span id="help-models" class="sr-only">Choose the folder ComfyUI calls models. The installer usually offers Documents/ComfyUI/models.</span></label>
 </div>
-<div id="install-step-3" class="install-step" hidden>
+<div id="install-step-3" class="install-step">
 <h4>Step 3: Download files</h4>
-<button class="button secondary" id="check-space-btn" type="button">Check space</button>
+<div class="control-row">
+<button class="button secondary" id="check-space-btn" type="button" title="See if this computer has room for the music files" aria-describedby="help-check-space">Check space</button>
+<button class="help-icon" type="button" title="See if this computer has room for the music files" aria-describedby="help-check-space">?</button>
+<span id="help-check-space" class="sr-only">Counts the music files, how big they are, and how much free space this computer has.</span>
+<p id="install-gpu" class="hint install-gpu" hidden></p>
+</div>
 <div id="space-result" hidden class="space-result"></div>
+<div class="control-row">
+<button class="button primary" id="download-ace-btn" type="button" disabled title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">Download ACE-Step 1.5 (14.7 GB)</button>
+<button class="help-icon" type="button" title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">?</button>
+<span id="help-download" class="sr-only">Downloads about 14.7 GB of music files into the folder you chose. You can stop it and continue later.</span>
+</div>
+<div class="control-row" id="resume-download-row" hidden>
+<button class="button primary" id="resume-download-btn" type="button" hidden title="Continue the download where it left off" aria-describedby="help-resume">Resume download</button>
+<button class="help-icon" id="resume-help-btn" type="button" hidden title="Continue the download where it left off" aria-describedby="help-resume">?</button>
+<span id="help-resume" class="sr-only">Continues the download. Files that were only partly saved are picked up where they stopped.</span>
+</div>
 <div id="download-progress" hidden class="download-progress">
-<div class="progress-track" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar"></div></div>
+<div class="progress-track" id="install-progress-track" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="install-progress-bar" class="progress-bar"></div></div>
 <p id="progress-text" class="hint"></p>
-<button class="button secondary" id="cancel-download-btn" type="button">Cancel</button>
+<div class="control-row">
+<button class="button secondary" id="cancel-download-btn" type="button" title="Stop this download" aria-describedby="help-cancel-download">Cancel</button>
+<button class="help-icon" type="button" title="Stop this download" aria-describedby="help-cancel-download">?</button>
+<span id="help-cancel-download" class="sr-only">Stops the download. What was partly saved stays, so you can resume later.</span>
+</div>
 </div>
 <p id="install-message" class="message" role="status"></p>
 </div>
 <div id="install-done" hidden class="install-step">
-<p class="hint">Restart ComfyUI, then press "Look on this computer" to finish setup.</p>
-<button class="button secondary" id="look-again-btn" type="button">Look on this computer</button>
+<p class="hint">Restart ComfyUI, then press Look on this computer.</p>
+<div class="control-row">
+<button class="button secondary" id="look-again-btn" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-again">Look on this computer</button>
+<button class="help-icon" type="button" title="Checks this PC only, on ports 8000 and 8188" aria-describedby="help-look-again">?</button>
+<span id="help-look-again" class="sr-only">Checks this PC only, on ports 8000 and 8188.</span>
+</div>
 </div>
 <div class="wizard-actions">
-<button class="button secondary" id="cancel-install-btn" type="button">Cancel</button>
+<button class="button secondary" id="cancel-install-btn" type="button" title="Close this guide" aria-describedby="help-cancel-install">Cancel</button>
+<button class="help-icon" type="button" title="Close this guide" aria-describedby="help-cancel-install">?</button>
+<span id="help-cancel-install" class="sr-only">Closes this guide. A download that already started keeps going until you press Cancel beside the progress.</span>
 </div>
 </div>
 </div>

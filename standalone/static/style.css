@@ -142,15 +142,20 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .install-step h4 { margin: 0; font-family: Georgia, serif; font-weight: 400; font-size: 16px; color: #e5b987; }
 .install-step p { margin: 0; }
 .look-local-result { padding: 12px; background: #19171c; border-radius: 8px; }
-.found-server { padding: 12px; background: #262128; border-radius: 8px; margin: 8px 0; }
+.found-server { display: grid; gap: 8px; padding: 12px; background: #262128; border-radius: 8px; margin: 8px 0; }
 .found-server .server-label { font-weight: 700; color: #c5d69a; }
 .found-server .server-url { color: #a6ac9c; font-size: 12px; }
+.control-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.control-row .help-icon { margin-left: 0; }
 .space-result { padding: 16px; background: #19171c; border-radius: 10px; }
-.space-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #3a3037; font-size: 12px; }
+.space-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #3a3037; font-size: 12px; }
 .space-item:last-child { border-bottom: none; }
 .space-item .label { color: #a6ac9c; }
-.space-item .value { color: #c5d69a; font-weight: 500; }
+.space-item .value { color: #c5d69a; font-weight: 500; text-align: right; }
+.space-result .message { margin: 10px 0 0; }
+.install-gpu { margin: 0; color: #e5b987; }
 .download-progress { display: grid; gap: 12px; padding: 16px; background: #19171c; border-radius: 10px; }
+.download-progress .progress-track { margin: 0; }
 .advanced-content { padding: 16px; display: grid; gap: 14px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
