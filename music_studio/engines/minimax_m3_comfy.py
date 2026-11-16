@@ -590,24 +590,51 @@ def _combo_options(info, node: str, field: str) -> tuple[str, ...] | None:
     Handles the plain ``[[opts...], {...}]`` shape, a dict of DynamicCombo
     choices, and ComfyUI 0.44's ``["COMFY_DYNAMICCOMBO_V3", {"options":
     [{"key": ...}]}]`` shape used by SaveAudioAdvanced.
+
+    ``/object_info`` is whatever the server sent, so every level is checked
+    before it is indexed: a node entry, ``input`` or ``required`` that is not a
+    dict means the list cannot be read at all, and the caller reports
+    ``unknown`` rather than blaming a model file. An option object with no
+    usable name is skipped, never stringified to ``"None"``.
     """
     if not isinstance(info, dict):
         return None
-    spec = info.get(node) or {}
-    inputs = (spec.get('input') or {}).get('required') or {}
-    entry = inputs.get(field)
+    spec = info.get(node)
+    if not isinstance(spec, dict):
+        return None
+    inputs = spec.get('input')
+    if not isinstance(inputs, dict):
+        return None
+    required = inputs.get('required')
+    if not isinstance(required, dict):
+        return None
+    entry = required.get(field)
     if not isinstance(entry, list) or not entry:
         return None
     if len(entry) > 1 and isinstance(entry[1], dict) and isinstance(entry[1].get('options'), list):
         items = entry[1]['options']
         keys = [item.get('key') if isinstance(item, dict) else item for item in items]
-        return tuple(str(k) for k in keys if k is not None)
+        names = tuple(str(k) for k in keys if k is not None)
+        # Items that carried no key are unreadable, not an empty list.
+        return names if (names or not items) else None
     options = entry[0]
     if isinstance(options, dict):  # DynamicCombo: {"flac": [], "mp3": [...]}
         return tuple(str(o) for o in options.keys())
     if not isinstance(options, list):
         return None
-    return tuple(str(o.get('name') if isinstance(o, dict) else o) for o in options)
+    names = []
+    for option in options:
+        if isinstance(option, dict):
+            name = option.get('name')
+            if isinstance(name, str) and name:
+                names.append(name)
+            continue
+        names.append(str(option))
+    if options and not names:
+        # Every entry was a dict without a usable name: there is no list to
+        # read, which is "unknown", not "this server has no models".
+        return None
+    return tuple(names)
 
 
 def _saved_audio(history: dict, save_node: str) -> dict | None:
