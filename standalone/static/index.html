@@ -268,8 +268,8 @@
 <div class="wizard-actions">
 <button class="button secondary" id="test-server-btn" type="button">Test this address</button>
 </div>
-<div id="test-result" hidden class="test-result"></div>
-<div id="troubleshooting" hidden class="troubleshooting-card"></div>
+<div id="test-result" hidden class="test-result" aria-live="polite"></div>
+<div id="troubleshooting" hidden class="troubleshooting-card" aria-live="polite"></div>
 <p id="server-message" class="message" role="status"></p>
 <div class="wizard-actions">
 <button class="button primary" id="add-engine-btn" type="button" disabled>Add</button>
@@ -297,7 +297,7 @@
 <span id="help-look-local" class="sr-only">Checks this PC only, on ports 8000 and 8188.</span>
 </div>
 </div>
-<div id="look-local-result" hidden class="look-local-result"></div>
+<div id="look-local-result" hidden class="look-local-result" aria-live="polite"></div>
 <div id="install-step-2" class="install-step">
 <h4>Step 2: Choose models folder</h4>
 <p class="hint">Choose the folder ComfyUI calls models.</p>
@@ -311,7 +311,7 @@
 <span id="help-check-space" class="sr-only">Counts the music files, how big they are, and how much free space this computer has.</span>
 <p id="install-gpu" class="hint install-gpu" hidden></p>
 </div>
-<div id="space-result" hidden class="space-result"></div>
+<div id="space-result" hidden class="space-result" aria-live="polite"></div>
 <div class="control-row">
 <button class="button primary" id="download-ace-btn" type="button" disabled title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">Download ACE-Step 1.5 (14.7 GB)</button>
 <button class="help-icon" type="button" title="Download the ACE-Step 1.5 music files into the models folder" aria-describedby="help-download">?</button>

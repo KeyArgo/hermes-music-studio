@@ -108,8 +108,8 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .engine-list { display: grid; gap: 12px; margin: 0 0 24px; }
 .engine-row { display: flex; align-items: center; gap: 16px; padding: 14px; background: #262128; border: 1px solid #3a3037; border-radius: 12px; }
 .engine-info { flex: 1; min-width: 0; }
-.engine-name { font-weight: 700; color: #e5b987; font-size: 14px; }
-.engine-address { color: #a6ac9c; font-size: 12px; margin-top: 4px; }
+.engine-name { font-weight: 700; color: #e5b987; font-size: 14px; overflow-wrap: anywhere; }
+.engine-address { color: #a6ac9c; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .engine-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 11px; border: 1px solid #505842; background: transparent; }
 .engine-pill.ready { color: #cbd9a2; border-color: #60724a; }
 .engine-pill.not-tested { color: #b6bdae; border-color: #505842; }
@@ -151,7 +151,7 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .install-step p { margin: 0; }
 .look-local-result { padding: 12px; background: #19171c; border-radius: 8px; }
 .found-server { display: grid; gap: 8px; padding: 12px; background: #262128; border-radius: 8px; margin: 8px 0; }
-.found-server .server-label { font-weight: 700; color: #c5d69a; }
+.found-server .server-label { font-weight: 700; color: #c5d69a; overflow-wrap: anywhere; }
 .found-server .server-url { color: #a6ac9c; font-size: 12px; }
 .control-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .control-row .help-icon { margin-left: 0; }
