@@ -266,3 +266,7 @@ svg.brandmark{display:block;width:40px;height:40px;background:none;border-radius
 .idea-messages .error-message .commands { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(240, 172, 155, 0.15); border-radius: 6px; padding: 10px; font-family: ui-monospace, monospace; font-size: 11px; color: #ded4df; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
 .idea-messages .error-message .copy-cmd { background: #2a2d26; border: 1px solid #4a4e42; color: #ded4df; border-radius: 6px; padding: 8px 12px; font-size: 11px; cursor: pointer; margin-top: 8px; }
 .idea-messages .error-message .copy-cmd:hover { background: #35382f; }
+/* Narrow panes and phones: the menu scrolls inside its own row, the top bar wraps and the player bar
+   shrinks, so none of them pushes the page wider than the window. */
+@media (max-width: 850px) { .shell > * { min-width: 0; } .rail { min-width: 0; } .rail nav { min-width: 0; overflow-x: auto; scrollbar-width: thin; } .rail .nav { flex: 0 0 auto; } }
+@media (max-width: 560px) { .topbar { height: auto; min-height: 60px; flex-wrap: wrap; gap: 8px; padding-block: 10px; } .version-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; } .player-scrub, .player-time, .player-track, #player-seek { min-width: 0; } }
