@@ -1272,7 +1272,7 @@ function scheduleRefresh(delay) {
   pollTimer = setTimeout(() => { refresh(); }, delay);
 }
 // Plug-and-play. A fresh install has no ComfyUI address, so every engine reads unavailable and the
-// person is told to go hunting in Compute. Ask the local network once instead, and adopt the only
+// person is told to go hunting on the Music engines page. Ask the local network once instead, and adopt the only
 // answer; if there are several, say so and let them choose. Never overwrites a saved address.
 let autoDetected = false;
 async function autoDetectEngine() {
@@ -1462,7 +1462,7 @@ function noteFollowed(projectId, payload) {
   if (!ids.length) { followed = null; return; }
   followed = {projectId, ids, played: false, failed: false};
 }
-// ACE-Step local is configured in the setup panel. MiniMax and custom workflows use Compute.
+// ACE-Step local is configured in the setup panel. MiniMax and custom workflows use the Music engines page.
 function opensAceSetup(id) {
   return id === 'ace_local' || id === 'ace';
 }

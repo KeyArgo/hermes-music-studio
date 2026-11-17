@@ -409,12 +409,12 @@ def test_starting_a_download_in_a_wrong_folder_is_a_400(client, tmp_path):
 
 
 def test_a_download_job_that_does_not_exist_is_a_plain_refusal(client):
-    """``local_install`` raises ValueError for an unknown job, which the page shows as a 400."""
+    """An unknown download id is a 404 with the page's plain sentence, not a 500."""
     for method, path in ((client.get, '/api/studio/install/jobs/' + str(uuid.uuid4())),
                          (client.post, '/api/studio/install/jobs/' + str(uuid.uuid4()) + '/cancel')):
         response = method(path)
-        assert response.status_code == 400, response.text
-        assert response.json() == {'success': False, 'error': 'Download not found.'}
+        assert response.status_code == 404, response.text
+        assert response.json() == {'success': False, 'error': 'Not found.'}
 
 
 def test_looking_for_a_local_comfyui_names_both_ports(client):
