@@ -27,6 +27,20 @@ function mediaUrl(url) {
   const separator = String(url).includes('?') ? '&' : '?';
   return url + separator + 'token=' + encodeURIComponent(STUDIO_TOKEN);
 }
+// A server can answer a bad field with a list of objects (FastAPI does for a 422).
+// Read through String() that list says "[object Object]", which tells the person nothing.
+function errorText(value) {
+  if (!value || typeof value !== 'object') return '';
+  for (const raw of [value.detail, value.error]) {
+    if (typeof raw === 'string' && raw) return raw;
+    if (!raw || typeof raw !== 'object') continue;
+    const said = (Array.isArray(raw) ? raw : [raw])
+      .map(item => (typeof item === 'string' ? item : (item && (item.msg || item.message || item.detail)) || ''))
+      .filter(Boolean);
+    if (said.length) return said.join('; ');
+  }
+  return '';
+}
 async function api(path, data, method, options) {
   const opts = method ? {method} : data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)};
   if (method && data !== undefined) { opts.headers = {'Content-Type':'application/json'}; opts.body = JSON.stringify(data); }
@@ -39,7 +53,7 @@ async function api(path, data, method, options) {
   // Suggest may answer with a string or null. Only an object carries success, detail, or error.
   const failed = !!(value && typeof value === 'object' && value.success === false);
   if (!res.ok || failed) {
-    const err = new Error((value && (value.detail || value.error)) || 'Request failed');
+    const err = new Error(errorText(value) || 'Request failed');
     err.commands = value && value.commands;
     throw err;
   }
@@ -1956,7 +1970,8 @@ function fillModels(preferred) {
     select.append(option);
   });
   if (typeof preferred === 'string' && [...select.options].some(o => o.value === preferred)) select.value = preferred;
-  saveModelPreference();
+  // The choice is saved by the change handlers, never here: the filter box rebuilds this
+  // list too, and a search that matches nothing would erase the saved model.
 }
 $('idea-provider').onchange = () => { fillModels(); saveModelPreference(); };
 $('idea-model').onchange = () => { saveModelPreference(); };
@@ -1965,6 +1980,7 @@ $('idea-filter').onkeydown = e => {
   if (e.key === 'Enter' && $('idea-model').options.length > 1 && !$('idea-model').value) {
     $('idea-model').selectedIndex = 1;
     fillModels($('idea-model').value);
+    saveModelPreference();
   }
 };
 function addIdea(role, text){const p=el('p',text,role==='user'?'human':'assistant');$('idea-messages').append(p);$('idea-messages').scrollTop=$('idea-messages').scrollHeight;}
@@ -2861,7 +2877,7 @@ if ($('version-panel')) {
   });
 }
 // ---------------------------------------------------------------- engines page
-let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0, engineTestGen = 0, lastEngineTest = null;
+let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0, engineTestGen = 0, lastEngineTest = null, addingServer = false, startingDownload = false;
 function renderEngineList() {
   const container = $('engine-list');
   if (!container) return;
@@ -3010,7 +3026,11 @@ const TROUBLESHOOTING = {
 async function removeEngine(engineId) {
   try {
     await api(`/studio/engines/${encodeURIComponent(engineId)}`, undefined, 'DELETE');
+    // Same reason as after an Add: the song menu and Generate song read status and
+    // workflows from their own calls, so a removed engine lingers until they run again.
     await loadEngines();
+    await refreshWorkflows();
+    await refreshNow();
   } catch (err) {
     // Silent fail
   }
@@ -3513,10 +3533,18 @@ function wireEnginesPage() {
 
     if (addBtn) addBtn.addEventListener('click', async (e) => {
       e.preventDefault();
+      // A double-click is two clicks in the same instant: the second must not add the
+      // same engine twice while the first is still saving it.
+      if (addingServer) return;
+      addingServer = true;
+      addBtn.disabled = true;
       try {
         await addServerEngine();
       } catch (err) {
         serverMessage(err && err.message ? err.message : 'Could not add that engine.', true);
+      } finally {
+        addingServer = false;
+        syncServerKind();
       }
     });
 
@@ -3534,10 +3562,17 @@ function wireEnginesPage() {
   if (comfyLink) comfyLink.addEventListener('click', () => openLink('https://www.comfy.org/download'));
   const checkSpaceBtn = $('check-space-btn');
   if (checkSpaceBtn) checkSpaceBtn.addEventListener('click', () => { checkInstallSpace(); });
+  // Two clicks on Download or Resume before the server answers would start two
+  // downloads of the same 14.7 GB, so only one start runs at a time.
+  const beginDownload = async () => {
+    if (startingDownload) return;
+    startingDownload = true;
+    try { await startInstallDownload(); } finally { startingDownload = false; }
+  };
   const downloadBtn = $('download-ace-btn');
-  if (downloadBtn) downloadBtn.addEventListener('click', () => { startInstallDownload(); });
+  if (downloadBtn) downloadBtn.addEventListener('click', beginDownload);
   const resumeBtn = $('resume-download-btn');
-  if (resumeBtn) resumeBtn.addEventListener('click', () => { startInstallDownload(); });
+  if (resumeBtn) resumeBtn.addEventListener('click', beginDownload);
   const cancelDownloadBtn = $('cancel-download-btn');
   if (cancelDownloadBtn) cancelDownloadBtn.addEventListener('click', () => { cancelInstallDownload(); });
   const cancelInstallBtn = $('cancel-install-btn');
