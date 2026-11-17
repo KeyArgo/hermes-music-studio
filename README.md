@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml/badge.svg?branch=main"></a>
-  <a href="TESTING.md"><img alt="Tests" src="https://img.shields.io/badge/tests-767%20passing-2ea44f?style=flat-square"></a>
+  <a href="TESTING.md"><img alt="Tests" src="https://img.shields.io/badge/tests-1070%20passing-2ea44f?style=flat-square"></a>
   <a href="https://github.com/NousResearch/hermes-agent/pull/154029"><img alt="Hermes plugin catalog: in review" src="https://img.shields.io/badge/plugin%20catalog-in%20review-f59e0b?style=flat-square"></a>
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/license-MIT-2f6bff?style=flat-square"></a>
   <a href="https://github.com/NousResearch/hermes-agent"><img alt="Hermes Agent" src="https://img.shields.io/badge/Hermes%20Agent-plugin-7c3aed?style=flat-square"></a>
@@ -43,8 +43,8 @@ accident. The library, the worker and the audio stay on your machine.
   and an approval is bound to the exact `updated_at` version you read.
 - **A take can be re-made.** Draft, seed and engine travel with the take. A seed is a replay handle
   on the same runtime and hardware.
-- **The build says which build it is.** The header reads `v1.0.0 · 2026-11-11 · ba18a43`, filled from
-  the running server, never from a constant in the page.
+- **The build says which build it is.** The header reads `v1.0.0-dev.N · a8310ba7 · 2026-11-16` —
+  version, commit, date — filled from the running server, never from a constant in the page.
 - **The product proves itself.** `GET /api/verify` measures, at request time, that the sample is real
   audio, that the library reads, that a finished take is scrubbable because its response declares its
   length, and that REVamp's absence is a state rather than an error.
@@ -77,7 +77,7 @@ accident. The library, the worker and the audio stay on your machine.
 - **Workspaces and cover art.** Group songs; upload PNG/JPEG/WebP up to 2 MiB. The agent can save a picture as the cover with the `set_cover` action.
 - **REVamp is optional.** Create a playlist from exported takes; with REVamp absent the screen says so
   and playing and exporting still work.
-- **Chat and shell clients.** The `music_studio` tool has 20 actions, `/song` drives the same studio
+- **Chat and shell clients.** The `music_studio` tool has 22 actions, `/song` drives the same studio
   in chat, and `scripts/ms.py` is a standard-library HTTP client for shells and cron.
 - **Honest surgery.** A tail trim and a −1 dBFS peak cap are stored as a new file with the source
   SHA-256; the raw take is never rewritten. Vocal evidence is `unknown` unless a real ASR result
@@ -255,7 +255,9 @@ Providers you have set up in Hermes are marked ready. The studio connects throug
   `split_files/vae/ace_1.5_vae.safetensors`; 14.7 GB in all), and checks each against its SHA-256 before
   using it. The older Hugging Face download (`POST /api/studio/setup/hf`) fetches the model you name. The
   studio runs no installer, `git` or `pip`, sends no telemetry and has no cloud audio service. **Copy my
-  engines** puts names and addresses on your clipboard; keys are never included. "Check for a newer
+  engines** puts each saved engine's name, address and ready model list, plus the ACE-Step server
+  address, on your clipboard; keys are never included, and a custom workflow's graph stays on the
+  computer that saved it. "Check for a newer
   build" reports that Hermes owns updates; the studio does not fetch or install code itself. ComfyUI
   Desktop is installed by you and may update itself.
 - **Background processes.** A detached render worker per render (or batch), an ACE-Step subprocess in
@@ -265,9 +267,9 @@ Providers you have set up in Hermes are marked ready. The studio connects throug
 - **Shell commands.** `git` is read for the version stamp. The studio never runs a shell string from
   user text and never changes a password. The only credential it writes is the hosted API key you
   enter, saved through Hermes' own credential store.
-- **Local only.** The HTTP server binds loopback and rejects a non-loopback `Host` and cross-site
-  writes. There is no multi-user authentication: anyone who can reach the loopback API can approve
-  and render.
+- **Local only.** The HTTP server binds loopback and rejects a non-loopback `Host`. Every `/api` route
+  also requires the per-launch token the host writes into `studio-host.json` (0600): no token means
+  503, a wrong token means 401. It is single-user, so do not expose it to a network.
 
 Read [SECURITY.md](SECURITY.md) for the supported version and private vulnerability reporting.
 
@@ -284,9 +286,9 @@ node --test tests/*.mjs
 
 | Suite | Command | Measured result |
 |---|---|---|
-| Python | `env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q` | **677 passed, 1 skipped, 140 subtests passed** |
-| Browser-side | `node --test tests/*.mjs` | **90 passed** |
-| Total | both suites | **767 passed, 1 skipped** |
+| Python | `env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q` | **903 passed, 2 skipped, 139 subtests passed** |
+| Browser-side | `node --test tests/*.mjs` | **167 passed** |
+| Total | both suites | **1070 passed, 2 skipped** |
 
 `env -u PYTHONPATH` matters: a Hermes checkout on the path ships its own `tests` package, which wins
 over this repo's folder and makes collection fail. The full breakdown, CI commands and the exact

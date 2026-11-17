@@ -2,7 +2,7 @@
 
 Where each part of Hermes Music Studio is written down.
 
-Applies to 1.0.0 · revised 2026-11-11.
+Applies to 1.0.0 · revised 2026-11-16.
 
 | Document | Read it for |
 |---|---|

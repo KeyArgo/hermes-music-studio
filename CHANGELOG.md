@@ -23,7 +23,7 @@ All notable changes to Music Studio are recorded here. The format follows
 - **Three ways to get an engine.** The Music engines page (left menu) offers: point at a server you already run (ComfyUI or ACE-Step), download ACE-Step 1.5 to this computer from Comfy-Org/ACE-Step-1.5, or a hosted API. Each path tests before saving and names which check failed.
 - **Server test names the ready models.** Test asks the server for its node list and reports which music models are ready to render, for example `MiniMax Music 3` or `ACE-Step 1.5`.
 - **ACE-Step 1.5 ready-made graph.** The Download path finds a local ComfyUI Desktop, checks disk space, downloads the four ACE-Step-1.5 model files (14.7 GB) from Hugging Face at a pinned revision, verifies each by SHA-256, and shows progress. Downloads resume and can be cancelled.
-- **Copy and Paste engines.** Copy my engines exports the names and addresses (never keys) as text; on another computer, Paste engines restores them. Each computer maintains its own list in the plugin data folder, surviving plugin updates.
+- **Copy and Paste engines.** Copy my engines exports each saved engine's name, address and ready model list, plus the ACE-Step server address (never keys), as text; on another computer, Paste engines restores them. A custom workflow's graph stays on the computer that saved it. Each computer maintains its own list in the plugin data folder, surviving plugin updates.
 - **Fixes found in review, each with a regression test.** Add works only after a passing test of the address on screen and adds only the ready models; removing an engine is refused while a song uses it; a failed Add leaves nothing behind; partial downloads are kept for resume; files already in the folder are checksum-checked, never overwritten; a project is never left half-deleted on Windows; the library cannot move while a song is being made; dead renders are cleaned up outside the library lock.
 - **Ready models appear in Generate menu.** After a test passes, the model names and server appear in the Music engine dropdown as, for example, `ACE-Step 1.5 on studio-pc`. A take is pinned to the engine and address it was generated with.
 
@@ -102,7 +102,8 @@ All notable changes to Music Studio are recorded here. The format follows
 - **The build states its own identity.** `music_studio/version_stamp.py` (vendored from the suite
   template) resolves `BUILD_INFO.json` → live `git` → `plugin.yaml`, and `GET /api/v1/version`
   reports version, commit, commit date, install time, dirty state and channel.
-- The header chip reads that route and shows `v1.0.0-dev.N · 2026-11-09 · 19f7a2c`, amber and
+- The header chip reads that route and shows `v1.0.0-dev.N · 19f7a2c · 2026-11-09` (version, commit,
+  date), amber and
   `modified` when the installed copy came from a dirty tree; hover gives the full commit and build
   time, click copies the line for a bug report.
 - `scripts/deploy.sh` installs, stamps and restarts in one command and ends in
@@ -130,7 +131,7 @@ The hackathon entry pins commit `ba18a43` ([NousResearch/hermes-agent#154029](ht
 
 - **Windows support.** Portable file locks, no POSIX-only open flags, process checks without signal 0, `taskkill` for process trees, the Windows venv interpreter, and no directory fsync on Windows.
 - **The create response shows the sections the lyrics imply.** It returned an empty list until the next status poll; storage still keeps only what the writer supplied.
-- **The version chip tells a release from a development build.** A catalog install of the pinned commit, or a checkout at the release tag, reads `X.Y.Z`; any other build reads `X.Y.Z-dev`. `tools/release_check.py` and the release workflow keep the version, the changelog, the tag and the GitHub release in step.
+- **The version chip tells a release from a development build.** A catalog install of the pinned commit, or a checkout at the release tag, reads `X.Y.Z`; any other build reads `X.Y.Z-dev.N` (N = `dev_base` + commits; a shallow clone with no commit count reads `X.Y.Z-dev`). `tools/release_check.py` and the release workflow keep the version, the changelog, the tag and the GitHub release in step.
 - **Documentation:** a rebuilt README with a recorded demo and current Hermes Desktop screenshots, and a full docs set (usage, reference, architecture, configuration, troubleshooting, FAQ, development and testing).
 - **Project files:** contributing guide, code of conduct, security policy, issue and pull request templates, and CODEOWNERS.
 

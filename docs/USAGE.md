@@ -2,7 +2,7 @@
 
 A walkthrough of every user-facing feature, from the first draft to a file in your music folder.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 ![The create screen with an approved draft](screenshots/create-form.png)
 
@@ -182,13 +182,15 @@ After the first download, the files stay on your disk. Restarting ComfyUI or the
 
 Copy your saved engines to another computer:
 
-1. In Music engines, press **Copy my engines**. A list of text appears with the name and address of each engine you have saved.
+1. In Music engines, press **Copy my engines**. A block of text appears with the name, address and
+   ready model list of each engine you have saved, plus the ACE-Step server address if one is set.
 2. Copy that text.
 3. On the other computer, open Music Studio and go to Music engines.
 4. Press **Paste engines** and paste the text you copied.
 5. Each computer remembers its own engines. They are stored in the plugin data folder and survive plugin updates.
 
-Your API keys are never copied, only the names and addresses.
+Your API keys are never copied. A custom workflow engine is the one thing that does not travel: its
+graph is saved per computer, so add it again on the new machine.
 
 - **Version**, **Companion**, **Contribute** and **Report a problem** round out the panel.
   **Copy diagnostics** includes the version, platform, library path, counts and newest failed take.
@@ -202,9 +204,9 @@ while it is running; keep the studio open for that.
 
 ## From a chat: the `music_studio` tool
 
-The tool has 20 actions: `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`,
+The tool has 22 actions: `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`,
 `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`,
-`takes`, `export`, `wait`, `compare` and `compare_status`. The usual loop:
+`takes`, `export`, `wait`, `compare`, `compare_status`, `set_cover` and `draft`. The usual loop:
 
 ```text
 status

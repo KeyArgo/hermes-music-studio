@@ -79,14 +79,14 @@ def plan(models_dir):
 def status(job_id):
     with _lock:
         if job_id not in _jobs:
-            raise ValueError('Download not found.')
+            raise KeyError('Download not found.')
         return dict(_jobs[job_id]['status'])
 
 
 def cancel(job_id):
     with _lock:
         if job_id not in _jobs:
-            raise ValueError('Download not found.')
+            raise KeyError('Download not found.')
         _jobs[job_id]['cancel'].set()
         if _jobs[job_id]['status']['state'] == 'running':
             _jobs[job_id]['status']['state'] = 'cancelling'

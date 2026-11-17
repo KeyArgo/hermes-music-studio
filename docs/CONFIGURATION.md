@@ -3,7 +3,7 @@
 Every environment variable and saved setting the code actually reads, with its default and the file
 that reads it.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 Settings saved in the studio (Music engines → Render settings) win over most environment variables where
 both exist; the exceptions are noted. The optional hosted provider's key is a credential: it is stored
@@ -25,11 +25,11 @@ The legacy `hewn` names are kept on purpose: renaming them would orphan every ex
 | Variable | Default | Read by | Meaning |
 |---|---|---|---|
 | `HEWN_STUDIO_HOST` | `127.0.0.1` | `music_studio/host.py` | Bind address for the loopback host |
-| `HEWN_STUDIO_HOST_PORT` | `8775` | `music_studio/host.py`, `host_launcher.py` | First port to try; the launcher searches the next 12 free ports |
-| `HEWN_STUDIO_HOST_PYTHON` | unset | `music_studio/host_launcher.py` | Interpreter used for the host; otherwise `/usr/bin/python3.13`, then the current interpreter |
+| `HEWN_STUDIO_HOST_PORT` | `8775` | `music_studio/host.py`, `host_launcher.py` | First port to try; the launcher searches the next 50 free ports |
+| `HEWN_STUDIO_HOST_PYTHON` | unset | `music_studio/host_launcher.py` | Interpreter used for the host; otherwise the current interpreter, the Hermes sibling, `py -3` on Windows, `python3.13`/`python3.12`/`python3`/`python` on `PATH`, Homebrew on macOS, and `/usr/bin/python3.13` last |
 | `HEWN_STUDIO_IDLE_EXIT_S` | `300` | `music_studio/lifecycle.py` | Seconds without a request before the host exits; `0` disables |
 | `HEWN_STUDIO_PARENT_PID` | unset | `music_studio/lifecycle.py` | The launcher's pid; the host exits when that process is gone |
-| `HEWN_STUDIO_NO_HOST` | unset | `standalone/app.py`, `dashboard/__init__.py` | Set to `1` so the standalone server does not start a second host |
+| `HEWN_STUDIO_NO_HOST` | unset | `standalone/app.py` (sets it), `dashboard/plugin_api.py` | Set to `1` so the standalone server does not start a second host |
 
 ## Engines
 
@@ -52,7 +52,6 @@ Saved engine paths are injected into the host process by `music_studio/host_laun
 |---|---|---|---|
 | `HOME` | — | `music_studio/export.py` | Default export folder is `~/Music/Hermes Music Studio` |
 | `MUSIC_STUDIO_BASE` | discovered | `scripts/ms.py` | Base URL for the CLI; otherwise the port from `studio-host.json`, then `8775` |
-| `HERMES_MUSIC_HERMES_COMMAND` (unused since the ctx.llm move) | `hermes` on `PATH`, then `~/.local/bin/hermes` | `standalone/ideas.py` | Launcher for the creative partner / cover generation |
 | `HERMES_MUSIC_REVAMPCTL` | `revampctl` on `PATH`, then `~/.local/bin/revampctl` | `standalone/revamp.py` | REVamp client executable |
 | `REVAMP_PORT` | `8114` | `standalone/app.py` | Origin allowed to read take audio for REVamp |
 
@@ -86,6 +85,8 @@ Other files in the same folder:
 | `library.json` | `{"path": "<absolute folder>"}`; absent means the plugin's own data folder |
 | `engine-preference.json` | `{preferred, allow_fallback, updated_at}` |
 | `comfy-targets.json` | list of `{id, name, url}` named ComfyUI endpoints |
+| `comfy-workflows.json` | custom ComfyUI workflow graphs, one saved endpoint each |
+| `exports.json` | export ledger: `{path, title, folder}` per take, so a repeat export is reused |
 | `studio-workspaces.json` | workspace names and project ids |
 | `presets.json` | saved style presets |
 | `studio-host.json` | `{port, pid}` for the running loopback host |

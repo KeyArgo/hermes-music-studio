@@ -5,7 +5,7 @@ expected output, and the status. The statuses below are the recorded results
 from the run named in each section. Commands use the repository root as the
 working directory.
 
-Applies to 1.0.0 · revised 2026-11-11 · the suite breakdown is in
+Applies to 1.0.0 · revised 2026-11-16 · the suite breakdown is in
 [TESTING.md](TESTING.md).
 
 Environment: Python 3.13 with `requirements-dev.txt`. The full-suite command
@@ -20,7 +20,7 @@ value cannot select another interpreter.
 | Check | Measured time | Scope |
 |---|---|---|
 | Demo-card verifier (`tests/test_verify_take.py`) | ~0.11 s | card vs shipped WAV, licence field presence |
-| Full Python suite | 114.51 s | 677 passed, 1 skipped, 140 subtests |
+| Full Python suite | 106.76 s | 903 passed, 2 skipped, 139 subtests |
 
 The verifier is the quick pre-flight for the shipped demo; the full suite is the
 complete test run. Times are recorded measurements, not live runs for this page.
@@ -35,12 +35,12 @@ complete test run. Times are recorded measurements, not live runs for this page.
 env -u PYTHONPATH TMPDIR=/tmp /usr/bin/python3.13 -m pytest --rootdir=tests tests -q
 ```
 
-**Expected output:** `677 passed, 1 skipped, 140 subtests passed` and exit status 0.
+**Expected output:** `903 passed, 2 skipped, 139 subtests passed` and exit status 0.
 
-**Status:** PASS — measured 2026-11-11, 176.87 s. One test is skipped; that is
+**Status:** PASS — measured 2026-11-16, 106.76 s. Two tests are skipped; that is
 the recorded result, not a failure. The suite fakes the engines and does not
 render real audio. The browser-side suite is a separate run: `node --test
-tests/*.mjs`, 90 passed. See [TESTING.md](TESTING.md).
+tests/*.mjs`, 167 passed. See [TESTING.md](TESTING.md).
 
 ## Approval is required
 
