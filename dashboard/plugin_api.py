@@ -780,9 +780,15 @@ def studio_draft(body: dict = Depends(json_body)):
     if not llm_bridge.available():
         raise HTTPException(503, llm_bridge.MISSING)
     try:
+        # int() on a container or a word is the caller's mistake, not a crash: it raised TypeError
+        # out of int({}) and escaped the ValueError branch below as a 500.
+        style = int(body.get('style') or 50)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(422, 'style must be a whole number between 0 and 100') from None
+    try:
         request = build_request(body.get('provider'), body.get('model'),
                                 [{'role': 'user', 'content': prompt}], 'draft',
-                                body.get('tone'), int(body.get('style') or 50))
+                                body.get('tone'), style)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     try:

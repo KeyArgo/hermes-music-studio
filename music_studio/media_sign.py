@@ -70,7 +70,10 @@ def verify(root: Path, path: str, signature: str) -> bool:
     match = AUDIO_PATH.match(path or '')
     if not match or not signature:
         return False
-    return hmac.compare_digest(sign(root, match.group(1), match.group(2)), str(signature))
+    # compare_digest refuses a non-ASCII str (a percent-encoded link is enough), which would 500 the
+    # route instead of refusing it; compare bytes so any signature is a plain False.
+    return hmac.compare_digest(sign(root, match.group(1), match.group(2)).encode('ascii'),
+                               str(signature).encode('utf-8', 'replace'))
 
 
 def audio_url(base: str, root: Path, project_id: str, take_id: str) -> str:
