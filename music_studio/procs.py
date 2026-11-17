@@ -4,6 +4,8 @@ import signal
 import subprocess
 import time
 
+from .childenv import minimal_env
+
 WINDOWS = os.name == 'nt'
 
 # How long a polite SIGTERM gets before SIGKILL, and how long either platform
@@ -42,7 +44,7 @@ def _gone(pid):
     # macOS and the BSDs have no /proc; ps shows the zombie state there.
     try:
         out = subprocess.run(['ps', '-o', 'stat=', '-p', str(int(pid))],
-                             capture_output=True, timeout=5).stdout.strip()
+                             capture_output=True, timeout=5, env=minimal_env()).stdout.strip()
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
     return out[:1] in (b'Z', b'X', b'x')
@@ -70,7 +72,8 @@ def kill_tree(pid):
         return False
     if _windows():
         try:
-            subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], capture_output=True)
+            subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'],
+                           capture_output=True, env=minimal_env())
         except OSError:
             pass
         return _wait_gone(pid, KILL_WAIT_SECONDS)

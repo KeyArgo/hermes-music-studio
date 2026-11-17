@@ -4,11 +4,13 @@ import os
 import shutil
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
 
 from . import setup
+from .network import _link_local
 
 BASE_URL = 'https://huggingface.co/Comfy-Org/ACE-Step-1.5/resolve/371bb1680f8c88d8c1083f6ffb6330d3d55bff76'
 ACE15_FILES = [
@@ -24,13 +26,34 @@ _jobs = {}
 _running = None
 
 
+class _ModelRedirect(urllib.request.HTTPRedirectHandler):
+    """Hugging Face sends the bytes from its CDN, so another https host is expected.
+
+    A redirect onto ``file:``, ``ftp:`` or a link-local address is not. The sha256
+    check still runs on whatever body comes back before the file is kept.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parts = urllib.parse.urlsplit(newurl)
+        if parts.scheme not in ('http', 'https') or _link_local(parts.hostname or ''):
+            raise urllib.error.HTTPError(req.full_url, code, 'redirect refused', headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_model_opener = urllib.request.build_opener(_ModelRedirect)
+
+
+def _fetch(request, timeout):
+    return _model_opener.open(request, timeout=timeout)
+
+
 def look_local():
     found = []
     for port in (8000, 8188):
         url = f'http://127.0.0.1:{port}'
         try:
             request = urllib.request.Request(url + '/system_stats', headers={'User-Agent': 'hermes-music-studio'})
-            with urllib.request.urlopen(request, timeout=1) as response:
+            with _fetch(request, 1) as response:
                 ok = response.status == 200
         except (OSError, ValueError):
             ok = False
@@ -166,6 +189,8 @@ def _download(job_id, root):
                 continue
             final.parent.mkdir(parents=True, exist_ok=True)
             digest = hashlib.sha256()
+            if part.is_symlink():
+                raise ValueError(f'{name}: refusing to resume through a symlink')
             offset = part.stat().st_size if part.exists() else 0
             if offset > item['size']:
                 part.unlink()
@@ -187,7 +212,7 @@ def _download(job_id, root):
                     headers['Range'] = f'bytes={offset}-'
                 url = BASE_URL.rstrip('/') + '/' + item['path']
                 request = urllib.request.Request(url, headers=headers)
-                response = urllib.request.urlopen(request, timeout=30)
+                response = _fetch(request, 30)
                 if offset and (response.status != 206 or not response.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
                     response.close()
                     with _lock:
@@ -197,7 +222,7 @@ def _download(job_id, root):
                     with part.open('wb'):
                         pass
                     request = urllib.request.Request(url, headers={'User-Agent': 'hermes-music-studio'})
-                    response = urllib.request.urlopen(request, timeout=30)
+                    response = _fetch(request, 30)
                 with response:
                     with part.open('ab' if offset else 'wb') as output:
                         while True:

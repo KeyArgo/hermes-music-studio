@@ -548,7 +548,8 @@ class MiniMaxM3ComfyEngine(Engine):
             headers['Content-Type'] = 'application/json'
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+            from ..network import open_url
+            with open_url(req, timeout or self.timeout) as resp:
                 payload = resp.read()
         except urllib.error.HTTPError as exc:
             detail = _clean(exc.read().decode('utf-8', 'replace') or str(exc.reason))

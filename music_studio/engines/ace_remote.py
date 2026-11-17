@@ -235,7 +235,8 @@ class AceRemoteEngine(Engine):
             headers['Authorization'] = f'Bearer {self.api_key}'
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+            from ..network import open_url
+            with open_url(req, timeout or self.timeout) as resp:
                 payload = resp.read()
         except urllib.error.HTTPError as exc:
             detail = _clean(exc.read().decode('utf-8', 'replace') or exc.reason)

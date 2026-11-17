@@ -166,7 +166,7 @@ def test_look_local(monkeypatch):
     def fail(request, timeout):
         urls.append(request.full_url)
         raise OSError('offline')
-    monkeypatch.setattr(install.urllib.request, 'urlopen', fail)
+    monkeypatch.setattr(install, '_fetch', fail)
     result = install.look_local()
     assert result['ports_checked'] == [8000, 8188]
     assert urls == ['http://127.0.0.1:8000/system_stats', 'http://127.0.0.1:8188/system_stats']
@@ -195,7 +195,7 @@ def test_short_read_keeps_partial(offline, tmp_path, monkeypatch):
     class Response(io.BytesIO):
         status = 200
         headers = {}
-    monkeypatch.setattr(install.urllib.request, 'urlopen', lambda *a, **k: Response(offline[:100]))
+    monkeypatch.setattr(install, '_fetch', lambda *a, **k: Response(offline[:100]))
     root = models(tmp_path)
     result = wait(install.start(str(root))['job_id'])
     assert result['state'] == 'failed'
@@ -220,7 +220,7 @@ def test_bad_range_restarts_with_fresh_request(offline, tmp_path, monkeypatch, r
         if len(requests) == 1:
             return Response(offline[1:100], response_status, {'Content-Range': content_range})
         return Response(offline, 200, {})
-    monkeypatch.setattr(install.urllib.request, 'urlopen', fetch)
+    monkeypatch.setattr(install, '_fetch', fetch)
     assert wait(install.start(str(root))['job_id'])['state'] == 'done'
     assert requests == ['bytes=123-', None]
     assert part.with_suffix('').read_bytes() == offline
@@ -236,7 +236,7 @@ def test_running_folder_and_cancel_restart(offline, tmp_path, monkeypatch):
             started.set()
             release.wait(3)
             return super().read(size)
-    monkeypatch.setattr(install.urllib.request, 'urlopen', lambda *a, **k: Response(offline))
+    monkeypatch.setattr(install, '_fetch', lambda *a, **k: Response(offline))
     root = models(tmp_path)
     other = tmp_path / 'other' / 'models'
     other.mkdir(parents=True)
