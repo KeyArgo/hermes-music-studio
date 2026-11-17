@@ -24,6 +24,7 @@ import urllib.request
 from pathlib import Path
 
 from . import service
+from .store import replace_with_retry
 
 STATE_FILE = 'studio-host.json'
 LOG_FILE = 'studio-host.log'
@@ -251,7 +252,9 @@ def _write_state(root: Path, state: dict) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
-    os.replace(tmp, target)
+    # A reader (the pane, the gateway) holds this file open now and then, and Windows refuses
+    # the rename until it lets go; the store's commit helper waits that out.
+    replace_with_retry(tmp, target)
     if hasattr(os, 'chmod'):
         try:
             os.chmod(target, 0o600)       # belt and braces: the rename should already carry 0600
