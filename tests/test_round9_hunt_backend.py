@@ -120,6 +120,10 @@ def other_protocol():
                 return
             with conn:
                 try:
+                    # Read the request first: closing before it arrives is a reset on Windows,
+                    # which is "nothing answered", not "something answered in another protocol".
+                    conn.settimeout(5)
+                    conn.recv(65536)
                     conn.sendall(b'220 mail.example.com ESMTP\r\n')
                 except OSError:
                     pass
