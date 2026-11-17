@@ -189,7 +189,7 @@ def test_one_unusable_host_does_not_stop_the_scan(monkeypatch):
 
 @pytest.fixture
 def small_file(monkeypatch):
-    """One 6 KB "weight file" served by a stand-in urlopen."""
+    """One 6 KB "weight file" served by a stand-in fetch."""
     data = b'abcdef' * 1000
     monkeypatch.setattr(install, 'ACE15_FILES', [
         {'path': 'split/test.bin', 'folder': 'diffusion_models', 'size': len(data),
@@ -199,7 +199,7 @@ def small_file(monkeypatch):
         status = 200
         headers = {}
 
-    monkeypatch.setattr(install.urllib.request, 'urlopen', lambda *a, **k: Response(data))
+    monkeypatch.setattr(install, '_fetch', lambda *a, **k: Response(data))
     return data
 
 
