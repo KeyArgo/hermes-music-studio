@@ -13,7 +13,9 @@ import ipaddress
 import json
 import os
 import tempfile
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -93,6 +95,48 @@ def validate_base_url(url):
         raise ValueError('target URL must not be a link-local address')
     path = parts.path.rstrip('/')
     return urllib.parse.urlunsplit((parts.scheme.lower(), parts.netloc, path, '', ''))
+
+
+class _PinnedRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect may stay on the host that was already validated, and nowhere else.
+
+    urllib follows ``ftp`` and any http host, and it keeps ``Authorization`` while it
+    does. A tested or pasted address would otherwise be bounced at the metadata
+    service, or the hosted key would be handed to whatever answered the redirect.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parts = urllib.parse.urlsplit(newurl)
+        old = urllib.parse.urlsplit(req.full_url)
+        if parts.scheme not in ('http', 'https') or parts.username or parts.password:
+            raise urllib.error.HTTPError(req.full_url, code, 'redirect refused', headers, fp)
+        new_host = (parts.hostname or '').lower()
+        old_host = (old.hostname or '').lower()
+        if not new_host or new_host != old_host or parts.port != old.port or _link_local(new_host):
+            raise urllib.error.HTTPError(req.full_url, code, 'redirect refused', headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = None
+
+
+def open_url(request, timeout):
+    """GET/POST an address that already passed ``validate_base_url``.
+
+    ``file:`` and link-local targets are refused before any opener sees them, so a
+    default file handler cannot read a local path the caller pasted.
+    """
+    global _opener
+    if isinstance(request, str):
+        request = urllib.request.Request(request)
+    parts = urllib.parse.urlsplit(request.full_url)
+    if parts.scheme not in ('http', 'https'):
+        raise urllib.error.URLError('only http and https URLs can be fetched')
+    if _link_local(parts.hostname or ''):
+        raise urllib.error.URLError('link-local addresses are not fetched')
+    if _opener is None:
+        _opener = urllib.request.build_opener(_PinnedRedirect)
+    return _opener.open(request, timeout=timeout)
 
 
 def validate_name(name):

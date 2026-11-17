@@ -35,18 +35,22 @@ def _check(name, ok, detail=''):
 
 
 def _get(url, headers=None, timeout=CHECK_TIMEOUT_S):
+    from .network import open_url
+
     request = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with open_url(request, timeout) as response:
         body = response.read()
     return body
 
 
 def _post(url, payload, headers=None, timeout=CHECK_TIMEOUT_S):
+    from .network import open_url
+
     data = json.dumps(payload).encode()
     merged = {'Content-Type': 'application/json'}
     merged.update(headers or {})
     request = urllib.request.Request(url, data=data, headers=merged, method='POST')
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with open_url(request, timeout) as response:
         return response.read()
 
 
@@ -62,6 +66,9 @@ def normalise_url(raw):
         raise ValueError('do not put credentials in the address')
     if parsed.query or parsed.fragment:
         raise ValueError('the address cannot carry a query or a fragment')
+    from .network import _link_local
+    if _link_local(parsed.hostname or ''):
+        raise ValueError('the address must not be a link-local address')
     return text
 
 
@@ -219,7 +226,14 @@ def copy_into_comfy(folder, data_dir):
     if comfy is None:
         raise ValueError('no local ComfyUI was found; copy the folder named above into that '
                          "machine's models folder yourself, or point the studio at a server")
-    source = Path(folder)
+    source = Path(folder).expanduser()
+    try:
+        source = source.resolve()
+    except OSError as exc:
+        raise ValueError(f'{folder} is not a folder') from exc
+    allowed = _models_dir(data_dir).resolve()
+    if source != allowed and allowed not in source.parents:
+        raise ValueError('that folder is not a model this studio downloaded')
     if not source.is_dir():
         raise ValueError(f'{source} is not a folder')
     destination = comfy / 'diffusion_models' / source.name

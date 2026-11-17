@@ -111,6 +111,19 @@ def validate(payload: dict) -> dict:
     if url and not (url.startswith('http://') or url.startswith('https://')):
         raise ValueError('comfy_url must start with http:// or https://')
     merged['comfy_url'] = url.rstrip('/')
+    if url:
+        import urllib.parse
+
+        from .network import _link_local
+        if _link_local(urllib.parse.urlsplit(merged['comfy_url']).hostname or ''):
+            raise ValueError('comfy_url must not be a link-local address')
+    ace = merged.get('ace_remote_url')
+    if isinstance(ace, str) and ace.strip():
+        from .network import validate_base_url
+        try:
+            merged['ace_remote_url'] = validate_base_url(ace.strip())
+        except ValueError as exc:
+            raise ValueError(f'ace_remote_url: {exc}') from exc
     hosts = merged.get('scan_hosts') or ''
     if not isinstance(hosts, str):
         raise ValueError('scan_hosts must be a comma-separated string')

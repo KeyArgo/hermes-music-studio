@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -21,28 +22,42 @@ PORTS = (8188, 8000, 8189, 8190, 7860)
 MINIMAX_NODES = ('MiniMaxMusic3TextEncode', 'EmptyMiniMaxMusic3LatentAudio')
 
 
+def _usable(url: str) -> bool:
+    """True for an http(s) address that is not the link-local metadata range."""
+    from .network import _link_local
+
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    host = parts.hostname or ''
+    return parts.scheme in ('http', 'https') and bool(host) and not _link_local(host)
+
+
 def candidates(saved: str = '', extra_hosts: str = '') -> list[str]:
     """Every URL worth trying, in the order a person would expect them."""
     urls: list[str] = []
     for value in (saved, os.environ.get('COMFYUI_URL', '')):
         value = (value or '').strip().rstrip('/')
-        if value and value not in urls:
+        if value and value not in urls and _usable(value):
             urls.append(value)
     hosts = ['127.0.0.1', 'localhost', 'host.docker.internal']
     for host in (extra_hosts or os.environ.get('MUSIC_STUDIO_SCAN_HOSTS', '')).split(','):
         host = host.strip()
-        if host and host not in hosts:
+        if host and host not in hosts and not host.startswith(('file:', 'ftp:', 'http:', 'https:')):
             hosts.append(host)
     for host in hosts:
         for port in PORTS:
             url = f'http://{host}:{port}'
-            if url not in urls:
+            if url not in urls and _usable(url):
                 urls.append(url)
     return urls
 
 
 def _get(url: str, path: str, timeout: float):
-    with urllib.request.urlopen(f'{url}{path}', timeout=timeout) as response:
+    from .network import open_url
+
+    with open_url(urllib.request.Request(f'{url}{path}'), timeout) as response:
         return json.loads(response.read(4_000_000).decode('utf-8', 'replace'))
 
 
