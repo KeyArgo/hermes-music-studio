@@ -13,6 +13,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from .store import replace_with_retry
+
 MAX_IMAGE = 2 * 1024 * 1024
 
 TYPES = {
@@ -52,7 +54,9 @@ def write_cover(root, project_id: str, image: bytes, mime: str) -> None:
             handle.write((mime + '\n').encode('ascii') + image)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, directory / (project_id + '.cover'))
+        # The pane reads a cover to draw the library; Windows refuses this rename while it has
+        # the file open, so the commit waits that out like every other one in the store.
+        replace_with_retry(temp, directory / (project_id + '.cover'))
     finally:
         if os.path.exists(temp):
             os.unlink(temp)

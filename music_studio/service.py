@@ -53,7 +53,7 @@ def plugin_data_dir(plugin_id):
     return base
 
 from .store import (DEFAULT_ENGINE_ID, Store, estimate_render_seconds, limits,
-                    sections_for, valid_id)
+                    replace_with_retry, sections_for, valid_id)
 from .jobs import Jobs
 from .engines import (CapabilityUnsupported, EngineUnavailable, MiniMaxM3ComfyEngine,
                       Registry, default_engines, resolve_id)
@@ -1009,7 +1009,9 @@ def export_take(project_id, take_id, folder=None, title=None):
     try:
         tmp = ledger_path.with_suffix('.tmp')
         tmp.write_text(json.dumps(ledger, indent=2), encoding='utf-8')
-        os.replace(tmp, ledger_path)
+        # A status poll may be reading this file; Windows refuses the rename until it finishes,
+        # and a commit lost here is a second copy of the same song.
+        replace_with_retry(tmp, ledger_path)
     except OSError:
         pass
     return result

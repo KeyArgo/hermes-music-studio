@@ -280,6 +280,30 @@ def read_text_with_retry(path, attempts=REPLACE_ATTEMPTS, delay=REPLACE_DELAY_SE
             wait = min(wait * 2, REPLACE_MAX_DELAY_SECONDS)
 
 
+def remove_with_retry(target, attempts=REPLACE_ATTEMPTS, delay=REPLACE_DELAY_SECONDS):
+    """``Path.unlink``, waiting out a Windows reader that holds the file open.
+
+    An unlink is refused with the same sharing violation as a replace (WinError 32), and the
+    readers here are the ones already polling the library, so the last step of a delete gets
+    the same bounded wait its earlier steps have.
+    """
+    if os.name != 'nt':
+        Path(target).unlink()
+        return
+    wait = delay
+    for remaining in range(attempts, 0, -1):
+        try:
+            Path(target).unlink()
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if remaining == 1:
+                raise
+            time.sleep(wait)
+            wait = min(wait * 2, REPLACE_MAX_DELAY_SECONDS)
+
+
 def sections_for(project):
     """Stored sections, or the structure implied by the lyrics when there are none."""
     stored = project.get('sections') or []
@@ -464,16 +488,28 @@ class Store:
                         continue
                     audio_names.append(name)
             pending_path = self.root / '.orphaned-audio.json'
+            pending = {}
             if pending_path.exists():
-                pending = json.loads(pending_path.read_text())
-            else:
-                pending = {}
+                try:
+                    loaded = json.loads(read_text_with_retry(pending_path))
+                except ValueError:
+                    # Half a file, or one edited by hand: nothing in it can be matched to a
+                    # project, and it must not refuse every delete from here on.
+                    loaded = {}
+                if isinstance(loaded, dict):
+                    pending = loaded
             pending[pid] = audio_names
             self._save_orphaned_audio(pending_path, pending)
-            (self.root / (pid + '.json')).unlink()
+            remove_with_retry(self.root / (pid + '.json'))
             fsync_dir(self.root)
             for owner, names in list(pending.items()):
-                if (self.root / (valid_id(owner) + '.json')).exists():
+                try:
+                    owner_record = self.root / (valid_id(owner) + '.json')
+                except ValueError:
+                    # A key that is not a project id is kept as it is: this code cannot use it,
+                    # and it is still the only record that the audio exists.
+                    continue
+                if owner_record.exists():
                     continue
                 remaining = []
                 for name in names:
