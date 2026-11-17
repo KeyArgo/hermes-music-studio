@@ -8,6 +8,7 @@ reports what answered, so the UI can offer it instead of an error.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -47,10 +48,17 @@ def _get(url: str, path: str, timeout: float):
 
 
 def probe(url: str, timeout: float = 0.8) -> dict:
-    """One endpoint: does ComfyUI answer, and can it run MiniMax Music 3?"""
+    """One endpoint: does ComfyUI answer, and can it run MiniMax Music 3?
+
+    A host that no request line can carry (a typed space, a pasted control
+    character) makes ``http.client`` refuse the request itself with an
+    HTTPException, not an OSError: that one host is skipped, because a single
+    unusable entry must not lose the rest of the scan.
+    """
     try:
         stats = _get(url, '/system_stats', timeout)
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError, TimeoutError) as exc:
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError,
+            TimeoutError, http.client.HTTPException) as exc:
         return {'url': url, 'reachable': False, 'comfyui': False, 'minimax': False,
                 'detail': f'{type(exc).__name__}: {str(exc)[:120]}'}
     info = {}

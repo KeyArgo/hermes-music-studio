@@ -15,8 +15,10 @@ caller. Detection is one GET after another to that address and nothing else.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
+import urllib.parse
 from pathlib import Path
 
 from . import setup
@@ -189,6 +191,17 @@ def _not_comfy(base, checks, message=None) -> dict:
         checks)
 
 
+def _unusable_address(base: str) -> bool:
+    """True when an HTTP request line cannot carry this address as it stands.
+
+    A pasted address often carries a character nobody can see: a NUL or a tab
+    from a terminal, a zero-width space from a web page. ``http.client`` then
+    refuses the request itself with its own exception, which is the address's
+    fault rather than the server's, so it is answered before anything is sent.
+    """
+    return any(char < '!' or char > '~' for char in base)
+
+
 def test_server(kind, url) -> dict:
     """Ask one address what it is, and which music models it can run.
 
@@ -216,6 +229,12 @@ def test_server(kind, url) -> dict:
             'That address is not valid. Include http:// and the port, like '
             f'http://192.168.1.50:8188. ({exc})')
 
+    if _unusable_address(base):
+        return _problem(
+            kind, base, 'bad_address',
+            'That address has a space or an invisible character in it. Type it again, '
+            'like http://192.168.1.50:8188.')
+
     checks: list[dict] = []
     if kind == 'ace_server':
         return _test_ace_server(base, checks)
@@ -226,7 +245,9 @@ def _test_comfyui(base, checks) -> dict:
     """A body that is not JSON, or has no ``system`` object, means the wrong service.
 
     Only a timeout or a connection error is "nothing answered": a server that
-    replied with HTML is answering, just not as ComfyUI.
+    replied with HTML is answering, just not as ComfyUI. A service that greets
+    you in its own protocol (a mail server's 220 line) raises BadStatusLine,
+    which is not an OSError: it answered too, in something that is not HTTP.
     """
     try:
         raw = setup._get(f'{base}/system_stats')
@@ -236,6 +257,11 @@ def _test_comfyui(base, checks) -> dict:
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
         checks.append(_check('server answers', False, exc))
         return _no_answer('comfyui', base, checks)
+    except http.client.HTTPException as exc:
+        # BadStatusLine and friends are not OSErrors: something answered, in a
+        # protocol that is not HTTP.
+        checks.append(_check('server answers', False, exc))
+        return _not_comfy(base, checks)
 
     try:
         stats = json.loads(raw)
@@ -254,7 +280,7 @@ def _test_comfyui(base, checks) -> dict:
     except urllib.error.HTTPError as exc:
         checks.append(_check('node list', False, f'HTTP {exc.code}'))
         return _not_comfy(base, checks, _WRONG_NODE_LIST)
-    except (urllib.error.URLError, OSError, TimeoutError) as exc:
+    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as exc:
         checks.append(_check('node list', False, exc))
         return _no_answer('comfyui', base, checks)
     try:
@@ -288,6 +314,13 @@ def _test_ace_server(base, checks) -> dict:
     except (urllib.error.URLError, OSError, TimeoutError, ValueError) as exc:
         checks.append(_check('/health', False, exc))
         return _no_answer('ace_server', base, checks)
+    except http.client.HTTPException as exc:
+        # It answered, in something that is not HTTP at all.
+        checks.append(_check('/health', False, exc))
+        return _problem(
+            'ace_server', base, 'not_ace',
+            'That address answered, but it is not an ACE-Step server (its /health did not '
+            'answer).', checks)
 
     if not isinstance(payload, dict):
         checks.append(_check('/health', False, 'unexpected /health body'))
@@ -539,7 +572,9 @@ def _parse_export(text) -> dict:
         raise ValueError(BAD_EXPORT_MESSAGE)
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # A paste nested past the decoder's own limit raises RecursionError,
+        # which is not a ValueError: it used to reach the page as a 500.
         raise ValueError(BAD_EXPORT_MESSAGE) from None
     if not isinstance(data, dict) or not isinstance(data.get('engines'), list):
         raise ValueError(BAD_EXPORT_MESSAGE)
@@ -563,6 +598,18 @@ def _parse_export(text) -> dict:
             'ace_server': validate_base_url(ace) if isinstance(ace, str) and ace.strip() else None}
 
 
+def _address_key(url) -> str:
+    """The same server spelled two ways is one engine.
+
+    A scheme and a host name are case-insensitive, and the stored form keeps the
+    case the person typed, so two spellings have to compare lowered to be seen
+    as one address.
+    """
+    parts = urllib.parse.urlsplit(str(url))
+    return urllib.parse.urlunsplit((parts.scheme.lower(), parts.netloc.lower(),
+                                    parts.path.rstrip('/'), '', ''))
+
+
 def import_engines(data_dir, text) -> dict:
     """Rebuild the engines an export lists; never overwrite what is already here.
 
@@ -574,12 +621,13 @@ def import_engines(data_dir, text) -> dict:
     existing = set()
     for target in TargetStore(data_dir).list():
         try:
-            existing.add(validate_base_url(target['url']))
+            existing.add(_address_key(validate_base_url(target['url'])))
         except ValueError:
             existing.add(target['url'])
     added, skipped, errors = [], [], []
     for entry in parsed['engines']:
-        if entry['url'] in existing:
+        key = _address_key(entry['url'])
+        if key in existing:
             skipped.append(entry['name'])
             continue
         models = [model for model in entry['models'] if model in SIGNATURES] or [DEFAULT_MODEL]
@@ -588,7 +636,7 @@ def import_engines(data_dir, text) -> dict:
         except (ValueError, KeyError, OSError) as exc:
             errors.append(f'{entry["name"]}: {exc}')
             continue
-        existing.add(entry['url'])
+        existing.add(key)
         added.append(entry['name'])
     if parsed['ace_server'] and not setup._stored_endpoint(data_dir)['url']:
         try:
