@@ -9,6 +9,10 @@ to the maintainers; the tools listed here wrote and checked code under their rev
 - **The owner of InovinLabs** — product direction, the approval gate, the honesty rules (a control
   that fails must say so), and the final word on every release.
 
+## Special thanks
+
+Special thanks to sovthpaw. A passionate advocate, a dedicated community member, and someone who genuinely gives a damn about open AI. Respect doesn't require agreement.
+
 ## Agent collaborators
 
 These models worked on this codebase during development, each on named tasks, with their output

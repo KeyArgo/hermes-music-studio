@@ -329,4 +329,6 @@ MIT. See [LICENSE](LICENSE). Models and services carry their own licences, recor
 - [REVamp](https://github.com/KeyArgo/hermes-revamp) for the optional player integration.
 - [InovinLabs](https://github.com/inovinlabs) for the product and its direction.
 
+Special thanks to sovthpaw. A passionate advocate, a dedicated community member, and someone who genuinely gives a damn about open AI. Respect doesn't require agreement.
+
 <p align="center">Built by <a href="https://github.com/KeyArgo">KeyArgo</a> · InovinLabs</p>
