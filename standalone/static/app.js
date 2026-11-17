@@ -3231,6 +3231,7 @@ async function pollInstallJob(jobId, gen) {
     if (gen !== installPollGen) return;
     installMessage(err.message, true);
     showResume(true);
+    showCancelDownload(false);
     return;
   }
   if (gen !== installPollGen) return;

@@ -3,19 +3,20 @@
 The failure modes the code actually handles, the sentence it gives you, and the next check. Start with
 `python3 scripts/ms.py doctor` or the **Music engines** panel; both report each engine and the failing check.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 ## No engine is ready
 
 `/status` reports each engine as available or not, with the failing check named. Common causes:
 
-- **ACE runtime not found.** `ace_local` needs `venv/bin/python`, `checkpoints/` and `source/acestep/`
-  under the runtime (defaults come from `ACE_RUNTIME_DIR` and `ACE_SOURCE_DIR`). Set both on the Music engines page,
+- **ACE runtime not found.** `ace_local` needs `venv/bin/python` and `checkpoints/` under the runtime
+  (`ACE_RUNTIME_DIR`), and `acestep/` under the source checkout (`ACE_SOURCE_DIR`) — two separate
+  roots, and a path that is unset reads `/nonexistent/…`. Set both on the Music engines page,
   or export them before starting Hermes. The health detail names the first missing path.
 - **ComfyUI unreachable.** `minimax_m3_comfy` probes `/system_stats` and `/object_info`. It needs the
   MiniMax Music 3 nodes, the three loader model lists, `CLIPLoader type="minimax"` and a lossless
   audio save format. A reachable server without those nodes is reported as unavailable, not ready.
-  Press **Find a renderer** to scan loopback ports 8188/8189/8190/7860, the saved endpoint and
+  Press **Find a renderer** to scan loopback ports 8188/8000/8189/8190/7860, the saved endpoint and
   `MUSIC_STUDIO_SCAN_HOSTS`.
 - **No ffmpeg.** If ComfyUI cannot save WAV, the adapter needs `ffmpeg` on `PATH` to transcode FLAC.
   Without it the engine is `degraded` with "ComfyUI cannot emit WAV and ffmpeg is not installed".
@@ -99,7 +100,8 @@ studio reads the default folder, which can look like an empty library.
 ## The pane is blank or the host will not start
 
 The pane frames a loopback host, not the gateway. `GET /studio/host` starts it; the launcher needs an
-interpreter with `uvicorn`, `fastapi` and `starlette` (`/usr/bin/python3.13` is preferred). The host
+interpreter with `uvicorn`, `fastapi` and `starlette` — the current interpreter first, then the Hermes
+sibling, then the `python3.x` names on `PATH`, and `/usr/bin/python3.13` last. The host
 log is `studio-host.log` beside the library. If Hermes was restarted, the old host exits through its
 parent-pid watchdog; reopen the pane.
 

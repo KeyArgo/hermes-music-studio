@@ -2,7 +2,7 @@
 
 How to run every suite in this repository, what CI runs, and the results measured on this commit.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](docs/README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](docs/README.md).
 
 ## Python suite
 
@@ -16,10 +16,11 @@ env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q
 Measured on this commit:
 
 ```
-677 passed, 1 skipped, 1 warning, 140 subtests passed in 114.51s (0:01:54)
+903 passed, 2 skipped, 1 warning, 139 subtests passed in 106.76s (0:01:46)
 ```
 
-The one skip is recorded by the suite, not a collection error. No test performs a real render.
+The two skips are recorded by the suite, not collection errors: a case-insensitive-filesystem case
+and the opt-in live GPU render (`MUSIC_STUDIO_LIVE_TESTS=1`). No test performs a real render.
 
 `env -u PYTHONPATH` matters: a Hermes checkout on the path ships its own `tests` package, which wins
 over this repository's folder and makes collection fail with `No module named 'tests.<file>'`.
@@ -40,13 +41,13 @@ node --test tests/*.mjs
 Measured on this commit:
 
 ```
-tests 90
-pass 90
+tests 167
+pass 167
 fail 0
 ```
 
-Three files carry the DOM tests: `tests/test_player.mjs`, `tests/test_desktop.mjs` and
-`tests/test_ui_settings.mjs`. They load `standalone/static/index.html` and drive the real `app.js`.
+Every `tests/*.mjs` file is a Node test file; the DOM ones load `standalone/static/index.html` and
+drive the real `app.js` against a stubbed API.
 
 ## What CI runs
 
@@ -64,12 +65,12 @@ the runner does not already have it. CI runs both suites on Linux, macOS and Win
 
 | Suite | Passed | Skipped |
 |---|---|---|
-| Python | 677 | 1 |
-| Browser-side | 90 | 0 |
-| **Total** | **767** | **1** |
+| Python | 903 | 2 |
+| Browser-side | 167 | 0 |
+| **Total** | **1070** | **2** |
 
-The README's test badge uses 767. If you add or remove a test, run both suites and update this table,
-the README badge and the count in `VERIFY.md` in the same commit.
+The README's test badge uses 1070. If you add or remove a test, run both suites and update this
+table, the README badge and the count in `VERIFY.md` in the same commit.
 
 ## Manual checks
 

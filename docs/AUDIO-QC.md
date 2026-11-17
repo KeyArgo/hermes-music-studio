@@ -2,7 +2,7 @@
 
 What the measurement gate records, what it may edit, and what it refuses to claim about sound.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 Every take is measured once, from the exact bytes the engine returned, before
 it is committed. QC is metadata: if the gate fails, the take still succeeds and

@@ -23,9 +23,10 @@ release a fix before public disclosure.
 
 ## Scope
 
-The product binds its HTTP server to loopback and requires a loopback `Host`; it has no multi-user
-authentication. Anyone who can reach the loopback API can approve and render. Findings that require
-local shell access, a modified plugin install, or control of the configured engine endpoint are in
+The product binds its HTTP server to loopback and requires a loopback `Host`; every `/api` route also
+requires the per-launch token (no token configured refuses with 503, a wrong token with 401). It is
+single-user: anyone who holds that token can approve and render. Findings that require local shell
+access, a modified plugin install, or control of the configured engine endpoint are in
 scope only where they cross a boundary the product claims to enforce.
 
 The studio stores project JSON and WAV files under the plugin data directory you chose. It does not

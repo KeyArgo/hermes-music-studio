@@ -4,7 +4,7 @@ description: "Interview a song idea, draft lyrics and style, then render."
 version: 1.0.0
 author: Music Studio
 license: MIT
-platforms: [linux, macos]
+platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [Music, Songwriting, ACE-Step, Local-Generation, Human-Approval]
@@ -40,7 +40,7 @@ Two clients drive the same studio, and both are safe to use from any chat:
 
 | Client | Who uses it | Shape |
 |---|---|---|
-| `music_studio` tool | any Hermes session with this plugin enabled | JSON actions: `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait` |
+| `music_studio` tool | any Hermes session with this plugin enabled | JSON actions: `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait`, `compare`, `compare_status`, `set_cover`, `draft` |
 `change` takes plain words (`{project_id, instruction}`) and rewrites the draft: it is deterministic, it
 refuses what the engines cannot do (mute an instrument, subtract vocals) with a sentence, and it journals
 the request on the project. `keep` records the friendly take without revoking approval.
@@ -95,7 +95,7 @@ export  {project_id}                       # writes a normal .wav, returns its p
    `en es fr de it pt ja ko zh auto` (default `en`). Repaint and extend exist
    only on ACE — MiniMax refuses them with a 409, so do not offer those edits
    for a MiniMax take.
-5. **One render at a time per profile.** A second `generate` returns
+5. **One render at a time per profile.** A second `render` returns
    `GPU busy`.
 6. **Edits revoke approval.** `update` unsets `approved` whenever a value
    actually changes. Verify with `status` before rendering again.
@@ -182,7 +182,7 @@ four lines, hook first
 Present, in this order: title, duration, the caption, the lyrics block, and one
 sentence on what you chose and why. Then ask for edits or approval.
 
-Do not call `generate` yet, and do not call `create` until the user agrees to
+Do not call `render` yet, and do not call `create` until the user agrees to
 the text (creating early is fine only when the user asked you to save a draft).
 
 ### 5. Create the draft
@@ -200,7 +200,7 @@ the text (creating early is fine only when the user asked you to save a draft).
 10–360 s, no repaint or extend, output carries a licence notice). The engine
 stays pinned through approval, so a take cannot switch backend behind the
 user's back; change it with `update` (which revokes approval) if they want a
-different one. The chat tool has no separate engine argument for `generate` —
+different one. The chat tool has no separate engine argument for `render` —
 the draft's `engine` is the choice.
 
 The response is `{"success": true, "project": {...}}` with a `project_id`
@@ -217,19 +217,19 @@ when you refer to the project; never invent one.
 Send only the fields that change. Say plainly that the edit revoked approval
 and that the dashboard will show the draft as unapproved again.
 
-### 7. Wait for approval, then generate
+### 7. Wait for approval, then render
 
 Read state with `{"action": "status"}` — it returns `engine_available` and
-every project with its `approved` flag and takes. Only call `generate` when
+every project with its `approved` flag and takes. Only call `render` when
 `approved` is `true`.
 
 ```json
-{"action": "generate", "project_id": "<uuid>", "seed": 18347291}
+{"action": "render", "project_id": "<uuid>", "seed": 18347291}
 ```
 
-`seed` must be an integer in `0 … 4294967295` and is **required** — omitting it
-returns `invalid seed`. Draw a fresh random seed per take, and tell the user
-the seed: it is their replay handle for that take on this machine.
+`seed` is optional: an integer in `0 … 4294967295`, and when you leave it out
+the studio picks a random one. Tell the user the seed the take comes back with:
+it is their replay handle for that take on this machine.
 
 The call returns immediately with a `queued` take. The render continues in a
 detached worker even if the chat ends. A 30-second take typically takes 1–3
@@ -259,10 +259,10 @@ point them at the dashboard tab or the `/download` route.
 | `GPU busy: another render owns the worker lease` | A newly spawned worker found another render holding the lease and aborted its own take. | Nothing is stuck. Wait for the listed live take to finish, then retry. |
 | take `failed`, error `worker died` | The detached worker exited without finishing. The take was already reconciled and the GPU lease released. | Report it and offer to retry with a new seed. If it repeats, the ACE runtime is the suspect — point the user at the README troubleshooting section. |
 | take `failed`, error contains `ACE worker failed` or a Python traceback | The ACE runtime itself failed; the tail of its log is in the error. | Show the last lines. Common causes: missing checkpoints, no CUDA device, another GPU-hungry process. |
-| take `failed`, error `ACE worker timed out` | The render exceeded 900 seconds. | Retry once; a shorter duration helps. |
+| take `failed`, error `ACE worker timed out` | The render exceeded the ACE timeout: three times its modelled render time, never under 3 minutes (591 s for a 30 s take). | Retry once; a shorter duration helps. |
 | `worker could not start` | The plugin could not spawn its worker (bad interpreter/PYTHONPATH). | Ask the user to restart the gateway. |
 | `engine_available: false` in `status` | No engine can render: the ACE runtime/checkpoints/source are missing and no MiniMax ComfyUI is reachable. | Read `engines[]` for each engine's own `state`/detail. Explain the ACE paths and `ACE_RUNTIME_DIR` / `ACE_SOURCE_DIR`, or the ComfyUI `COMFYUI_URL`; drafting still works, rendering does not. |
-| `… does not support repaint` / `… does not support extend` (409) | The take's engine is MiniMax Music 3, whose ComfyUI graph has no repaint/continuation nodes. | Do not retry. Offer a fresh generate on MiniMax, or a new ACE draft if range edits matter. |
+| `… does not support repaint` / `… does not support extend` (409) | The take's engine is MiniMax Music 3, whose ComfyUI graph has no repaint/continuation nodes. | Do not retry. Offer a fresh render on MiniMax, or a new ACE draft if range edits matter. |
 | `duration must be between 10 and 180 seconds` | The draft is pinned to ACE (or names no engine) and asked for more than ACE's measured ceiling. | Shorten it, or pin `engine: "minimax_m3_comfy"` if it is configured (10–360 s). |
 | `duration must be between 10 and 360 seconds` | The draft is pinned to MiniMax and asked for more than 360 s. | Shorten it; that is the model's own cap. |
 | `project not found` / `invalid UUID` | Wrong or stale project id. | Re-read `status` and use the id from there. |

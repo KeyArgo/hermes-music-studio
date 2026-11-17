@@ -2,7 +2,7 @@
 
 How the repository is laid out, how to run each suite, how CI works, and how to add an engine.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 ## Repo layout
 

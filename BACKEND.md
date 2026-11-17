@@ -16,9 +16,10 @@ continues. Worker stdout/stderr goes to
 
 ## Engines
 
-`ace_local` delegates to `ace_engine` and the runtime at `ACE_RUNTIME_DIR`
-(default `~/ace15-runtime`), source at `ACE_SOURCE_DIR`
-(default `~/ACE-Step-1.5`). `minimax_m3_comfy` talks to
+`ace_local` delegates to `ace_engine` and the runtime named by `ACE_RUNTIME_DIR`, source
+by `ACE_SOURCE_DIR`. No path is baked in: unset means the engine reports itself
+unavailable (`/nonexistent/ace-runtime`, `/nonexistent/ace-source`) rather than
+pointing at a folder that belongs to another machine. `minimax_m3_comfy` talks to
 the ComfyUI endpoint saved on the Music engines page or `COMFYUI_URL` (no baked-in address) and
 needs `ffmpeg` for FLAC → WAV. `ace_remote` is registered but undeployed. The engine, its
 limits and its failure reason are exposed in `GET /status.engines[]`; nothing

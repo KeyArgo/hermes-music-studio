@@ -2,7 +2,7 @@
 
 Short answers, with the document that has the detail.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 **Does it work without Hermes?**
 Yes. Start it with a token — the host refuses `/api` without one — and open the URL it prints:
@@ -68,16 +68,19 @@ No. Updates go through `hermes plugins update hermes-music-studio`. The Check bu
 installed build and says Hermes owns updates; it does not fetch or install code.
 
 **Can I use it on Windows?**
-No, not in this release. Parts of the product use `fcntl` locks and `/proc`. Linux is the tested path;
-macOS is not exercised by CI.
+Yes. File locks go through `msvcrt` there, process state comes from the Windows APIs rather than
+`/proc`, and CI runs both suites on Windows and macOS as well as Linux. Real-hardware use has been on
+Linux, and local ACE-Step rendering on Windows or macOS is untested. See
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 **Why does the browser-side test suite need `npm install`?**
 The DOM tests use `jsdom` and the React testing library. The studio itself has no build step and no
 runtime JavaScript dependency.
 
-**Why is the test count in the README 524?**
-482 Python tests and 42 browser-side tests passed on this commit; one Python test is skipped. The
-commands and exact summary lines are in [../TESTING.md](../TESTING.md).
+**Why is the test count in the README 1070?**
+903 Python tests and 167 browser-side tests passed on this commit; two Python tests are skipped (a
+case-insensitive-filesystem case and the opt-in live GPU render). The commands and exact summary
+lines are in [../TESTING.md](../TESTING.md).
 
 **Something is stuck at "GPU busy".**
 A take is queued or running. Wait, cancel a batch, or use `POST /recover {"confirm": true}` only after

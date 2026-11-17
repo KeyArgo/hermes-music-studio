@@ -3,7 +3,7 @@
 Every tool the plugin registers, every slash command, every CLI command, every hook, every HTTP route
 and every configuration key.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 ## Agent tool: `music_studio`
 
@@ -12,7 +12,7 @@ enforced by the store, not by the caller.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string enum | yes | One of `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait`, `compare`, `compare_status`, `set_cover` |
+| `action` | string enum | yes | One of `status`, `doctor`, `create`, `update`, `change`, `keep`, `snippet`, `snippet_splice`, `check_take`, `checkpoint`, `checkpoints`, `restore`, `approve`, `render`, `queue`, `takes`, `export`, `wait`, `compare`, `compare_status`, `set_cover`, `draft` |
 | `project_id` | string | action-dependent | Project UUID |
 | `take_id` | string | action-dependent | Take UUID |
 | `draft` | object | for create/update | Draft fields: `title`, `caption`, `lyrics`, `duration_seconds`, `instrumental`, `engine`, `bpm`, `keyscale`, `vocal_language`, `sections`, `minimax_guidance`, `comfy_target_id` |
@@ -21,6 +21,9 @@ enforced by the store, not by the caller.
 | `image_path` | string | `set_cover` | Absolute path to a PNG/JPEG/WebP under 2 MiB, inside the studio folder, temp or Hermes' image cache |
 | `engines` | array of string | no | `compare`: engine ids in order; defaults to every ready engine |
 | `instruction` | string | for change | Plain words, e.g. "add a fiddle" |
+| `prompt` | string | for draft | What the song is about; `idea` is accepted as a synonym |
+| `provider`, `model` | string / string | no | `draft`: the model that writes it; empty means Hermes' active model |
+| `tone`, `style`, `create` | string / integer / boolean | no | `draft`: tone words, style influence 0–100 (default 50), and whether to open a project with the result |
 | `start_s`, `end_s` | number | for snippet | Range in the parent take |
 | `retry` | boolean | no | `check_take`: re-render a measurable failure |
 | `label`, `playhead_s` | string / number | no | `checkpoint` |
@@ -52,6 +55,7 @@ Action results (all return a JSON object; a refusal is `{"success": false, "erro
 | `compare` | `project_id`, optional `engines`, `seed` | Plan of takes |
 | `compare_status` | `project_id` | Plan and each take's state |
 | `set_cover` | `project_id`, `image_path` | Stores the image as the project's cover; nothing is generated |
+| `draft` | `prompt` | The agent's model writes a draft: `{success, draft, written_by}`; `create` also opens a project |
 
 ## Slash command: `/song`
 
@@ -114,7 +118,7 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 |---|---|---|
 | GET | `/status` | Engines with limits/capabilities, default engine, projects and takes, progress/ETA, warnings; reconciles dead workers |
 | GET | `/doctor` | Engine checks and fix hints |
-| GET | `/demo`, `/demo/audio`, `/demo/audio-json` | Shipped demo card, WAV and base64 audio |
+| GET | `/demo`, `/demo/audio`, `/demo/audio-json`, `/demo/peaks` | Shipped demo card, WAV, base64 audio and waveform |
 | POST | `/create` | `{draft}` → project |
 | POST | `/update` | `{project_id, draft, base_updated_at?}`; revokes approval; stale token refused |
 | POST | `/change` | `{project_id, instruction}` → deterministic draft change |
@@ -169,6 +173,13 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | GET | `/studio/covers/{project_id}/json` | Cover image as JSON |
 | GET/POST/DELETE | `/studio/targets`, `/studio/targets/{id}` | Named ComfyUI endpoints |
 | POST | `/studio/targets/{id}/probe` | Probe one target |
+| GET/POST | `/studio/workflows`; DELETE `/studio/workflows/{workflow_id}`; POST `/studio/workflows/{workflow_id}/test` | Custom ComfyUI workflows: list, save, remove, test |
+| POST | `/studio/draft` | `{prompt, provider?, model?, tone?, style?, create?}` → a draft written by Hermes' model (503 without it) |
+| GET/POST | `/studio/engines`; POST `/studio/engines/test`; DELETE `/studio/engines/{target_id}` | The Music engines page: saved servers, test an address, remove one |
+| GET/POST | `/studio/engines/export`, `/studio/engines/import` | Engines as text for another computer (names, addresses, model lists and the ACE server; never keys) |
+| GET | `/studio/install/look-local` | Find a ComfyUI on this computer and its models folder |
+| POST | `/studio/install/plan`; GET `/studio/install/suggest` | Disk-space plan for the ACE-Step download; the models folder to suggest |
+| POST | `/studio/install/jobs`; GET `/studio/install/jobs/{job_id}`; POST `/studio/install/jobs/{job_id}/cancel` | Start, poll and cancel the 14.7 GB download |
 | GET | `/studio/hardware` | Read-only `nvidia-smi` inventory |
 | GET | `/studio/host` | Start or find the loopback host |
 | POST | `/host/close` | Stop the host (answers first) |
@@ -190,7 +201,8 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` | The studio page |
-| GET | `/api/studio/models`; POST `/api/studio/ideas` | Empty model list (no public list-models API); creative partner uses Hermes' active model |
+| GET | `/api/health` | Liveness, plus whether this host enforces the token |
+| GET | `/api/studio/models`; POST `/api/studio/ideas` | The model picker: Hermes' default choice, then each public provider with its models and a ready flag (the standalone host answers with the default choice alone); `ideas` drafts with the chosen `provider`/`model` |
 | GET/POST | `/api/studio/workspaces` | List/create workspaces |
 | POST | `/api/studio/assign` | Assign a project to a workspace |
 | GET/POST | `/api/studio/covers/{project_id}` | Read or upload cover art (no generation route) |
@@ -198,8 +210,9 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | POST | `/api/studio/revamp/playlists`, `/play`, `/add`, `/add-take`, `/playlist`, `/remove` | REVamp actions |
 
 The standalone server accepts only a loopback `Host`, requires `application/json` on writes that carry
-a body, and rejects cross-site requests. It has no authentication and should not be exposed to a
-network.
+a body, and rejects cross-site requests while unauthenticated. Every `/api` route needs the per-launch
+token — no `HEWN_STUDIO_TOKEN` means 503, a wrong or absent token means 401 — and the launcher writes
+that token into `studio-host.json` (0600). It is single-user and should not be exposed to a network.
 
 ## Configuration keys
 
@@ -222,8 +235,7 @@ Environment variables include `HEWN_STUDIO_DATA_DIR`, `HEWN_STUDIO_HOST`, `HEWN_
 `HEWN_STUDIO_HOST_PYTHON`, `HEWN_STUDIO_IDLE_EXIT_S`, `HEWN_STUDIO_PARENT_PID`, `HEWN_STUDIO_NO_HOST`,
 `ACE_RUNTIME_DIR`, `ACE_SOURCE_DIR`, `ACE_REMOTE_URL`, `ACE_REMOTE_API_KEY`, `COMFYUI_URL`,
 `MUSIC_STUDIO_SCAN_HOSTS`, `MUSIC_STUDIO_GPU_LOCK`, `MUSIC_STUDIO_BASE`, `HERMES_HOME`,
-`HERMES_MUSIC_HERMES_COMMAND`, `HERMES_MUSIC_HERMES_REPO`, `HERMES_MUSIC_REVAMPCTL`, `REVAMP_PORT`,
-`XDG_DATA_HOME`.
+`HERMES_MUSIC_REVAMPCTL`, `REVAMP_PORT`, `XDG_DATA_HOME`.
 
 ## Error shape
 

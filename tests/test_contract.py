@@ -313,7 +313,9 @@ class SeedContractTests(RouterTestCase):
     def test_generate_still_rejects_a_bad_seed(self):
         pid = self.project()['project_id']
         self.approve(pid)
-        for seed in (None, -1, 2**32, 'x', True):
+        # An omitted seed is a random seed (REFERENCE.md); a seed that is given but unusable is still
+        # refused, which is why None is no longer in this list.
+        for seed in (-1, 2**32, 'x', True):
             with self.subTest(seed=seed):
                 response = self.client.post('/generate', json={'project_id': pid, 'seed': seed})
                 self.assertEqual(response.status_code, 400)

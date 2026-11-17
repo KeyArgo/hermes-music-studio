@@ -4,6 +4,7 @@ import json
 import os
 import copy
 import random
+import secrets
 import subprocess
 
 from .procs import detach_kwargs
@@ -608,12 +609,15 @@ def _engine_and_target(s, project, engine_id=None):
     return resolved, target
 
 
-def generate(project_id, seed, lock_seed=False, engine_id=None):
+def generate(project_id, seed=None, lock_seed=False, engine_id=None):
     s = store()
     jobs = Jobs(s)
     take = None
     try:
         project = s.get(project_id)
+        # An omitted seed is a random seed, which is what REFERENCE.md promises.
+        if seed is None:
+            seed = secrets.randbelow(2**32)
         resolved, target = _engine_and_target(s, project, engine_id)
         _check_duration(project, resolved)
         take = jobs.enqueue(project_id, seed, lock_seed=lock_seed,

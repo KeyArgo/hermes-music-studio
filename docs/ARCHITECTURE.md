@@ -4,7 +4,7 @@ How Hermes Music Studio is put together: one Hermes plugin, one dashboard tab, o
 one detached render worker, and an engine registry behind it. Everything runs on one machine, under
 one OS user, for one profile.
 
-Applies to 1.0.0 · revised 2026-11-11 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
 
 ```mermaid
 flowchart LR
@@ -248,6 +248,8 @@ raw file.
 | `engine-settings.json` | ComfyUI endpoint, scan hosts, export folder, ACE paths, sampler knobs |
 | `library.json` | pointer to a moved library folder |
 | `comfy-targets.json` | named ComfyUI endpoints |
+| `comfy-workflows.json` | custom ComfyUI workflow graphs, one saved endpoint each |
+| `exports.json` | export ledger: `{path, title, folder}` per take |
 | `studio-workspaces.json` | workspace names and project assignments |
 | `presets.json` | saved style presets |
 | `studio-host.json` / `studio-host.log` | loopback host state and log |
@@ -266,7 +268,7 @@ answers `audio unavailable`.
 | `music_studio/checkpoints.py` | Save spot / list / restore, with the kept take and its audio SHA-256 |
 | `music_studio/takecheck.py` | Compare a take to its request; retry a measurable failure |
 | `music_studio/intent.py` | Plain-words draft changes and range instructions |
-| `music_studio/chorus.py` | Chorus preview and compare helpers |
+| `music_studio/chorus.py` | Chorus preview: the chorus block taken from the lyrics, plus a 25 s preview take |
 | `music_studio/compare.py` | Render one draft on several ready engines as separate takes |
 | `music_studio/edit.py` | Non-destructive PCM splice, fade and section replacement |
 | `music_studio/longform.py` | Equal-gain crossfade and extension geometry |
@@ -317,15 +319,19 @@ anything else → 500. `invalid UUID` surfaces as 400 before any path is touched
 - Text limits: title 200, idea 2000, caption 512, lyrics 4096 characters, enforced by the store and
   re-checked at approval. Caption/lyrics caps match the engine contract exactly.
 - Request bodies are capped at 256 KiB and must be a JSON object.
-- Audio size caps: 100 MiB in the adapter and in `Jobs.succeed`, 8 MiB on the panel's base64 route.
+- Audio size caps: 100 MiB when `Jobs.succeed` stores a take; the ACE adapter's cap is the byte size
+  of a 600 s 48 kHz stereo master plus 10 % (`ace_engine.MAX_WAV_BYTES`), so a legal extend is never
+  rejected after the GPU rendered it. 8 MiB on the panel's base64 route.
 - The ACE subprocess inherits `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_DATASETS_OFFLINE=1`,
   pinned `HF_HOME`/`TRITON_CACHE_DIR`, and `PYTHONPATH` pointing at the ACE source. These are
   environment hints, not a network sandbox.
 - The MiniMax adapter talks to one configured ComfyUI URL. Its metadata carries the licence id and
   notice required by the MiniMax-Music3 Community License.
 - The tool runs in the gateway process and is trusted exactly as much as any in-process plugin tool.
-- The loopback host binds `127.0.0.1`, requires a loopback `Host`, and rejects cross-site writes. It
-  has no multi-user authentication.
+- The loopback host binds `127.0.0.1`, requires a loopback `Host`, and requires the per-launch token
+  on every `/api` route (503 when no token is configured, 401 when it does not match). Writes are
+  origin-checked while unauthenticated. It is single-user, not multi-user, and should not be exposed
+  to a network.
 
 ## Known structural limits
 
