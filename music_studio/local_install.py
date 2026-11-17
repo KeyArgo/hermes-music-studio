@@ -131,7 +131,11 @@ def start(models_dir):
                     return {'job_id': _running}
                 thread = job['thread']
             else:
-                details = plan(str(root))
+                # Judged by the folder the person picked: resolve() follows a link or a
+                # Windows junction, and the target's own name ('comfy-models', 'D:\models')
+                # is not what makes a folder ComfyUI's models folder. plan() already
+                # approved this one, so start must not refuse it.
+                details = plan(models_dir)
                 if not details['ok'] or not details['enough_space']:
                     raise ValueError(details['message'])
                 job_id = uuid.uuid4().hex
