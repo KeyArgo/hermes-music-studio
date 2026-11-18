@@ -538,7 +538,7 @@ test('Add stays off until the current kind and address test ready', async t => {
   await clickId(doc, 'test-server-btn');
   assert.equal(add.disabled, true);
   assert.equal(doc.getElementById('troubleshooting').hidden, false);
-  assert.match(text(doc.getElementById('troubleshooting')), /Firewall blocking/);
+  assert.match(text(doc.getElementById('troubleshooting')), /No answer/);
   assert.match(text(doc.getElementById('test-result')), /Nothing answered at that address/);
 
   booted.state.testReply = {

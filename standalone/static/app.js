@@ -324,6 +324,23 @@ function engineHint() {
   $('minimax-guidance-row').hidden = !isMini;
   $('target-row').hidden = !isMini;
   $('engine-hint').textContent = engineStatusLine();
+  applyEngineLimits();
+}
+// How long a song may be belongs to the engine that renders it: MiniMax and uploaded workflows
+// take 360 s, the local ACE-Step takes 180. The field says so instead of always saying 180.
+function applyEngineLimits() {
+  const field = form.elements.duration_seconds;
+  if (!field) return;
+  const limits = (selectedEngine() || {}).limits || {};
+  const max = Number(limits.max_seconds) > 0 ? Math.floor(Number(limits.max_seconds)) : 180;
+  const min = Number(limits.min_seconds) > 0 ? Math.ceil(Number(limits.min_seconds)) : 10;
+  field.max = String(max);
+  field.min = String(min);
+  const value = Number(field.value);
+  if (field.value !== '' && Number.isFinite(value)) {
+    if (value > max) field.value = String(max);
+    else if (value < min) field.value = String(min);
+  }
 }
 function show(view) {
   // Compute became the Music engines page; older callers still ask for 'compute'.
@@ -670,7 +687,7 @@ function belongsTo(p,id) { const w=workspaces.find(x=>x.id===id);return !!w && (
 async function startCompare(p, card) {
   let panel = card.querySelector('.compare-panel');
   if (!panel) { panel = el('div', '', 'compare-panel'); card.append(panel); }
-  panel.replaceChildren(el('p', 'hint', 'Checking which engines can render…'));
+  panel.replaceChildren(el('p', 'Checking which engines can render…', 'hint'));
 
   let engines = [];
   try {
@@ -709,11 +726,11 @@ async function startCompare(p, card) {
     'button primary');
   render.type = 'button';
   render.disabled = picked.size < 2;
-  panel.replaceChildren(el('p', 'hint', 'Same draft, one render at a time. Pick which engines.'), box, render);
+  panel.replaceChildren(el('p', 'Same draft, one render at a time. Pick which engines.', 'hint'), box, render);
 
   render.addEventListener('click', async () => {
     render.disabled = true;
-    panel.replaceChildren(el('p', 'hint', 'Starting…'));
+    panel.replaceChildren(el('p', 'Starting…', 'hint'));
     try {
       await api('/compare', { project_id: p.project_id, engines: [...picked] });
     } catch (err) {
@@ -736,8 +753,8 @@ async function follow(p, panel) {
     try { plan = (await api('/compare/' + encodeURIComponent(p.project_id))).plan; }
     catch (err) { panel.append(el('p', err.message, 'hint error')); return; }
     const rows = plan.engines || [];
-    panel.replaceChildren(el('p', 'hint', plan.state === 'running'
-      ? 'Comparison running · one render at a time.' : 'Comparison finished.'));
+    panel.replaceChildren(el('p', plan.state === 'running'
+      ? 'Comparison running · one render at a time.' : 'Comparison finished.', 'hint'));
     rows.forEach(r => {
       const row = el('div', '', 'take');
       const bits = [name(r.engine_id), r.state];
@@ -809,7 +826,9 @@ function library() {
     const note = el('p','','hint');
     note.append(document.createTextNode('The demo is a real take made with this studio; set up an engine on the '));
     const compute = el('button','Music engines','link-button'); compute.type = 'button';
-    compute.addEventListener('click', () => show('compute'));
+    // Shown and wired at once, then the list is read: the page must work on the way in, and a
+    // read that finishes after the page is gone must not spill an unhandled promise.
+    compute.addEventListener('click', () => { show('compute'); wireEnginesPage(); loadEngines().catch(() => {}); });
     note.append(compute, document.createTextNode(' page to make your own.'));
     empty.append(call, note);
     container.append(empty);
@@ -1472,6 +1491,8 @@ async function openEngineSetup() {
   show('compute');
   const view = $('compute-view');
   if (view) view.dataset.setup = ace ? 'ace' : 'compute';
+  wireEnginesPage();
+  await loadEngines().catch(() => {});
   try { await refreshTargets(); } catch (err) {}
   try { await refreshWorkflows(); } catch (err) {}
   try { await loadHardware(true); } catch (err) {}
@@ -1747,9 +1768,22 @@ function ensureEngineOption(id) {
   const select = $('engine-select');
   if (!select || [...select.options].some(o => o.value === id)) return;
   const workflow = workflows.find(w => workflowEngineId(w) === id);
-  const option = el('option', workflow ? workflowMenuLabel(workflow) : 'Missing workflow ' + id);
+  const option = el('option', workflow ? workflowMenuLabel(workflow)
+    : (id === 'ace_remote' ? aceRemoteMenuLabel() : 'Missing workflow ' + id));
   option.value = id;
   select.append(option);
+}
+// The ACE-Step server address saved on the Music engines page. /studio/engines sends it as
+// ace_remote_url, and the engine registry renders on it as ace_remote.
+let aceRemoteUrl = '';
+// A server saved on this page, or one this machine is pointed at some other way: either is an
+// engine the status data says is ready, so the menu must not hide it.
+function aceRemoteConfigured() {
+  return !!aceRemoteUrl || engines.some(e => e && e.id === 'ace_remote' && e.available === true);
+}
+function aceRemoteMenuLabel() {
+  const host = String(aceRemoteUrl || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  return host ? `ACE-Step server · ${host}` : 'ACE-Step server';
 }
 function fillWorkflowEngineOptions() {
   const select = $('engine-select');
@@ -1759,9 +1793,15 @@ function fillWorkflowEngineOptions() {
   select.replaceChildren();
   add('ace_local', 'ACE-Step 1.5 (this computer)');
   add('minimax_m3_comfy', 'MiniMax Music 3');
+  // An ACE-Step server added on the Music engines page is already a registered engine; it was
+  // missing from this menu because only the local one and the workflows were listed.
+  if (aceRemoteConfigured()) add('ace_remote', aceRemoteMenuLabel());
   workflows.forEach(w => add(workflowEngineId(w), workflowMenuLabel(w)));
   if (previous && [...select.options].some(o => o.value === previous)) select.value = previous;
-  else if (previous) { add(previous, 'Missing workflow ' + previous); select.value = previous; }
+  else if (previous) {
+    add(previous, previous === 'ace_remote' ? aceRemoteMenuLabel() : 'Missing workflow ' + previous);
+    select.value = previous;
+  }
 }
 function drawWorkflows() {
   const list = $('workflow-list');
@@ -1795,6 +1835,7 @@ async function refreshWorkflows() {
     try {
       const listed = await api('/studio/engines');
       enginesList = listed.engines || [];
+      aceRemoteUrl = String(listed.ace_remote_url || '');
       renderEngineList();
     } catch (err) { /* keep the engine names already loaded */ }
     fillWorkflowTargetSelect();
@@ -2222,7 +2263,7 @@ if ($('revamp-create')) $('revamp-create').addEventListener('click', async () =>
 $('nav-listen').onclick=()=>{show('listen');loadRevamp();};
 if ($('play-sample')) $('play-sample').addEventListener('click', playDemo);
 // The old playlist picker is gone: a take goes to the studio's own REVamp list.
-$('manage-targets').onclick=async()=>{show('compute');await refreshTargets();await refreshWorkflows();await loadHardware(true);};
+$('manage-targets').onclick=async()=>{show('compute');wireEnginesPage();await loadEngines().catch(()=>{});await refreshTargets();await refreshWorkflows();await loadHardware(true);};
 $('target-form').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('target-name').value.trim(), url = $('target-url').value.trim();
@@ -2304,6 +2345,59 @@ async function saveSettings(event) {
     $('settings-message').textContent = 'Saved. The next render uses these values.';
   } catch (err) { $('settings-message').textContent = err.message; }
 }
+// The Advanced panel has its own Save. The folder is the same setting the panel above saves, and a
+// workflow file goes through the same route the Music engines page uploads one to.
+function advancedMessage(text, bad = false) {
+  let node = $('advanced-message');
+  if (!node) {
+    const save = $('save-advanced');
+    if (!save || !save.parentElement) return null;
+    node = el('p', '', 'message');
+    node.id = 'advanced-message';
+    node.setAttribute('role', 'status');
+    save.parentElement.append(node);
+  }
+  node.textContent = text || '';
+  node.classList.toggle('error', !!bad);
+  return node;
+}
+async function saveAdvanced() {
+  const field = $('export-dir');
+  const folder = field ? field.value.trim() : '';
+  const input = $('custom-workflow');
+  const file = input && input.files ? input.files[0] : null;
+  if (!field && !file) { advancedMessage('Nothing to save here.', true); return; }
+  advancedMessage('Saving…');
+  const saved = [];
+  try {
+    if (field) {
+      if (folder === '') saved.push('Songs will be saved in the default folder.');
+      else {
+        await api('/settings', { export_dir: folder });
+        if ($('settings-export-dir')) $('settings-export-dir').value = folder;
+        saved.push(`Songs will be saved in ${folder}.`);
+      }
+    }
+    if (file) {
+      const chosen = form.elements.comfy_target_id ? form.elements.comfy_target_id.value : '';
+      const target = targets.find(t => t.id === chosen) || targets[0];
+      if (!target) throw new Error('Add a music engine on the Music engines page first, then choose this file again.');
+      const text = await file.text();
+      let workflow;
+      try { workflow = JSON.parse(text); } catch (err) { throw new Error('that file is not valid JSON'); }
+      const name = file.name.replace(/\.json$/i, '').trim() || 'Custom workflow';
+      const data = await api('/studio/workflows', { name, target_id: target.id, workflow });
+      input.value = '';
+      await refreshWorkflows();
+      const found = ((data.workflow || {}).placeholders || []).map(p => '{{' + p + '}}').join(', ');
+      saved.push(`Saved the "${name}" workflow for ${target.name}. Fillable: ${found || 'none'}.`);
+    }
+    advancedMessage(saved.join(' '));
+  } catch (err) {
+    advancedMessage(err.message, true);
+  }
+}
+if ($('save-advanced')) $('save-advanced').addEventListener('click', saveAdvanced);
 // The doctor's per-engine next step belongs under that engine's own row, not in
 // a generic error banner: the health detail names what failed, the fix says what
 // to set. One list, no extra buttons.
@@ -2667,8 +2761,9 @@ function renderSetupChecks(box, checks) {
   if (!box) return;
   box.replaceChildren();
   (checks || []).forEach(check => {
-    const row = el('p', check.ok ? 'hint' : 'hint error',
-      `${check.ok ? '✓' : '✗'} ${check.name}${check.detail ? ' — ' + check.detail : ''}`);
+    const row = el('p',
+      `${check.ok ? '✓' : '✗'} ${check.name}${check.detail ? ' — ' + check.detail : ''}`,
+      check.ok ? 'hint' : 'hint error');
     box.append(row);
   });
 }
@@ -2746,7 +2841,7 @@ if ($('setup-panel')) {
           plan.plan.where_it_goes,
           plan.plan.size_hint,
         ];
-        lines.forEach(line => box.append(el('p', 'hint', line)));
+        lines.forEach(line => box.append(el('p', line, 'hint')));
       }
     } catch (err) {
       await setupMessage(err.message, true);
@@ -2770,11 +2865,11 @@ if ($('setup-panel')) {
     const data = await api('/studio/setup/cloud').catch(() => ({ endpoints: [] }));
     box.replaceChildren();
     (data.endpoints || []).forEach(entry => {
-      box.append(el('p', 'hint',
-        `${entry.name} · ${entry.url}${entry.model ? ' · ' + entry.model : ''}${entry.has_key ? ' · key saved in Hermes' : ''}`));
+      box.append(el('p',
+        `${entry.name} · ${entry.url}${entry.model ? ' · ' + entry.model : ''}${entry.has_key ? ' · key saved in Hermes' : ''}`, 'hint'));
     });
-    if (!(data.endpoints || []).length) box.append(el('p', 'hint', 'No hosted endpoint saved yet.'));
-    if (data.message) box.append(el('p', 'hint', data.message));
+    if (!(data.endpoints || []).length) box.append(el('p', 'No hosted endpoint saved yet.', 'hint'));
+    if (data.message) box.append(el('p', data.message, 'hint'));
   };
 
   if ($('setup-cloud-test')) $('setup-cloud-test').addEventListener('click', async () => {
@@ -2815,9 +2910,15 @@ async function refreshVersion() {
         (data.latest ? ` · published: ${data.latest.commit_short} (${(data.latest.message || '').slice(0, 60)})` : '');
     }
     const update = $('version-update');
-    if (update) update.disabled = !data.update_available;
+    if (update) {
+      update.disabled = !data.update_available;
+      // Hermes installs and updates plugins; the studio's own update routes always refuse.
+      update.textContent = 'Update with: hermes plugins update hermes-music-studio';
+      update.title = 'Hermes installs updates. Run: hermes plugins update hermes-music-studio';
+    }
     const undo = $('version-undo');
-    if (undo) undo.disabled = !versionState.installed.commit;
+    // Undo has no route behind it: /update/undo always refuses, so the button is not offered.
+    if (undo) { undo.disabled = !versionState.installed.commit; undo.hidden = true; }
     await setupMessage(data.detail || '', data.ok === false);
     return data;
   } catch (err) {
@@ -2855,37 +2956,55 @@ async function watchUpdateJob() {
 if ($('version-panel')) {
   refreshVersion();
   if ($('version-check')) $('version-check').addEventListener('click', refreshVersion);
-  if ($('version-update')) $('version-update').addEventListener('click', async () => {
-    if (!(await askConfirm('Install the newest published build now? The studio restarts when it finishes.', {confirmLabel:'Install'}))) return;
-    try {
-      await api('/update/apply', {});
-      await setupMessage('Update started.');
-      watchUpdateJob();
-    } catch (err) {
-      await setupMessage(err.message, true);
-    }
+  if ($('version-update')) $('version-update').addEventListener('click', () => {
+    // Hermes owns installs and updates; /update/apply always refuses. Say the command instead.
+    const note = $('version-message');
+    if (note) note.textContent = 'Hermes installs updates. Run: hermes plugins update hermes-music-studio';
   });
-  if ($('version-undo')) $('version-undo').addEventListener('click', async () => {
-    if (!(await askConfirm('Go back to the build that was installed before the last update?', {confirmLabel:'Undo update'}))) return;
-    try {
-      await api('/update/undo', {});
-      await setupMessage('Rolling back.');
-      watchUpdateJob();
-    } catch (err) {
-      await setupMessage(err.message, true);
-    }
+  if ($('version-undo')) $('version-undo').addEventListener('click', () => {
+    const note = $('version-message');
+    if (note) note.textContent = 'Hermes installs updates. Run: hermes plugins update hermes-music-studio';
   });
 }
 // ---------------------------------------------------------------- engines page
 let enginesList = [], testingServer = false, downloadJobId = null, enginesPageWired = false, installPollTimer = null, installPollGen = 0, engineTestGen = 0, lastEngineTest = null, addingServer = false, startingDownload = false;
+function enginePill(status) {
+  const pill = el('span', '', 'engine-pill');
+  if (status === 'checking') { pill.textContent = 'Checking…'; pill.classList.add('not-tested'); }
+  else if (status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
+  else if (status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
+  else if (status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
+  else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
+  return pill;
+}
 function renderEngineList() {
   const container = $('engine-list');
   if (!container) return;
   container.replaceChildren();
-  if (!enginesList.length) {
+  if (!enginesList.length && !aceRemoteConfigured()) {
     const empty = el('p', 'No music engines set up yet. Add one to get started.', 'hint');
     container.append(empty);
     return;
+  }
+  // The ACE-Step server saved on this page is an engine too, so the list must show it.
+  if (aceRemoteConfigured()) {
+    const row = el('div', '', 'engine-row');
+    const info = el('div', '', 'engine-info');
+    info.append(el('div', 'ACE-Step server', 'engine-name'),
+      el('div', aceRemoteUrl || 'No address saved on this page', 'engine-address'));
+    const testBtn = el('button', 'Test', 'button secondary');
+    testBtn.type = 'button';
+    testBtn.title = 'Ask this server again whether it can make music.';
+    testBtn.addEventListener('click', () => {
+      checkEngineRow({ id: 'ace_remote', kind: 'ace_server', url: aceRemoteUrl }, true);
+    });
+    // This session's test answer for that address when there is one, else the engine's own status.
+    const live = engines.find(e => e && e.id === 'ace_remote');
+    const state = engineRowStatus[aceRemoteUrl] || (live && live.available ? 'ready' : '');
+    row.append(info, enginePill(state));
+    // Nothing to test without an address to test.
+    if (aceRemoteUrl) row.append(testBtn);
+    container.append(row);
   }
   for (const eng of enginesList) {
     const row = el('div', '', 'engine-row');
@@ -2894,13 +3013,7 @@ function renderEngineList() {
     const addr = el('div', eng.url || '(unknown address)', 'engine-address');
     info.append(name, addr);
 
-    const pill = el('span', '', 'engine-pill');
-    const status = eng.status || engineRowStatus[eng.url];
-    if (status === 'checking') { pill.textContent = 'Checking…'; pill.classList.add('not-tested'); }
-    else if (status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
-    else if (status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
-    else if (status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
-    else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
+    const pill = enginePill(eng.status || engineRowStatus[eng.url]);
 
     const testBtn = el('button', 'Test', 'button secondary');
     testBtn.type = 'button';
@@ -2946,6 +3059,7 @@ async function loadEngines() {
   try {
     const data = await api('/studio/engines');
     enginesList = data.engines || [];
+    aceRemoteUrl = String(data.ace_remote_url || '');
     renderEngineList();
     fillWorkflowEngineOptions();
     enginesList.forEach(eng => { checkEngineRow(eng, false); });
@@ -3017,7 +3131,7 @@ function showTestResult(data) {
 }
 const TROUBLESHOOTING = {
   bad_address: { title: 'Wrong address', text: 'Nothing answered. Include http:// and the port, like http://192.168.1.50:8188.' },
-  no_answer: { title: 'Firewall blocking', text: "The other computer's firewall is blocking the port. Allow 8188, or 8000, for your local network." },
+  no_answer: { title: 'No answer', text: 'Nothing answered at that address. The server may be off, the port may be wrong, or a firewall may be blocking it. If a firewall is in the way, allow port 8188 or 8000 on your local network.' },
   not_comfy: { title: 'Not ComfyUI', text: 'That address answered but is not ComfyUI or ACE-Step server. Check the address.' },
   not_ace: { title: 'Not an ACE server', text: 'That address is not an ACE-Step server.' },
   missing_files: { title: 'Missing model files', text: 'ComfyUI knows the model, and these files are not on it. Put them in that computer\'s models folder, then test again.' },
