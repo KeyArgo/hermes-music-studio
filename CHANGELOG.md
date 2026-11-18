@@ -39,6 +39,19 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ### Fixed
 
+- **A slow draft says so instead of `internal server error`.** Hermes' `ctx.llm.complete()` defaults
+  to a 30 second timeout; a longer draft raised `openai.APITimeoutError`, which the plugin route never
+  caught and the page showed as a bare 500. `llm_bridge` now asks for `timeout=120` (retrying once
+  without the keyword on an older facade), and turns every non-trust failure into `LlmFailed` —
+  `Hermes' model did not answer within 120 seconds…` for a timeout, otherwise
+  `Hermes' model call failed: <ErrorClass>: <message>` — logging the original traceback. `/studio/draft`
+  returns it as a 502, the standalone ideas route passes the same sentence through instead of
+  "connection failed", and the desktop pane shows the `detail` instead of raw JSON.
+- **Right-click inside the studio works.** The studio page is a sandboxed frame, so the desktop's own
+  context menu never reached it. `standalone/static/app.js` now has its own menu — Cut, Copy, Paste,
+  Select all — over editable fields and real selections, with `execCommand` for copy/cut,
+  `navigator.clipboard.readText()` for paste (falling back to *Press Ctrl+V to paste (Cmd+V on a
+  Mac).*), arrow-key/Escape handling, viewport clamping, and `user-select: text` on the idea chat.
 - **Hosted API keys live in Hermes, not the data directory.** `music_studio/setup.py` no longer writes
   `cloud-keys.json`; `save_cloud` saves the key with `hermes_cli.config.save_env_value` under
   `ACE_REMOTE_API_KEY` and stores only the endpoint in `engine-settings.json`. `list_cloud` reports

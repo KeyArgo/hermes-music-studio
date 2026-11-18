@@ -24,8 +24,16 @@ Two consequences worth stating plainly, because they are visible to a user:
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import Any, Callable, Sequence
+
+# Hermes' own default is 30 seconds, which is shorter than a full draft on a slow model. A timed-out
+# call raises openai.APITimeoutError out of ctx.llm, and nothing downstream recognised it, so the page
+# showed a bare 500. Ask for a duration a song draft can actually finish in.
+TIMEOUT_SECONDS = 120
+
+_LOG = logging.getLogger(__name__)
 
 MISSING = (
     "Drafting needs Hermes' model. Use the Music Studio pane in Hermes Desktop (it forwards the request "
@@ -62,6 +70,44 @@ class LlmTrustError(RuntimeError):
     def payload(self) -> dict[str, Any]:
         """The body the page reads: a sentence plus the two commands, as a list."""
         return {"error": str(self), "commands": list(self.commands)}
+
+
+class LlmFailed(RuntimeError):
+    """The host's model was asked and did not deliver: a timeout, or the provider's own error.
+
+    The sentence is written for the person who pressed the button, and the routes pass it straight
+    through as the error detail. The original exception is kept as ``__cause__`` and its traceback is
+    logged, so the next failure is still diagnosable.
+    """
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """A timeout, however the provider spells it.
+
+    openai raises ``APITimeoutError`` (a subclass of ``APIConnectionError``, not of ``TimeoutError``),
+    so the class name is checked as well as the builtin type.
+    """
+    return isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__
+
+
+def _failure(exc: BaseException) -> LlmFailed:
+    """The plain sentence a person reads in the page, with the traceback logged once."""
+    _LOG.warning("Hermes model call failed: %s", type(exc).__name__, exc_info=True)
+    if _is_timeout(exc):
+        return LlmFailed(
+            f"Hermes' model did not answer within {TIMEOUT_SECONDS} seconds. "
+            "Try again, or pick a faster model."
+        )
+    return LlmFailed(f"Hermes' model call failed: {type(exc).__name__}: {str(exc)[:300]}")
+
+
+def _accepts_no_timeout(exc: BaseException) -> bool:
+    """True when the TypeError is ``complete()`` rejecting the ``timeout`` keyword itself.
+
+    An older Hermes, or a test fake with a narrow signature, says exactly that. Any other TypeError is
+    a real failure and stays one instead of being retried blindly.
+    """
+    return isinstance(exc, TypeError) and "timeout" in str(exc)
 
 
 def _override(value: str | None) -> str | None:
@@ -106,6 +152,19 @@ def available() -> bool:
         return _llm is not None
 
 
+def _ask(llm: Any, kwargs: dict[str, Any], overrides: dict[str, Any]) -> Any:
+    """One call to the host's facade, with a second chance only for a missing ``timeout`` parameter."""
+    try:
+        return llm.complete(**kwargs, **overrides)
+    except TypeError as exc:
+        if not _accepts_no_timeout(exc):
+            raise
+        # An older Hermes does not accept `timeout`. Drafting still works; it just keeps the host's
+        # own (shorter) deadline rather than failing the whole request over a keyword.
+        without = {key: value for key, value in kwargs.items() if key != "timeout"}
+        return llm.complete(**without, **overrides)
+
+
 def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: str | None,
           max_tokens: int, temperature: float) -> str:
     with _lock:
@@ -117,16 +176,20 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
         "messages": [dict(message) for message in messages],
         "max_tokens": max_tokens,
         "temperature": temperature,
+        # Without this the host applies its 30 second default and a long draft dies as a bare 500.
+        "timeout": TIMEOUT_SECONDS,
     }
     overrides = {key: text for key, value in (("provider", provider), ("model", model))
                  if (text := _override(value))}
     try:
-        result = llm.complete(**kwargs, **overrides)
+        result = _ask(llm, kwargs, overrides)
     except Exception as exc:  # noqa: BLE001 - the host's trust error is not importable here
         if _is_trust_refusal(exc):
             # One call. Retrying without the override would silently draft on a different model.
             raise LlmTrustError() from exc
-        raise
+        # Everything else — a timeout, a provider error, a refused connection — becomes one plain
+        # sentence the page can show, instead of an exception class the route never catches.
+        raise _failure(exc) from exc
     text = getattr(result, "text", None)
     if text is None and isinstance(result, dict):
         text = result.get("text")

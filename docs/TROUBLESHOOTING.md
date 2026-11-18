@@ -3,7 +3,7 @@
 The failure modes the code actually handles, the sentence it gives you, and the next check. Start with
 `python3 scripts/ms.py doctor` or the **Music engines** panel; both report each engine and the failing check.
 
-Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-18 · back to [docs/README.md](README.md).
 
 ## No engine is ready
 
@@ -71,6 +71,18 @@ MiniMax declares `repaint=false` and `continuation=false`; the server refuses be
 worker re-checks. `ace_remote` is registered but has no deployed server. Generate a fresh take on an
 engine that supports the operation.
 
+## `Hermes' model did not answer within 120 seconds`
+
+`Fill my draft` (and `Discuss idea`) ask Hermes' model through `ctx.llm.complete`, with a 120 second
+limit — Hermes' own default of 30 seconds was shorter than a long draft. A timeout is not a crash: the
+page says the sentence above, and the original error is written to the plugin log with its traceback.
+Try again, or pick a faster model in the Create pane. An older Hermes that does not accept the
+`timeout` keyword still drafts; it just keeps the host's shorter limit.
+
+Any other model failure reads `Hermes' model call failed: <ErrorClass>: <message>`, for example
+`ValueError: …` or `APIConnectionError: …`, so the reason is visible instead of
+`hermes.api error 500: internal server error`.
+
 ## The scrubber has no range
 
 The player needs `Content-Length` on the audio response. Both `/api/projects/{id}/takes/{take}/audio`
@@ -96,6 +108,18 @@ The library pointer is `library.json` beside the plugin data. **Copy there** lea
 records the new folder; **Move there** deletes the old copies after the switch. **Use default** removes
 the pointer. If the pointer names a folder that no longer exists, `library_dir()` ignores it and the
 studio reads the default folder, which can look like an empty library.
+
+## I cannot copy or paste in the studio
+
+The studio runs in a sandboxed frame inside Hermes Desktop, and the desktop's right-click menu belongs
+to the outer window. The studio page therefore has its own small menu: right-click a text field, or
+select text first, and it offers **Cut**, **Copy**, **Paste** and **Select all**. Elsewhere (no field,
+no selection) the right-click is left to the page as usual.
+
+**Paste** reads the clipboard with `navigator.clipboard.readText()`. A framed page is allowed to do
+that only with the person's permission, so a refusal is normal: the page then says
+*Press Ctrl+V to paste (Cmd+V on a Mac).* and the keystroke still works. Conversation text in the
+chat is selectable (`user-select: text`), so the same menu copies it.
 
 ## The pane is blank or the host will not start
 

@@ -244,6 +244,8 @@ def _handler(args):
         request = build_request(args.get('provider'), args.get('model'),
                                 [{'role': 'user', 'content': prompt}], 'draft',
                                 args.get('tone'), int(args.get('style') or 50))
+        # llm_bridge turns a timeout or a provider error into LlmFailed with one plain sentence, so
+        # the chat reads what happened instead of an exception class.
         content = llm_bridge.complete(request['messages'], provider=request['provider'],
                                       model=request['model'], max_tokens=request['max_tokens'],
                                       temperature=request['temperature'])

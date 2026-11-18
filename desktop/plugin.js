@@ -36,6 +36,12 @@ function draftFailure(err) {
       if (parsed && typeof parsed.error === 'string' && Array.isArray(parsed.commands)) {
         return { ok: false, error: parsed.error, commands: parsed.commands }
       }
+      // A plain FastAPI refusal ("502: {"detail":"Hermes' model did not answer…"}") is a sentence
+      // the person can act on. Showing the raw status line and JSON made a known timeout read as
+      // "hermes.api error 500: internal server error".
+      if (parsed && typeof parsed.detail === 'string' && parsed.detail.trim()) {
+        return { ok: false, error: parsed.detail }
+      }
     } catch { /* the host answered in prose */ }
   }
   return { ok: false, error: raw }

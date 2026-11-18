@@ -3946,3 +3946,214 @@ function applyDraft(draft) {
   });
 })();
 
+// Copy and paste where the text is: the studio runs in a sandboxed frame inside Hermes Desktop, and
+// the desktop's own right-click menu belongs to the outer window, so a right-click in here opened
+// nothing and "I cannot copy and paste" was the result. This is a small menu of the page's own,
+// shown only over editable fields or a real selection, so a right-click on anything else still
+// behaves like an ordinary page.
+(function () {
+  const EDGE = 8;
+  const NOT_TEXT = new Set(['range', 'checkbox', 'radio', 'file', 'button', 'submit', 'reset', 'color', 'image']);
+  const TEXT_BLOCK = '.idea-messages, .message, .hint, p, li, blockquote, article, .panel, .card';
+  const SHORTCUT = 'Press Ctrl+V to paste (Cmd+V on a Mac).';
+  let menu = null;
+  let fieldNode = null;
+  let targetNode = null;
+  let spanStart = 0;
+  let spanEnd = 0;
+  let prompt = null;
+
+  const el = (tag, text, className) => {
+    const node = document.createElement(tag);
+    if (text) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  };
+
+  // The field a right-click landed on, or null when it is not a text field. A slider or a checkbox
+  // has no text to cut or paste, so the menu must not appear over one.
+  function editableAt(target) {
+    const node = target && target.closest && target.closest('input, textarea');
+    if (!node || node.disabled || node.readOnly) return null;
+    if (node.tagName === 'INPUT' && NOT_TEXT.has(String(node.type || 'text').toLowerCase())) return null;
+    return node;
+  }
+
+  function chosenIn(node) {
+    if (!node || typeof node.selectionStart !== 'number') return '';
+    return node.selectionEnd > node.selectionStart ? node.value.slice(node.selectionStart, node.selectionEnd) : '';
+  }
+
+  function chosenOnPage() {
+    const selection = window.getSelection && window.getSelection();
+    return selection ? String(selection.toString() || '') : '';
+  }
+
+  // A short sentence for the whole page, not one panel: the menu can be opened anywhere, so there is
+  // no single form to write into. Same .hint + role=status shape the other messages use.
+  function pageHint(text) {
+    if (!prompt) {
+      prompt = el('p', '', 'hint page-hint');
+      prompt.id = 'page-hint';
+      prompt.setAttribute('role', 'status');
+      document.body.append(prompt);
+    }
+    prompt.textContent = text;
+    clearTimeout(pageHint.timer);
+    pageHint.timer = setTimeout(() => { if (prompt) { prompt.remove(); prompt = null; } }, 6000);
+  }
+
+  function close() {
+    if (!menu) return;
+    menu.remove();
+    menu = null;
+    // Give the caret back to the field the person right-clicked, so typing continues there.
+    if (fieldNode && fieldNode.isConnected && typeof fieldNode.focus === 'function') fieldNode.focus();
+  }
+
+  function restore() {
+    if (!fieldNode) return;
+    fieldNode.focus();
+    try { fieldNode.setSelectionRange(spanStart, spanEnd); } catch (err) { /* an input type without a range */ }
+  }
+
+  function copy(cut) {
+    restore();
+    let ok = false;
+    try { ok = document.execCommand(cut ? 'cut' : 'copy'); } catch (err) { ok = false; }
+    close();
+    if (!ok) pageHint(cut ? 'Cut did not work here. Select the text and press Ctrl+X (Cmd+X on a Mac).'
+      : 'Copy did not work here. Select the text and press Ctrl+C (Cmd+C on a Mac).');
+  }
+
+  function selectAll() {
+    const block = (targetNode && targetNode.closest && targetNode.closest(TEXT_BLOCK)) || document.body;
+    if (fieldNode) {
+      fieldNode.focus();
+      try { fieldNode.select(); } catch (err) { /* not selectable */ }
+      close();
+      return;
+    }
+    const selection = window.getSelection && window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.selectNodeContents(block);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    close();
+  }
+
+  async function paste() {
+    const field = fieldNode;
+    const start = spanStart;
+    const end = spanEnd;
+    close();
+    if (!field) return;
+    let text = null;
+    try {
+      // A framed page is allowed to read the clipboard only with the person's permission; a refusal
+      // is normal, so it falls back to the keystroke instead of failing quietly.
+      if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText();
+    } catch (err) { text = null; }
+    if (typeof text !== 'string') { field.focus(); pageHint(SHORTCUT); return; }
+    field.focus();
+    try { field.setSelectionRange(start, end); } catch (err) { /* an input type without a range */ }
+    const from = typeof field.selectionStart === 'number' ? field.selectionStart : start;
+    const to = typeof field.selectionEnd === 'number' ? field.selectionEnd : end;
+    field.setRangeText(text, from, to, 'end');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function item(label, run) {
+    const button = el('button', label, 'context-menu-item');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitem');
+    // Without this the button takes focus on press and the selection in the field is gone by the
+    // time execCommand runs.
+    button.addEventListener('mousedown', event => event.preventDefault());
+    button.addEventListener('click', run);
+    return button;
+  }
+
+  function build(field, hasText) {
+    const box = el('div', '', 'context-menu');
+    box.id = 'context-menu';
+    box.setAttribute('role', 'menu');
+    box.tabIndex = -1;
+    if (field && hasText) box.append(item('Cut', () => copy(true)));
+    if (hasText) box.append(item('Copy', () => copy(false)));
+    if (field) box.append(item('Paste', paste));
+    box.append(item('Select all', selectAll));
+    return box;
+  }
+
+  function fit(box, x, y) {
+    const width = box.offsetWidth || 150;
+    const height = box.offsetHeight || 120;
+    const left = Math.max(EDGE, Math.min(x, window.innerWidth - width - EDGE));
+    const top = Math.max(EDGE, Math.min(y, window.innerHeight - height - EDGE));
+    box.style.left = Math.round(left) + 'px';
+    box.style.top = Math.round(top) + 'px';
+  }
+
+  function open(event, field, hasText) {
+    close();
+    fieldNode = field;
+    targetNode = event.target;
+    spanStart = field && typeof field.selectionStart === 'number' ? field.selectionStart : 0;
+    spanEnd = field && typeof field.selectionEnd === 'number' ? field.selectionEnd : 0;
+    const box = build(field, hasText);
+    document.body.append(box);
+    menu = box;
+    fit(box, event.clientX, event.clientY);
+    const first = box.querySelector('.context-menu-item');
+    // Focus the first item so the menu is reachable from the keyboard straight after a right-click.
+    if (first) first.focus();
+  }
+
+  function step(event) {
+    if (!menu) return;
+    const items = [...menu.querySelectorAll('.context-menu-item')];
+    const at = items.indexOf(document.activeElement);
+    const move = key => {
+      const next = items[(at + key + items.length) % items.length];
+      if (next) next.focus();
+    };
+    if (event.key === 'ArrowDown') { event.preventDefault(); move(1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); move(-1); }
+    else if (event.key === 'Home') { event.preventDefault(); items[0] && items[0].focus(); }
+    else if (event.key === 'End') { event.preventDefault(); items[items.length - 1] && items[items.length - 1].focus(); }
+  }
+
+  document.addEventListener('contextmenu', event => {
+    const field = editableAt(event.target);
+    // Inside a field only the field's own selection counts: Copy restores and copies that range.
+    const hasText = field ? !!chosenIn(field) : !!chosenOnPage();
+    // No field and no selection: this is an ordinary page right-click, so the event is left alone.
+    if (!field && !hasText) return;
+    event.preventDefault();
+    open(event, field, hasText);
+  });
+
+  document.addEventListener('mousedown', event => {
+    if (menu && !menu.contains(event.target)) close();
+  }, true);
+  document.addEventListener('click', event => {
+    if (menu && !menu.contains(event.target)) close();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (!menu) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key === 'Tab') { close(); return; }
+    step(event);
+  }, true);
+  // A menu pinned to a spot that scrolled away is a menu pointing at the wrong text.
+  window.addEventListener('scroll', close, true);
+  window.addEventListener('blur', close);
+})();
+

@@ -259,6 +259,10 @@ def _complete(body: dict[str, Any]) -> str:
         raise HTTPException(status_code=503, detail=str(exc)) from None
     except llm_bridge.LlmTrustError:
         raise
+    except llm_bridge.LlmFailed as exc:
+        # The bridge already wrote the sentence a person can act on (timeout, provider error), so it
+        # is the 502 detail instead of the old catch-all "connection failed".
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     except HTTPException:
         raise
     except Exception:

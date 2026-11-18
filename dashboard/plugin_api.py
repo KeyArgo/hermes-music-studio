@@ -803,6 +803,9 @@ def studio_draft(body: dict = Depends(json_body)):
         raise HTTPException(503, str(exc)) from None
     except llm_bridge.LlmTrustError as exc:
         return trust_error_response(exc)
+    except llm_bridge.LlmFailed as exc:
+        # The bridge wrote the sentence (a timeout, or the provider's own error), so it is the detail.
+        raise HTTPException(502, str(exc)) from None
     except RuntimeError as exc:
         # An empty or unusable host reply is an upstream failure, not a crash.
         raise HTTPException(502, str(exc)) from None
