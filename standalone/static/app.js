@@ -2973,6 +2973,7 @@ function enginePill(status) {
   if (status === 'checking') { pill.textContent = 'Checking…'; pill.classList.add('not-tested'); }
   else if (status === 'ready') { pill.textContent = 'Ready'; pill.classList.add('ready'); }
   else if (status === 'missing_files') { pill.textContent = 'Missing files'; pill.classList.add('missing-files'); }
+  else if (status === 'connected') { pill.textContent = 'Connected · add a workflow'; pill.classList.add('not-tested'); }
   else if (status === 'cant_reach') { pill.textContent = "Can't reach"; pill.classList.add('cant-reach'); }
   else { pill.textContent = 'Not tested'; pill.classList.add('not-tested'); }
   return pill;
@@ -3042,6 +3043,9 @@ function rowStatusFrom(data) {
   if (!data || data.ok !== true) return 'cant_reach';
   const models = Array.isArray(data.models) ? data.models : [];
   if (!models.length || models.some(m => m && m.status === 'ready')) return 'ready';
+  // No known music node pack at all: a plain ComfyUI kept for the person's own workflow, not a
+  // music server with files missing.
+  if (models.every(m => m && m.status === 'missing_nodes')) return 'connected';
   return 'missing_files';
 }
 async function checkEngineRow(eng, force) {
@@ -3527,6 +3531,8 @@ async function finishEngineAdd() {
   if (lastEngineTest && lastEngineTest.url) engineRowStatus[lastEngineTest.url] = rowStatusFrom(lastEngineTest.data);
   dismissServerWizard();
   await loadEngines();
+  // The Custom workflows menu lists saved servers; without this it still said "add one first".
+  try { await refreshTargets(); } catch (err) {}
   await refreshWorkflows();
   await refreshNow();
 }

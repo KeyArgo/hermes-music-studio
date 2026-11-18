@@ -227,3 +227,16 @@ test('Add turns on for a ComfyUI test with no known model and shows connect-only
   const displayed = text(engineMsgNode) || text(serverMsgNode);
   assert.match(displayed, new RegExp(addSuccessText.replace(/\./g, '\\.')));
 });
+
+test('a plain ComfyUI is listed as connected, and the workflow menu offers it right away', async t => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../standalone/static/app.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('function rowStatusFrom'), src.indexOf('async function checkEngineRow'));
+  const rowStatusFrom = new Function(fn + '; return rowStatusFrom;')();
+  const missing = { status: 'missing_nodes' };
+  assert.equal(rowStatusFrom({ ok: true, models: [missing, missing] }), 'connected');
+  assert.equal(rowStatusFrom({ ok: true, models: [{ status: 'missing_files' }, missing] }), 'missing_files');
+  assert.equal(rowStatusFrom({ ok: true, models: [{ status: 'ready' }, missing] }), 'ready');
+  const finish = src.slice(src.indexOf('async function finishEngineAdd'), src.indexOf('async function addServerEngine'));
+  assert.match(finish, /refreshTargets\(\)/);
+});
