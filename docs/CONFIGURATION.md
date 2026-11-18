@@ -107,3 +107,7 @@ re-enter the key. The studio is not a hosted service and has no account of its o
 The ACE subprocess is started with `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`,
 `HF_DATASETS_OFFLINE=1`, `HF_HOME` and `TRITON_CACHE_DIR` pinned to the runtime. These are hints to
 the model libraries, not a network namespace. The adapter itself makes no network calls.
+
+Local GPU detection checks NVIDIA and AMD tools, then Apple Silicon unified memory.
+ACE-Step also checks Intel XPU after CUDA and Apple MPS. `ACE_DEVICE` can select a
+specific device. The matching drivers and runtime must be installed separately.

@@ -150,7 +150,7 @@ def test_hardware_reports_no_nvidia_gpu_instead_of_a_tool_error(monkeypatch):
     info = hardware.hardware_info()
 
     assert info['available'] is False
-    assert info['error'] == 'no NVIDIA GPU found'
+    assert info['error'] == hardware.NO_GPU  # plain words, not a tool error
 
 
 def test_hardware_treats_a_failed_nvidia_smi_as_no_gpu(monkeypatch):
@@ -163,7 +163,7 @@ def test_hardware_treats_a_failed_nvidia_smi_as_no_gpu(monkeypatch):
     monkeypatch.setattr(hardware.subprocess, 'run', lambda *a, **k: Result())
     info = hardware.hardware_info()
 
-    assert info['error'] == 'no NVIDIA GPU found'
+    assert info['error'] == hardware.NO_GPU
 
 
 # -- ffmpeg discovery -----------------------------------------------------

@@ -57,7 +57,7 @@ def _device():
     """The compute device for this render.
 
     ACE_DEVICE wins when set, so an operator can pin a device (or force the CPU
-    path) without editing code. Otherwise prefer CUDA, then Apple MPS, then CPU.
+    path) without editing code. Otherwise prefer CUDA, then Apple MPS, Intel XPU, then CPU.
     torch lives in the ACE runtime's venv, not necessarily in this process, so
     the import stays lazy and a failure means "no accelerator we can see".
     """
@@ -78,6 +78,11 @@ def _device():
         if mps is not None and mps.is_available():
             return 'mps'
     except Exception:  # noqa: BLE001 - old torch builds have no MPS backend
+        pass
+    try:
+        if hasattr(torch, 'xpu') and torch.xpu.is_available():
+            return 'xpu'
+    except Exception:  # noqa: BLE001 - XPU may be unavailable in this torch build
         pass
     return 'cpu'
 
