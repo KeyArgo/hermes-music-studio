@@ -65,6 +65,10 @@ MODEL_ALTERNATIVES = {
              'text_encoders/minimax_music3_text_encoder_pruned_bf16.safetensors'),
 }
 CLIP_TYPE = 'minimax'
+# ComfyUI reports vram_total in bytes. auto turns tiled decode on under 12 GB
+# (12 << 30), the same unit used for a 24 GB card (24 << 30).
+_TILED_DECODE_MODES = ('auto', 'on', 'off')
+_TILED_AUTO_UNDER_BYTES = 12 << 30
 MINIMAX_NODES = ('MiniMaxMusic3TextEncode', 'EmptyMiniMaxMusic3LatentAudio')
 LOADER_NODES = ('UNETLoader', 'CLIPLoader', 'VAELoader')
 SAMPLER_NODES = ('KSampler', 'ConditioningZeroOut', 'VAEDecodeAudio', 'SaveAudioAdvanced')
@@ -157,7 +161,7 @@ class MiniMaxM3ComfyEngine(Engine):
 
     def __init__(self, base_url: str | None = None, timeout: float = 10.0,
                  unet_name: str | None = None, clip_name: str | None = None,
-                 vae_name: str | None = None, tiled_decode: bool = False,
+                 vae_name: str | None = None, tiled_decode: bool | None = None,
                  cfg_scale: float | None = None, cfg: float | None = None,
                  top_k: int | None = None,
                  steps: int | None = None, ffmpeg: str | None = None,
@@ -174,7 +178,14 @@ class MiniMaxM3ComfyEngine(Engine):
         self.unet_name = unet_name or MODEL_FILES['unet']
         self.clip_name = clip_name or MODEL_FILES['clip']
         self.vae_name = vae_name or MODEL_FILES['vae']
-        self.tiled_decode = tiled_decode
+        # Health resolves these to the file ComfyUI actually lists. The request
+        # stays put so a later probe can return to the int8 name.
+        self._requested_weights = {
+            'unet': self.unet_name, 'clip': self.clip_name, 'vae': self.vae_name}
+        # None follows the minimax_tiled_decode setting, applied in health once
+        # vram_total is known. An explicit True or False stays put.
+        self._tiled_pinned = tiled_decode is not None
+        self.tiled_decode = bool(tiled_decode) if self._tiled_pinned else False
         self.cfg_scale = knobs.get('cfg_scale', 1.5) if cfg_scale is None else cfg_scale
         self.cfg = knobs.get('cfg', 4.0) if cfg is None else cfg
         self.top_k = knobs.get('top_k', 50) if top_k is None else top_k
@@ -246,6 +257,15 @@ class MiniMaxM3ComfyEngine(Engine):
             if isinstance(system, dict) and system.get('comfyui_version'):
                 extra['comfyui_version'] = system.get('comfyui_version')
 
+        if not self._tiled_pinned:
+            mode = _tiled_mode(_saved_settings())
+            if mode == 'on':
+                self.tiled_decode = True
+            elif mode == 'off':
+                self.tiled_decode = False
+            else:
+                self.tiled_decode = _vram_under_12gb(extra.get('comfy_vram_total'))
+
         # Every node the submitted graph uses, not just the MiniMax ones.
         required = (*MINIMAX_NODES, *LOADER_NODES, 'KSampler', 'ConditioningZeroOut',
                     'VAEDecodeAudioTiled' if self.tiled_decode else 'VAEDecodeAudio',
@@ -266,19 +286,34 @@ class MiniMaxM3ComfyEngine(Engine):
         models_ok = True
         model_errors: list[str] = []
         if not missing_nodes:
+            self.unet_name = self._requested_weights['unet']
+            self.clip_name = self._requested_weights['clip']
+            self.vae_name = self._requested_weights['vae']
+            extra['unet'] = self.unet_name
+            extra['clip'] = self.clip_name
+            extra['vae'] = self.vae_name
             for kind, node, field, name in (
-                    ('unet', 'UNETLoader', 'unet_name', self.unet_name),
-                    ('clip', 'CLIPLoader', 'clip_name', self.clip_name),
-                    ('vae', 'VAELoader', 'vae_name', self.vae_name)):
+                    ('unet', 'UNETLoader', 'unet_name', self._requested_weights['unet']),
+                    ('clip', 'CLIPLoader', 'clip_name', self._requested_weights['clip']),
+                    ('vae', 'VAELoader', 'vae_name', self._requested_weights['vae'])):
                 options = _combo_options(info.get(node), node, field)
                 if options is None:
                     models_ok = False
                     model_errors.append(f'{node} exposes no {field} list')
                     continue
                 extra[f'available_{kind}s'] = list(options)
-                if name not in options:
+                chosen = _present_weight(name, kind, options)
+                if chosen is None:
                     models_ok = False
                     model_errors.append(f'{name} is not listed by {node}')
+                    continue
+                if kind == 'unet':
+                    self.unet_name = chosen
+                elif kind == 'clip':
+                    self.clip_name = chosen
+                else:
+                    self.vae_name = chosen
+                extra[kind] = chosen
             clip_types = _combo_options(info.get('CLIPLoader'), 'CLIPLoader', 'type')
             if clip_types is not None and CLIP_TYPE not in clip_types:
                 models_ok = False
@@ -583,6 +618,60 @@ def _default_gpu_lease_path() -> Path | None:
         return Path(ace_engine.LOCK)
     except Exception:
         return None
+
+
+def _weight_basename(name: str) -> str:
+    """The file name, ignoring a folder prefix and either slash direction."""
+    return str(name).replace('\\', '/').rsplit('/', 1)[-1]
+
+
+def _listed_weight(name: str, options) -> str | None:
+    """The loader option for ``name``, or None when that file is not listed.
+
+    An exact option wins. Otherwise the option whose file name matches, so a
+    folder prefix or a Windows separator still counts, and the graph receives
+    the string ComfyUI actually listed.
+    """
+    if not options:
+        return None
+    if name in options:
+        return name
+    base = _weight_basename(name)
+    for option in options:
+        if _weight_basename(option) == base:
+            return option
+    return None
+
+
+def _present_weight(requested: str, kind: str, options) -> str | None:
+    """The file to load for one role.
+
+    The requested name wins, including the int8 default. When that default is
+    missing, the first MODEL_ALTERNATIVES entry the server lists is used. An
+    explicit name that is not the default is never swapped for a different file.
+    """
+    found = _listed_weight(requested, options)
+    if found is not None:
+        return found
+    if requested != MODEL_FILES.get(kind):
+        return None
+    for alt in MODEL_ALTERNATIVES.get(kind, ()):
+        found = _listed_weight(alt, options)
+        if found is not None:
+            return found
+    return None
+
+
+def _tiled_mode(saved: dict) -> str:
+    mode = saved.get('minimax_tiled_decode', 'auto') if isinstance(saved, dict) else 'auto'
+    return mode if mode in _TILED_DECODE_MODES else 'auto'
+
+
+def _vram_under_12gb(value) -> bool:
+    """True when ComfyUI's vram_total is a byte count under 12 GB."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return value < _TILED_AUTO_UNDER_BYTES
 
 
 def _combo_options(info, node: str, field: str) -> tuple[str, ...] | None:
