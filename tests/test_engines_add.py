@@ -189,12 +189,6 @@ def test_a_non_comfyui_kind_is_refused_with_a_pointer_to_the_right_form(tmp_path
     assert TargetStore(tmp_path).list() == []
 
 
-def test_an_empty_model_list_is_refused(tmp_path):
-    with pytest.raises(ValueError, match='models must be a non-empty list'):
-        add(tmp_path, [])
-    assert TargetStore(tmp_path).list() == []
-
-
 def test_a_non_string_model_id_is_a_value_error_not_a_type_error(tmp_path):
     """``{'models': [{}]}`` used to die in set membership with a TypeError."""
     with pytest.raises(ValueError, match='models must be a non-empty list'):

@@ -485,7 +485,7 @@ def add_engine(data_dir, *, name, url, models, kind='comfyui', resolved=None) ->
     """
     if kind != 'comfyui':
         raise ValueError('Use the ACE-Step or hosted form.')
-    if not isinstance(models, (list, tuple)) or not models:
+    if not isinstance(models, (list, tuple)):
         raise ValueError('models must be a non-empty list of music model ids')
     for model in models:
         if not isinstance(model, str):
@@ -521,6 +521,8 @@ def add_engine(data_dir, *, name, url, models, kind='comfyui', resolved=None) ->
         except OSError:
             pass
         raise
+    if not models:
+        return {'ok': True, 'target': target, 'workflows': [], 'connect_only': True}
     return {'ok': True, 'target': target, 'workflows': workflows}
 
 
@@ -677,6 +679,7 @@ def _parse_export(text) -> dict:
             'url': validate_base_url(entry['url']),
             'models': [model for model in models if isinstance(model, str)]
                       if isinstance(models, list) else [],
+            'models_given': isinstance(models, list),
             'resolved': {bare: exact for bare, exact in resolved.items()
                          if isinstance(bare, str) and isinstance(exact, str)}
                         if isinstance(resolved, dict) else {},
@@ -718,7 +721,9 @@ def import_engines(data_dir, text) -> dict:
         if key in existing:
             skipped.append(entry['name'])
             continue
-        models = [model for model in entry['models'] if model in SIGNATURES] or [DEFAULT_MODEL]
+        # An empty list is a plain ComfyUI saved for a custom workflow; only a missing list is an old export.
+        models = ([model for model in entry['models'] if model in SIGNATURES]
+                  if entry.get('models_given') else [DEFAULT_MODEL])
         try:
             add_engine(data_dir, name=entry['name'], url=entry['url'], models=models,
                        resolved=entry['resolved'] or None)

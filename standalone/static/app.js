@@ -3103,12 +3103,17 @@ function showTestResult(data) {
   trouble.replaceChildren();
 
   result.replaceChildren();
-  const message = data && data.message != null ? String(data.message) : '';
+  const models = data && Array.isArray(data.models) ? data.models : [];
+  let message = data && data.message != null ? String(data.message) : '';
+  const kind = (data && data.kind) || testedKindUrl().kind;
+  if (data && data.ok === true && kind === 'comfyui' && !readyModelIds(data).length) {
+    message = 'Connected to ComfyUI. No music model this studio knows was found. You can still add it, then upload your own workflow under Custom workflows.';
+  }
   result.append(el('p', message, 'test-message'));
 
-  if (data.models && Array.isArray(data.models)) {
+  if (models.length > 0) {
     const list = el('ul', '', 'model-checklist');
-    for (const model of data.models) {
+    for (const model of models) {
       const item = el('li', '', 'model-item');
       const status = model && model.status != null ? String(model.status) : '';
       const name = model && (model.label || model.id) != null ? String(model.label || model.id) : '';
@@ -3438,7 +3443,9 @@ function serverAddReady() {
     if (!models.length) return true;
     return readyModelIds(data).length > 0;
   }
-  if (current.kind === 'comfyui') return readyModelIds(data).length > 0;
+  // A ComfyUI that answered can always be added: with no music model this studio knows, it is
+  // saved as a plain server and the person uploads their own workflow for it.
+  if (current.kind === 'comfyui') return true;
   return false;
 }
 function syncServerKind() {
@@ -3481,6 +3488,12 @@ function serverMessage(text, bad = false) {
   node.textContent = text == null ? '' : String(text);
   node.classList.toggle('error', !!bad && node.textContent !== '');
 }
+function engineMessage(text, bad = false) {
+  const node = $('engine-message');
+  if (!node) return;
+  node.textContent = text == null ? '' : String(text);
+  node.classList.toggle('error', !!bad && node.textContent !== '');
+}
 function moveMessage(text, bad = false) {
   const node = $('move-engines-message');
   if (!node) return;
@@ -3506,6 +3519,7 @@ function dismissServerWizard() {
   if (modelEl) modelEl.value = '';
   invalidateEngineTest();
   serverMessage('');
+  engineMessage('');
   const wizard = $('server-wizard');
   if (wizard) wizard.hidden = true;
 }
@@ -3563,6 +3577,11 @@ async function addServerEngine() {
     return;
   }
   await finishEngineAdd();
+  if (!models.length || (saved && saved.connect_only === true)) {
+    const msg = 'Added. Now upload a workflow for it under Custom workflows below.';
+    serverMessage(msg);
+    engineMessage(msg);
+  }
 }
 function useLocalComfy(url) {
   const wizard = $('server-wizard');
@@ -3585,6 +3604,7 @@ function wireEnginesPage() {
   const installWizard = $('install-wizard');
 
   if (addServerBtn) addServerBtn.addEventListener('click', () => {
+    engineMessage('');
     if (serverWizard) serverWizard.hidden = false;
   });
 
