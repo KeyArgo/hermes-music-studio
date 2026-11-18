@@ -37,18 +37,19 @@ def _loaded_from(name: str) -> str | None:
     return os.path.realpath(os.path.dirname(os.path.dirname(path)))
 
 
-def _profile(folder: str) -> str:
-    """The profile name inside ``.../profiles/<name>/plugins/...``, else "the other profile".
+def _profile(folder: str) -> str | None:
+    """The profile name inside ``.../profiles/<name>/plugins/...``, else None for the default one.
 
-    Hermes' layouts name the profile in the path; when the folder is not one of those (a git
-    checkout, an unpacked zip), the name is unknown and saying so is better than guessing.
+    Hermes' layouts name the profile in the path; when the folder is not one of those (the default
+    profile's plugins folder, a git checkout, an unpacked zip), there is no name to pass to ``-p``
+    and guessing one would print a command that does not exist.
     """
     parts = folder.split(os.sep)
     if 'profiles' in parts:
         index = parts.index('profiles')
         if index + 1 < len(parts):
             return parts[index + 1]
-    return 'the other profile'
+    return None
 
 
 def foreign_copy(root: str) -> str | None:
@@ -65,8 +66,15 @@ def foreign_copy(root: str) -> str | None:
         # One process, one set of modules: this copy's routes are running on that copy's code, and
         # an update of this profile alone cannot fix it. Name the folder and the command.
         profile = _profile(folder)
-        return (f'Another Hermes profile loaded an older Music Studio from {folder}. '
-                'Hermes runs every profile in one process, so all profiles must have the same '
-                f'version. Update it with: hermes -p {profile} plugins update '
-                'hermes-music-studio, then restart Hermes.')
+        # "a different copy", never "an older one": this module cannot tell which is newer, and the
+        # only fact it has is that the loaded copy is not this one. The update command loses its
+        # `-p` when no profile is named in the path (the default profile), because
+        # `hermes -p <nothing>` is a command that does not exist.
+        command = (f'hermes -p {profile} plugins update hermes-music-studio' if profile
+                   else 'hermes plugins update hermes-music-studio')
+        loaded = (f'Another Hermes profile loaded a different copy of Music Studio from {folder}.'
+                  if profile else
+                  f'Hermes is running a different copy of Music Studio, loaded from {folder}.')
+        return (f'{loaded} Hermes runs every profile in one process, so all profiles must have '
+                f'the same version. Update it with: {command}, then restart Hermes.')
     return None

@@ -15,7 +15,9 @@
     : { api: base, assets: base + '/studio/assets' };
   var css = document.createElement('link');
   css.rel = 'stylesheet';
-  css.href = window.MUSIC_STUDIO.assets + '/style.css';
+  // ?v= is the install's stamp: a webview caches these two files by URL, and after an update the
+  // URL has to change or the pane keeps running the old page.
+  css.href = window.MUSIC_STUDIO.assets + '/style.css?v=__STUDIO_STAMP__';
   document.head.appendChild(css);
 })();
 </script>
@@ -654,7 +656,8 @@
 <script>
 (function () {
   var app = document.createElement('script');
-  app.src = window.MUSIC_STUDIO.assets + '/app.js';
+  // Same stamp as the stylesheet: the page and the script it runs must be one install's.
+  app.src = window.MUSIC_STUDIO.assets + '/app.js?v=__STUDIO_STAMP__';
   document.head.appendChild(app);
 })();
 </script>

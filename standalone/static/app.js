@@ -2066,10 +2066,12 @@ function paneDraft(request) {
       return;
     }
     const id = 'draft-' + Math.random().toString(36).slice(2);
+    // The plugin waits up to llm_bridge.TIMEOUT_SECONDS (120 s) for the model, so the page must
+    // wait longer than that or a slow-but-fine draft is thrown away while it is still being written.
     const timer = setTimeout(() => {
       window.removeEventListener('message', onReply);
       reject(new Error('The pane did not answer the draft request in time.'));
-    }, 60000);
+    }, 150000);
     function onReply(event) {
       const data = event && event.data;
       if (!data || data.type !== 'hermes-music-studio:draft-result' || data.id !== id) return;
@@ -2083,7 +2085,10 @@ function paneDraft(request) {
       }
     }
     window.addEventListener('message', onReply);
+    // The action is the difference between a chat reply and a filled form: the pane forwards it to
+    // /studio/draft, and without it "Discuss idea" was answered with a draft every time.
     const message = { type: 'hermes-music-studio:draft', id,
+      action: request.action === 'chat' ? 'chat' : 'draft',
       prompt: request.prompt, tone: request.tone, style: request.style };
     if (request.provider) message.provider = request.provider;
     if (request.model) message.model = request.model;
@@ -3961,6 +3966,9 @@ function applyDraft(draft) {
   let targetNode = null;
   let spanStart = 0;
   let spanEnd = 0;
+  // The page's own selection, kept as Ranges: focusing the menu's first item takes it away in a real
+  // browser, and Copy has to be able to put back exactly what the person highlighted.
+  let pageRanges = [];
   let prompt = null;
 
   const el = (tag, text, className) => {
@@ -3971,10 +3979,12 @@ function applyDraft(draft) {
   };
 
   // The field a right-click landed on, or null when it is not a text field. A slider or a checkbox
-  // has no text to cut or paste, so the menu must not appear over one.
+  // has no text to cut or paste, so the menu must not appear over one. A read-only field is still a
+  // field for Copy and Select all — the engines fallback is shown read-only on purpose, and the
+  // whole reason it is on screen is to be copied out — so it stays, flagged, and loses Cut/Paste.
   function editableAt(target) {
     const node = target && target.closest && target.closest('input, textarea');
-    if (!node || node.disabled || node.readOnly) return null;
+    if (!node || node.disabled) return null;
     if (node.tagName === 'INPUT' && NOT_TEXT.has(String(node.type || 'text').toLowerCase())) return null;
     return node;
   }
@@ -3987,6 +3997,27 @@ function applyDraft(draft) {
   function chosenOnPage() {
     const selection = window.getSelection && window.getSelection();
     return selection ? String(selection.toString() || '') : '';
+  }
+
+  // The selection as it stands before the menu exists: taken as Ranges, because a string cannot be
+  // turned back into a selection and execCommand copies a selection, not text.
+  function rememberPage() {
+    pageRanges = [];
+    const selection = window.getSelection && window.getSelection();
+    if (!selection || typeof selection.rangeCount !== 'number') return;
+    for (let i = 0; i < selection.rangeCount; i += 1) {
+      try { pageRanges.push(selection.getRangeAt(i).cloneRange()); } catch (err) { /* nothing to keep */ }
+    }
+  }
+
+  function rememberBack() {
+    if (!pageRanges.length) return;
+    const selection = window.getSelection && window.getSelection();
+    if (!selection) return;
+    try {
+      selection.removeAllRanges();
+      pageRanges.forEach(range => selection.addRange(range));
+    } catch (err) { /* the text changed while the menu was open */ }
   }
 
   // A short sentence for the whole page, not one panel: the menu can be opened anywhere, so there is
@@ -4003,12 +4034,17 @@ function applyDraft(draft) {
     pageHint.timer = setTimeout(() => { if (prompt) { prompt.remove(); prompt = null; } }, 6000);
   }
 
-  function close() {
+  // `keepFocus` is true only for the two ways of leaving that keep the person where they were:
+  // Escape, and choosing an item. Dismissing the menu by clicking elsewhere, tabbing away or
+  // scrolling must leave the focus where the person put it — pulling it back to the field is how a
+  // click on another panel ended up typing into the old one.
+  function close(keepFocus) {
     if (!menu) return;
+    const field = fieldNode;
     menu.remove();
     menu = null;
-    // Give the caret back to the field the person right-clicked, so typing continues there.
-    if (fieldNode && fieldNode.isConnected && typeof fieldNode.focus === 'function') fieldNode.focus();
+    pageRanges = [];
+    if (keepFocus && field && field.isConnected && typeof field.focus === 'function') field.focus();
   }
 
   function restore() {
@@ -4018,10 +4054,13 @@ function applyDraft(draft) {
   }
 
   function copy(cut) {
-    restore();
+    // A page selection is not a field selection: execCommand copies the live selection, and the
+    // menu's first item took it away when it took the focus, so put the saved Ranges back first.
+    if (fieldNode) restore();
+    else rememberBack();
     let ok = false;
     try { ok = document.execCommand(cut ? 'cut' : 'copy'); } catch (err) { ok = false; }
-    close();
+    close(true);
     if (!ok) pageHint(cut ? 'Cut did not work here. Select the text and press Ctrl+X (Cmd+X on a Mac).'
       : 'Copy did not work here. Select the text and press Ctrl+C (Cmd+C on a Mac).');
   }
@@ -4031,7 +4070,7 @@ function applyDraft(draft) {
     if (fieldNode) {
       fieldNode.focus();
       try { fieldNode.select(); } catch (err) { /* not selectable */ }
-      close();
+      close(true);
       return;
     }
     const selection = window.getSelection && window.getSelection();
@@ -4041,7 +4080,7 @@ function applyDraft(draft) {
       selection.removeAllRanges();
       selection.addRange(range);
     }
-    close();
+    close(true);
   }
 
   async function paste() {
@@ -4076,14 +4115,15 @@ function applyDraft(draft) {
     return button;
   }
 
-  function build(field, hasText) {
+  function build(field, hasText, readOnly) {
     const box = el('div', '', 'context-menu');
     box.id = 'context-menu';
     box.setAttribute('role', 'menu');
     box.tabIndex = -1;
-    if (field && hasText) box.append(item('Cut', () => copy(true)));
+    // Cut and Paste change the text, so they are not offered where the text cannot change.
+    if (field && !readOnly && hasText) box.append(item('Cut', () => copy(true)));
     if (hasText) box.append(item('Copy', () => copy(false)));
-    if (field) box.append(item('Paste', paste));
+    if (field && !readOnly) box.append(item('Paste', paste));
     box.append(item('Select all', selectAll));
     return box;
   }
@@ -4097,16 +4137,30 @@ function applyDraft(draft) {
     box.style.top = Math.round(top) + 'px';
   }
 
-  function open(event, field, hasText) {
+  function open(event, field, hasText, readOnly) {
     close();
     fieldNode = field;
     targetNode = event.target;
     spanStart = field && typeof field.selectionStart === 'number' ? field.selectionStart : 0;
     spanEnd = field && typeof field.selectionEnd === 'number' ? field.selectionEnd : 0;
-    const box = build(field, hasText);
+    // A page selection has to be saved before the first item takes the focus, or Copy has nothing
+    // left to copy.
+    if (field) pageRanges = [];
+    else rememberPage();
+    const box = build(field, hasText, !!readOnly);
     document.body.append(box);
     menu = box;
-    fit(box, event.clientX, event.clientY);
+    const x = event.clientX || 0;
+    const y = event.clientY || 0;
+    if (!x && !y) {
+      // Shift+F10 and the ContextMenu key open a menu with no pointer position at all: both are 0,
+      // which is the window's corner. Put it at the element the person is actually on instead.
+      const rect = (event.target && event.target.getBoundingClientRect
+        && event.target.getBoundingClientRect()) || { left: 0, top: 0, bottom: 0 };
+      fit(box, rect.left + 4, (rect.bottom || rect.top) + 2);
+    } else {
+      fit(box, x, y);
+    }
     const first = box.querySelector('.context-menu-item');
     // Focus the first item so the menu is reachable from the keyboard straight after a right-click.
     if (first) first.focus();
@@ -4128,12 +4182,13 @@ function applyDraft(draft) {
 
   document.addEventListener('contextmenu', event => {
     const field = editableAt(event.target);
+    const readOnly = !!(field && field.readOnly);
     // Inside a field only the field's own selection counts: Copy restores and copies that range.
     const hasText = field ? !!chosenIn(field) : !!chosenOnPage();
     // No field and no selection: this is an ordinary page right-click, so the event is left alone.
     if (!field && !hasText) return;
     event.preventDefault();
-    open(event, field, hasText);
+    open(event, field, hasText, readOnly);
   });
 
   document.addEventListener('mousedown', event => {
@@ -4146,14 +4201,17 @@ function applyDraft(draft) {
     if (!menu) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      close();
+      // Escape is a decision: the person is done with the menu and stays where they were.
+      close(true);
       return;
     }
+    // Tab moves on; the menu is a detour, not a destination, so the focus is not pulled back.
     if (event.key === 'Tab') { close(); return; }
     step(event);
   }, true);
-  // A menu pinned to a spot that scrolled away is a menu pointing at the wrong text.
-  window.addEventListener('scroll', close, true);
-  window.addEventListener('blur', close);
+  // A menu pinned to a spot that scrolled away is a menu pointing at the wrong text. The wrappers
+  // matter: close() takes keepFocus, and a listener passed straight in would hand it the event.
+  window.addEventListener('scroll', () => close(), true);
+  window.addEventListener('blur', () => close());
 })();
 

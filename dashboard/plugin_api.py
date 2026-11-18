@@ -41,7 +41,22 @@ def _load_copies():
     return module
 
 
+def _load_ui_stamp():
+    """``music_studio/ui_stamp.py`` from THIS folder, by file path (see ``_load_copies``).
+
+    The loaded ``music_studio`` may be another profile's older copy, which has no ``ui_stamp``;
+    importing it through the package would make this module fail and take every route with it.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'hermes_music_studio_ui_stamp', Path(_ROOT) / 'music_studio' / 'ui_stamp.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 copies = _load_copies()
+ui_stamp = _load_ui_stamp()
 
 _LOG = logging.getLogger(__name__)
 
@@ -536,12 +551,19 @@ def download(project_id: str, take_id: str, edit: str | None = None):
 
 @router.get('/studio/ui')
 def studio_ui():
-    """The standalone UI, served from the committed static files."""
+    """The standalone UI, served from the committed static files.
+
+    The page names ``app.js`` and ``style.css`` with a per-install ``?v=`` token: a webview caches
+    both by URL, and without a changing query the pane could run last version's script after an
+    update. The token is swapped in here, so the file on disk stays plainly openable.
+    """
     path = _STANDALONE_STATIC / 'index.html'
     if not path.is_file():
         raise HTTPException(status_code=404, detail='studio UI not found')
-    return FileResponse(path, media_type='text/html; charset=utf-8',
-                        headers={'X-Content-Type-Options': 'nosniff'})
+    page = path.read_text(encoding='utf-8')
+    return Response(content=ui_stamp.render(page, ui_stamp.build_token(_STANDALONE_STATIC)),
+                    media_type='text/html; charset=utf-8',
+                    headers={'X-Content-Type-Options': 'nosniff'})
 
 
 @router.get('/studio/assets/{name}')

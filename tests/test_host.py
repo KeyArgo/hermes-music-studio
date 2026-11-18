@@ -44,6 +44,15 @@ def test_serves_the_studio_page(client):
         assert nav in body
 
 
+def test_the_page_asks_for_this_installs_app_js(client):
+    """A webview caches app.js and style.css by URL, so the page must name them with the install."""
+    body = client.get('/').text
+    assert 'app.js?v=' in body, body[-300:]
+    assert 'style.css?v=' in body, body[-300:]
+    # The marker is the host's placeholder; a page served with it still has one unchanging URL.
+    assert '__STUDIO_STAMP__' not in body
+
+
 def test_static_assets_are_the_modern_ui(client):
     css = client.get('/static/style.css')
     assert css.status_code == 200 and 'text/css' in css.headers['content-type']

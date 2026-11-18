@@ -6,6 +6,14 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## Unreleased
 
+### Live-test fixes (round 13)
+
+- **A slow draft is no longer thrown away.** The page waited 60 seconds while the plugin allows the model 120; it now waits 150.
+- **Discuss idea chats again.** The page now tells the pane which button was pressed, so Discuss idea gets a chat reply instead of a filled draft.
+- **Right-click menu fixes.** Copy works on selected chat text; clicking elsewhere or pressing Tab no longer pulls the cursor back to the old field; read-only fields offer Copy and Select all; a menu opened with Shift+F10 or the menu key opens at the field, not the window corner.
+- **The other-profile message is accurate.** It says "a different copy" (it cannot tell which is older), and for the default profile it prints `hermes plugins update hermes-music-studio` without `-p`.
+- **An update reaches the pane without restarting Desktop.** The page asks for `app.js` and `style.css` with a `?v=` hash of the files, so a webview cannot keep running last version's script.
+
 ### Model picker and provider override
 
 - **Choose any model your Hermes knows.** The Create pane shows a model picker with your Hermes model marked recommended. After running two `hermes config set` commands and restarting Hermes, you can select any provider and model. Your choice is remembered in your browser. Configured providers are marked ready; unconfigured ones show their setup steps.

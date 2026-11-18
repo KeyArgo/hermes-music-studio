@@ -36,9 +36,17 @@ DRAFT_JSON = {
     "instrumental": False,
 }
 
-# The path a second profile's copy would live at, and the folder it was loaded from.
-JESTER_FILE = '/x/profiles/jester/plugins/hermes-music-studio/music_studio/__init__.py'
-JESTER_ROOT = '/x/profiles/jester/plugins/hermes-music-studio'
+# The path a second profile's copy would live at, and the folder it was loaded from. Built with
+# os.path.join and compared through os.path.realpath: ``copies`` realpaths the folder, and on Windows
+# that answer is a backslash path, not the POSIX literal this test would otherwise expect.
+JESTER_ROOT = os.path.join(os.sep + 'x', 'profiles', 'jester', 'plugins', 'hermes-music-studio')
+JESTER_FILE = os.path.join(JESTER_ROOT, 'music_studio', '__init__.py')
+JESTER_SHOWN = os.path.realpath(JESTER_ROOT)
+
+# A copy with no ``profiles/<name>`` in its path: the default profile, a checkout, or an unpacked zip.
+PLAIN_ROOT = os.path.join(os.sep + 'opt', 'builds', 'hermes-music-studio')
+PLAIN_FILE = os.path.join(PLAIN_ROOT, 'standalone', '__init__.py')
+PLAIN_SHOWN = os.path.realpath(PLAIN_ROOT)
 
 
 class FakeResult:
@@ -86,7 +94,7 @@ def test_our_own_root_is_not_a_foreign_copy():
 
 
 def test_a_copy_under_another_profile_is_named_with_the_update_command(monkeypatch):
-    """The bug: another profile's older copy won the import, and the person needs its name."""
+    """The bug: another profile's copy won the import, and the person needs its name."""
     from music_studio import copies
 
     fake = types.ModuleType('music_studio')
@@ -97,25 +105,38 @@ def test_a_copy_under_another_profile_is_named_with_the_update_command(monkeypat
     sentence = copies.foreign_copy(str(ROOT))
 
     assert sentence is not None
-    assert JESTER_ROOT in sentence, sentence
+    assert JESTER_SHOWN in sentence, sentence
     assert 'jester' in sentence, sentence
     assert 'hermes -p jester plugins update hermes-music-studio' in sentence, sentence
     # It has to say why updating this profile alone will not help.
     assert 'one process' in sentence, sentence
+    # "a different copy", not "an older" one: this module cannot tell which folder is newer.
+    assert 'a different copy of Music Studio' in sentence, sentence
+    assert 'older' not in sentence, sentence
 
 
-def test_a_copy_from_a_checkout_without_a_profile_says_the_other_profile(monkeypatch):
-    """A git checkout has no ``profiles/<name>`` in its path; guessing a name would be a lie."""
+def test_a_copy_without_a_profile_in_its_path_gets_a_command_without_dash_p(monkeypatch):
+    """A checkout, an unpacked zip or the default profile has no name to pass to ``-p``.
+
+    The old sentence printed ``hermes -p the other profile plugins update …`` — a command that does
+    not exist, from a page whose only job is to say what to run.
+    """
     from music_studio import copies
 
     fake = types.ModuleType('standalone')
-    fake.__file__ = '/opt/builds/hermes-music-studio/standalone/__init__.py'
+    fake.__file__ = PLAIN_FILE
     monkeypatch.setitem(sys.modules, 'standalone', fake)
 
     sentence = copies.foreign_copy(str(ROOT))
 
     assert sentence is not None
-    assert 'the other profile' in sentence, sentence
+    assert PLAIN_SHOWN in sentence, sentence
+    assert 'a different copy of Music Studio' in sentence, sentence
+    assert 'hermes plugins update hermes-music-studio' in sentence, sentence
+    assert 'hermes -p' not in sentence, sentence
+    assert 'the other profile' not in sentence, sentence
+    # The advice the sentence exists for: every profile shares one process's imports.
+    assert 'one process' in sentence, sentence
 
 
 # ---------------------------------------------------------------- /studio/draft never leaks a 500
@@ -151,7 +172,7 @@ def test_a_mismatch_answers_with_the_update_command(client, monkeypatch):
 
     assert answer.status_code == 502, (answer.status_code, answer.text)
     detail = answer.json()['detail']
-    assert JESTER_ROOT in detail and 'jester' in detail, detail
+    assert JESTER_SHOWN in detail and 'jester' in detail, detail
     assert 'plugins update hermes-music-studio' in detail, detail
 
 

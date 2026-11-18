@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 default_root = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share'))
@@ -14,7 +14,7 @@ os.environ.setdefault('HEWN_STUDIO_DATA_DIR', str(default_root / 'hewn-music-stu
 os.environ['HEWN_STUDIO_NO_HOST'] = '1'
 
 from dashboard.plugin_api import router  # noqa: E402
-from music_studio import media_sign, service  # noqa: E402
+from music_studio import media_sign, service, ui_stamp  # noqa: E402
 from standalone.ideas import router as ideas_router  # noqa: E402
 from standalone.workspaces import router as workspaces_router  # noqa: E402
 from standalone.revamp import router as revamp_router  # noqa: E402
@@ -160,7 +160,17 @@ def health():
 
 @app.get('/')
 def index():
-    return FileResponse(ROOT / 'static' / 'index.html')
+    """The studio page, with a per-install ``?v=`` on the two files it names.
+
+    A webview caches ``app.js`` and ``style.css`` by URL, so after an update the query is what makes
+    the pane load this build's script instead of the one it already has. Swapped in here, so the
+    committed index.html stays a plainly openable file.
+    """
+    page = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+    token = ui_stamp.build_token(ROOT / 'static')
+    return Response(content=ui_stamp.render(page, token),
+                    media_type='text/html; charset=utf-8',
+                    headers={'X-Content-Type-Options': 'nosniff'})
 
 @app.get('/api/studio/sample')
 def sample():
