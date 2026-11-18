@@ -141,7 +141,10 @@ export function Studio({ ctx }) {
               { type: 'hermes-music-studio:draft-result', id: data.id, ...payload }, '*')
           } catch { /* the frame went away while drafting */ }
         }
-        const body = { prompt: data.prompt, tone: data.tone, style: data.style }
+        // The frame's action is the difference between a chat reply and a filled form:
+        // 'chat' for "Discuss idea", 'draft' for "Fill my draft". Anything else is a draft.
+        const body = { prompt: data.prompt, tone: data.tone, style: data.style,
+          action: data.action === 'chat' ? 'chat' : 'draft' }
         if (data.provider) body.provider = data.provider
         if (data.model) body.model = data.model
         Promise.resolve(ctx.rest('/studio/draft', {
