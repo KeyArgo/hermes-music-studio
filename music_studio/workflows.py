@@ -28,9 +28,23 @@ WORKFLOWS_FILE = 'comfy-workflows.json'
 MAX_WORKFLOW_BYTES = 1024 * 1024
 
 ENGINE_PREFIX = 'comfy_workflow:'
-PLACEHOLDERS = ('lyrics', 'style', 'duration', 'seed', 'title', 'instrumental')
+PLACEHOLDERS = ('lyrics', 'style', 'duration', 'seed', 'title', 'instrumental',
+                'bpm', 'keyscale', 'vocal_language')
 PLACEHOLDER_TOKENS = tuple('{{' + name + '}}' for name in PLACEHOLDERS)
 REQUIRED_ONE_OF = ('style', 'lyrics')
+
+# What the ACE-Step encoder needs when a draft leaves the field empty; the node
+# refuses a blank tempo, key or language.
+BPM_DEFAULT = 110
+KEYSCALE_DEFAULT = 'C major'
+LANGUAGE_DEFAULT = 'en'
+# The ACE-Step 1.5 encoder takes these as fixed lists (read from a live ComfyUI's /object_info) and
+# refuses the whole prompt for anything else, so the draft's free text is mapped onto them.
+ACE_LANGUAGES = frozenset((
+    'ar az bg bn ca cs da de el en es fa fi fr he hi hr ht hu id is it ja ko la lt ms ne nl no pa pl '
+    'pt ro ru sa sk sr sv sw ta te th tl tr uk ur vi yue zh unknown').split())
+ACE_BPM_RANGE = (10, 300)
+_NOTE = re.compile(r'^\s*([A-Ga-g])\s*(#|b|♯|♭)?\s*(major|maj|minor|min|m)?\s*$')
 
 # An arbitrary graph does not declare a model window. Keep the studio's broad
 # single-take window; the graph decides what it actually renders.
@@ -137,6 +151,10 @@ def _placeholder_values(request, title=None):
         duration = float(getattr(request, 'duration_seconds', 0) or 0)
     except (TypeError, ValueError):
         duration = 0.0
+    try:
+        bpm = int(getattr(request, 'bpm', 0) or 0)
+    except (TypeError, ValueError):
+        bpm = 0
     return {
         'lyrics': lyrics,
         'style': getattr(request, 'caption', '') or '',
@@ -144,11 +162,33 @@ def _placeholder_values(request, title=None):
         'seed': int(getattr(request, 'seed', 0) or 0),
         'title': (title if title is not None else getattr(request, 'title', '') or ''),
         'instrumental': instrumental,
+        'bpm': min(ACE_BPM_RANGE[1], max(ACE_BPM_RANGE[0], bpm)) if bpm else BPM_DEFAULT,
+        'keyscale': _keyscale(getattr(request, 'keyscale', '')),
+        'vocal_language': _language(getattr(request, 'vocal_language', '')),
     }
 
 
+def _keyscale(raw) -> str:
+    """'F#m', 'f# minor', 'Bb' -> the encoder's own spelling ('F# minor', 'Bb major'); else the default."""
+    match = _NOTE.match(raw) if isinstance(raw, str) else None
+    if not match:
+        return KEYSCALE_DEFAULT
+    note, accidental, mode = match.groups()
+    accidental = {'♯': '#', '♭': 'b'}.get(accidental, accidental or '')
+    mode = 'minor' if (mode or '').lower() in ('minor', 'min', 'm') else 'major'
+    return f'{note.upper()}{accidental} {mode}'
+
+
+def _language(raw) -> str:
+    """The studio's 'auto' (and anything the encoder does not list) is its 'unknown'."""
+    code = raw.strip().lower() if isinstance(raw, str) else ''
+    if not code:
+        return LANGUAGE_DEFAULT
+    return code if code in ACE_LANGUAGES else 'unknown'
+
+
 _PLACEHOLDER_PATTERN = re.compile(
-    r"\{\{(lyrics|style|duration|seed|title|instrumental)\}\}")
+    r"\{\{(lyrics|style|duration|seed|title|instrumental|bpm|keyscale|vocal_language)\}\}")
 
 
 def _replace_text(text: str, values: dict) -> str:

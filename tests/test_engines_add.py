@@ -62,7 +62,7 @@ def test_ace_add_writes_a_target_and_the_proven_workflow(tmp_path):
     record = records[0]
     assert record['target_id'] == result['target']['id']
     assert set(find_placeholders(record['workflow'])) == {
-        'style', 'lyrics', 'duration', 'seed'}
+        'style', 'lyrics', 'duration', 'seed', 'bpm', 'keyscale', 'vocal_language'}
     validate_workflow(record['workflow'])
     assert record['workflow']['10']['inputs']['filename_prefix'] == 'music-studio'
 
@@ -264,7 +264,7 @@ def test_a_round_trip_rebuilds_the_engines_and_the_ace_workflow(tmp_path):
     assert [r['name'] for r in records] == ['ACE-Step 1.5']
     assert records[0]['target_id'] == targets[0]['id']
     assert set(find_placeholders(records[0]['workflow'])) == {
-        'style', 'lyrics', 'duration', 'seed'}
+        'style', 'lyrics', 'duration', 'seed', 'bpm', 'keyscale', 'vocal_language'}
     assert engine_catalog.list_engines(new)['ace_remote_url'] == ACE_URL
 
 
