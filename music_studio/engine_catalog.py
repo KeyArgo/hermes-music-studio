@@ -25,7 +25,7 @@ from . import setup
 from .engines.minimax_m3_comfy import (LOADER_NODES, MINIMAX_NODES, MODEL_FILES,
                                        SAMPLER_NODES, _combo_options)
 from .network import TargetStore, validate_base_url
-from .store import Store
+from .store import Store, replace_with_retry
 from .workflows import WorkflowStore, engine_id, validate_workflow
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
@@ -73,6 +73,11 @@ SIGNATURES = {
 ACE_WORKFLOW_MODEL = 'ace15_turbo'
 ACE_WORKFLOW_NAME = 'ACE-Step 1.5'
 DEFAULT_MODEL = 'minimax_m3'
+# What each saved server was added for. A target record carries only a name and
+# an address, so the models it was added for are kept beside it.
+MODELS_FILE = 'engine-models.json'
+# The order an export has always listed them in: ACE-Step first, then MiniMax.
+_EXPORT_ORDER = (ACE_WORKFLOW_MODEL, DEFAULT_MODEL)
 EXPORT_VERSION = 1
 MAX_IMPORT_ENGINES = 50
 OBJECT_INFO_TIMEOUT_S = 30
@@ -389,21 +394,63 @@ def _ace_template(resolved) -> dict:
     return graph
 
 
+def _models_record(data_dir) -> dict[str, list[str]]:
+    """What each saved server was added for; empty when nothing was recorded."""
+    try:
+        data = json.loads((Path(data_dir) / MODELS_FILE).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {key: [model for model in value if isinstance(model, str)]
+            for key, value in data.items()
+            if isinstance(key, str) and isinstance(value, list)}
+
+
+def _write_models_record(data_dir, record: dict) -> None:
+    path = Path(data_dir) / MODELS_FILE
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    replace_with_retry(tmp, path)
+
+
+def _remember_models(data_dir, target_id, models) -> None:
+    """Record the models a target was added for, so a later export can be exact."""
+    record = _models_record(data_dir)
+    record[target_id] = [model for model in dict.fromkeys(models) if model in SIGNATURES]
+    _write_models_record(data_dir, record)
+
+
+def _forget_models(data_dir, target_id) -> None:
+    record = _models_record(data_dir)
+    if record.pop(target_id, None) is not None:
+        _write_models_record(data_dir, record)
+
+
 def _engine_models(data_dir) -> dict[str, list[str]]:
     """Which music models each saved target can run, from what was saved for it.
 
-    MiniMax needs no record (the engine builds its graph). ACE-Step 1.5 is
-    known by the workflow ``add_engine`` created for it.
+    The models a target was added for are recorded when it is added. A target
+    saved before that record existed keeps the old answer: MiniMax, plus ACE-Step
+    when its workflow is here.
     """
     workflows = WorkflowStore(data_dir).all()
+    recorded = _models_record(data_dir)
     models = {}
     for target in TargetStore(data_dir).list():
+        known = recorded.get(target['id'])
+        if known is not None:
+            present = set(known)
+            offered = [model for model in _EXPORT_ORDER if model in present]
+            offered += [model for model in dict.fromkeys(known)
+                        if model not in offered and model in SIGNATURES]
+            models[target['id']] = offered
+            continue
         offered = []
         for record in workflows:
-            if record['target_id'] != target['id'] or not _is_ace_workflow(record):
-                continue
-            if ACE_WORKFLOW_MODEL not in offered:
+            if record['target_id'] == target['id'] and _is_ace_workflow(record):
                 offered.append(ACE_WORKFLOW_MODEL)
+                break
         offered.append(DEFAULT_MODEL)
         models[target['id']] = offered
     return models
@@ -452,6 +499,7 @@ def add_engine(data_dir, *, name, url, models, kind='comfyui', resolved=None) ->
     workflows = []
     seen = set()
     try:
+        _remember_models(data_dir, target['id'], models)
         for model in models:
             if model in seen:
                 continue
@@ -467,6 +515,10 @@ def add_engine(data_dir, *, name, url, models, kind='comfyui', resolved=None) ->
         try:
             targets.delete(target['id'])
         except (KeyError, ValueError):
+            pass
+        try:
+            _forget_models(data_dir, target['id'])
+        except OSError:
             pass
         raise
     return {'ok': True, 'target': target, 'workflows': workflows}
@@ -530,6 +582,7 @@ def remove_engine(data_dir, target_id) -> dict:
         store.delete(record['id'])
         removed.append(record['id'])
     TargetStore(data_dir).delete(target['id'])
+    _forget_models(data_dir, target['id'])
     return {'ok': True, 'target_id': target['id'], 'workflows': removed}
 
 
@@ -550,12 +603,43 @@ def _save_ace_server(data_dir, url) -> None:
     studio_settings.write(Path(data_dir), {'ace_remote_url': url})
 
 
+def _saved_resolved(data_dir, target_id) -> dict[str, str]:
+    """The subfolder spellings of the weight files this machine's ACE graph holds.
+
+    ``add_engine`` writes the exact loader option into the graph, so the graph is
+    the record: a value whose file name is one the signature names is a subfolder
+    spelling of it, and the other machine needs the same string.
+    """
+    graph = None
+    for record in WorkflowStore(data_dir).all():
+        if record['target_id'] == target_id and _is_ace_workflow(record):
+            graph = record['workflow']
+            break
+    if not isinstance(graph, dict):
+        return {}
+    resolved = {}
+    for node_name, field, filename in SIGNATURES[ACE_WORKFLOW_MODEL]['files']:
+        bare = _basename(filename)
+        for node in graph.values():
+            if not isinstance(node, dict) or node.get('class_type') != node_name:
+                continue
+            value = (node.get('inputs') or {}).get(field)
+            if isinstance(value, str) and value != bare and _basename(value) == bare:
+                resolved[bare] = value
+    return resolved
+
+
 def export_engines(data_dir) -> dict:
     """The saved engines as pretty JSON text, for another computer."""
     models = _engine_models(data_dir)
-    engines = [{'name': target['name'], 'url': target['url'],
-                'models': models[target['id']]}
-               for target in TargetStore(data_dir).list()]
+    engines = []
+    for target in TargetStore(data_dir).list():
+        entry = {'name': target['name'], 'url': target['url'],
+                 'models': models[target['id']]}
+        resolved = _saved_resolved(data_dir, target['id'])
+        if resolved:
+            entry['resolved'] = resolved
+        engines.append(entry)
     payload = {'music_studio_engines': EXPORT_VERSION,
                'engines': engines,
                'ace_server': setup._stored_endpoint(data_dir)['url'] or None}
@@ -587,11 +671,15 @@ def _parse_export(text) -> dict:
             raise ValueError(BAD_EXPORT_MESSAGE)
         name = entry.get('name')
         models = entry.get('models')
+        resolved = entry.get('resolved')
         engines.append({
             'name': name.strip() if isinstance(name, str) and name.strip() else entry['url'],
             'url': validate_base_url(entry['url']),
             'models': [model for model in models if isinstance(model, str)]
                       if isinstance(models, list) else [],
+            'resolved': {bare: exact for bare, exact in resolved.items()
+                         if isinstance(bare, str) and isinstance(exact, str)}
+                        if isinstance(resolved, dict) else {},
         })
     ace = data.get('ace_server')
     return {'engines': engines,
@@ -632,7 +720,8 @@ def import_engines(data_dir, text) -> dict:
             continue
         models = [model for model in entry['models'] if model in SIGNATURES] or [DEFAULT_MODEL]
         try:
-            add_engine(data_dir, name=entry['name'], url=entry['url'], models=models)
+            add_engine(data_dir, name=entry['name'], url=entry['url'], models=models,
+                       resolved=entry['resolved'] or None)
         except (ValueError, KeyError, OSError) as exc:
             errors.append(f'{entry["name"]}: {exc}')
             continue

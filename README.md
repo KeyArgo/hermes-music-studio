@@ -55,7 +55,7 @@ accident. The library, the worker and the audio stay on your machine.
   vocal language and engine, with the approval token checked inside the write lock.
 - **Two working engines behind one registry.** `ace_local` runs ACE-Step 1.5 on a local GPU with
   repaint and extend. `minimax_m3_comfy` renders MiniMax Music 3 through a ComfyUI server.
-  `ace_remote` is registered and health-probed but not deployed.
+  `ace_remote` renders on a remote ACE-Step API server the user adds on the Music engines page.
 - **One render at a time, across processes.** A detached worker takes a file lease; a crashed worker
   is reconciled by pid and start time, so a dead render cannot wedge the profile.
 - **Takes are immutable.** Repaint, extend, section splice, fade and chorus preview create child

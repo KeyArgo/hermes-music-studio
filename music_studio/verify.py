@@ -92,9 +92,14 @@ def checks() -> list[dict]:
     try:
         from music_studio import about as about_module
         revamp = about_module.revamp_status()
-        present = bool(revamp.get("available"))
-        row("REVamp is optional, and says so", True,
-            "running" if present else "not running — playlists are unavailable, nothing is broken")
+        # revamp_status() reports running/installed/state; it has no "available" key.
+        if revamp.get('running'):
+            detail = 'running'
+        elif revamp.get('installed'):
+            detail = 'installed, not running. Start REVamp from Hermes to use playlists.'
+        else:
+            detail = 'not installed. Playlists are unavailable, nothing is broken.'
+        row("REVamp is optional, and says so", True, detail)
     except Exception as error:  # pragma: no cover - reported, not raised
         row("REVamp is optional, and says so", True, f"unknown ({str(error)[:60]})")
 

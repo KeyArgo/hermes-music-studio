@@ -238,8 +238,9 @@ def test_yue_and_stable_audio_are_declared_undetectable():
 def test_the_ace_template_is_a_valid_proven_graph():
     graph = load_template('ace15_turbo')
     found = find_placeholders(graph)
-    assert set(found) == {'style', 'lyrics', 'duration', 'seed'}
-    assert len(found) == 4
+    assert set(found) == {'style', 'lyrics', 'duration', 'seed', 'bpm', 'keyscale',
+                          'vocal_language'}
+    assert len(found) == 7
     classes = {node['class_type'] for node in graph.values()}
     assert set(ACE_NODES) <= classes
     saves = [node for node in graph.values()
