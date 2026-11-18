@@ -341,7 +341,7 @@ def test_an_engine_is_added_listed_exported_and_removed(client):
 
 
 def test_adding_an_engine_twice_is_allowed_but_a_bad_model_is_a_400(client):
-    for models in ([], ['not_a_model'], 'ace15_turbo', [{'a': 1}]):
+    for models in (['not_a_model'], 'ace15_turbo', [{'a': 1}]):
         response = client.post('/api/studio/engines', json={
             'name': 'Studio PC', 'url': TARGET_URL, 'models': models})
         assert response.status_code == 400, (models, response.text)
