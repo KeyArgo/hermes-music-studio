@@ -56,6 +56,7 @@ def test_cpu_fallback_when_tools_fail(monkeypatch):
 
 
 def test_cuda_backend(monkeypatch):
+    monkeypatch.setattr(hardware, '_apple_silicon', lambda: False)  # the macOS runner is arm64
     def run(args, **kwargs):
         output = '0, GPU-123, NVIDIA RTX, 24576, 42, 5\n' if '--query-gpu=' in args[1] else ''
         return SimpleNamespace(returncode=0, stdout=output)
@@ -84,6 +85,7 @@ def test_xpu_device_and_override(monkeypatch):
 
 
 def test_rocm_names_are_read_whatever_the_capitalisation(monkeypatch):
+    monkeypatch.setattr(hardware, '_apple_silicon', lambda: False)  # the macOS runner is arm64
     sample = {'card0': {'Card Series': 'Navi 31 [Radeon RX 7900 XTX]', 'Card Model': '0x744c',
                         'VRAM Total Memory (B)': '25753026560', 'VRAM Total Used Memory (B)': '1073741824'}}
 
@@ -99,6 +101,7 @@ def test_rocm_names_are_read_whatever_the_capitalisation(monkeypatch):
 
 
 def test_a_busy_nvidia_card_is_not_reported_as_no_gpu(monkeypatch):
+    monkeypatch.setattr(hardware, '_apple_silicon', lambda: False)  # the macOS runner is arm64
     def fake_run(args):
         if args[0] == 'nvidia-smi':
             return None, 'nvidia-smi timed out after 5 s'
