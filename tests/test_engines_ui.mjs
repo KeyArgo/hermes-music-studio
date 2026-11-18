@@ -548,7 +548,9 @@ test('Add stays off until the current kind and address test ready', async t => {
     models: [MINIMAX_MISSING, ACE_MODEL_MISSING],
   };
   await clickId(doc, 'test-server-btn');
-  assert.equal(add.disabled, true);
+  // Round 10: a ComfyUI that answered can be added with no known model, for a custom workflow.
+  assert.equal(add.disabled, false);
+  assert.match(text(doc.getElementById('test-result')), /You can still add it/);
 
   booted.state.testReply = {
     ok: true,
