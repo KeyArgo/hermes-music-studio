@@ -772,13 +772,17 @@ def studio_draft(body: dict = Depends(json_body)):
     posts the answer back. One model path, one place it lives.
     """
     from music_studio import llm_bridge
-    from standalone.ideas import build_request, parse_draft, trust_error_response
+    from standalone.ideas import (MAX_REPLY_CHARS, build_request, parse_draft,
+                                  trust_error_response)
 
     prompt = str(body.get('prompt') or '').strip()
     if not prompt:
         raise HTTPException(400, 'prompt is required')
     if not llm_bridge.available():
         raise HTTPException(503, llm_bridge.MISSING)
+    # The frame asks for 'chat' from "Discuss idea" and 'draft' from "Fill my draft"; the pane
+    # forwards the choice. Anything else keeps the draft behaviour this route always had.
+    action = 'chat' if body.get('action') == 'chat' else 'draft'
     try:
         # int() on a container or a word is the caller's mistake, not a crash: it raised TypeError
         # out of int({}) and escaped the ValueError branch below as a 500.
@@ -787,7 +791,7 @@ def studio_draft(body: dict = Depends(json_body)):
         raise HTTPException(422, 'style must be a whole number between 0 and 100') from None
     try:
         request = build_request(body.get('provider'), body.get('model'),
-                                [{'role': 'user', 'content': prompt}], 'draft',
+                                [{'role': 'user', 'content': prompt}], action,
                                 body.get('tone'), style)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
@@ -802,6 +806,14 @@ def studio_draft(body: dict = Depends(json_body)):
     except RuntimeError as exc:
         # An empty or unusable host reply is an upstream failure, not a crash.
         raise HTTPException(502, str(exc)) from None
+    if action == 'chat':
+        # The shape the standalone /studio/ideas route answers with: app.js reads `content` as
+        # the chat reply and never expects a draft from it.
+        if not content.strip():
+            raise HTTPException(502, 'Hermes returned no content')
+        if len(content) > MAX_REPLY_CHARS:
+            raise HTTPException(502, 'Hermes returned an oversized response')
+        return {'success': True, 'action': 'chat', 'content': content, 'written_by': 'ctx.llm'}
     try:
         draft = parse_draft(content)
     except ValueError:
