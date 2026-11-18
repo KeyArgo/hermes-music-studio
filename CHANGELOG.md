@@ -39,6 +39,18 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ### Fixed
 
+- **A draft from a profile running an older copy says so, instead of `internal server error`.** Hermes
+  serves every profile from one process and imports plugin code with no isolation, so the first
+  `music_studio` / `standalone` to load is the one each profile's routes silently run on. When that
+  copy was an older one, `/studio/draft` asked it for `trust_error_response`, a name it does not have,
+  and the ImportError escaped as a bare 500. New `music_studio/copies.py` names the folder and the
+  profile (`Another Hermes profile loaded an older Music Studio from … Update it with:
+  hermes -p jester plugins update hermes-music-studio, then restart Hermes.`); `/studio/draft` now
+  answers 502 with that sentence (or `Music Studio failed: <Class>: <message>`) for any missing name or
+  unexpected error, logging the traceback, and passing its own 400/422/502/503 refusals through
+  unchanged; the mismatch is also logged once at mount time, without refusing to mount. `/verify.json`
+  gains `code_folder`, the folder `music_studio` actually loaded from, so a bug report names the copy
+  that answered.
 - **A slow draft says so instead of `internal server error`.** Hermes' `ctx.llm.complete()` defaults
   to a 30 second timeout; a longer draft raised `openai.APITimeoutError`, which the plugin route never
   caught and the page showed as a bare 500. `llm_bridge` now asks for `timeout=120` (retrying once

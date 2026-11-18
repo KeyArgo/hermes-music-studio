@@ -11,6 +11,8 @@ Nothing here is written by hand. Every line is measured when the page is request
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -106,6 +108,20 @@ def checks() -> list[dict]:
     return rows
 
 
+def code_folder() -> str:
+    """The real folder `music_studio` was actually imported from.
+
+    Hermes runs every profile in one process and keeps whichever copy of this package loaded first,
+    so a bug report has to say *which* copy answered — otherwise the same report reads as a bug in
+    code the person is not even running.
+    """
+    module = sys.modules.get('music_studio')
+    path = getattr(module, '__file__', None)
+    if not path:
+        return ''
+    return os.path.realpath(os.path.dirname(path))
+
+
 def summary() -> dict:
     rows = checks()
     failed = [row for row in rows if not row["ok"]]
@@ -113,6 +129,9 @@ def summary() -> dict:
         "ok": not failed,
         "rows": rows,
         "stamp": _stamp(),
+        # Which copy answered; see code_folder(). Kept beside the stamp, not inside it, so the
+        # existing shape of /verify.json does not change for anything that reads it.
+        "code_folder": code_folder(),
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
 

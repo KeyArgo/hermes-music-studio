@@ -1,5 +1,6 @@
 """Dashboard backend, mounted by Hermes under /api/plugins/hermes-music-studio."""
 import json
+import logging
 import sys
 import base64
 import os
@@ -23,6 +24,34 @@ from standalone.workspaces import get_cover as workspace_cover
 from standalone.workspaces import router as workspaces_router
 
 router = APIRouter()
+
+
+def _load_copies():
+    """``music_studio/copies.py`` from THIS folder, by file path rather than through the package.
+
+    The package may be another profile's older copy (that is the case this module reports), and an
+    older copy has no ``copies`` module: importing it through ``music_studio`` would fail and take
+    every route here down with it.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'hermes_music_studio_copies', Path(_ROOT) / 'music_studio' / 'copies.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+copies = _load_copies()
+
+_LOG = logging.getLogger(__name__)
+
+# Hermes mounts every profile's plugins into one process, so an older copy living under another
+# profile can be the `music_studio` this module is actually running on. Say so once, in the log, and
+# keep mounting anyway: refusing the mount would take the whole route set — and the person's library —
+# away over a mismatch that only the newer routes are hurt by.
+_foreign_copy = copies.foreign_copy(_ROOT)
+if _foreign_copy:
+    _LOG.warning('%s', _foreign_copy)
 
 _PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 _STANDALONE_STATIC = _PLUGIN_ROOT / 'standalone' / 'static'
@@ -763,6 +792,11 @@ def studio_fade(body: dict = Depends(json_body)):
                   body.get('seconds') or 1.5)
 
 
+def _failed(exc: BaseException) -> str:
+    """The one-line sentence for an exception no clause names: what broke, and why, on one line."""
+    return f'Music Studio failed: {type(exc).__name__}: {str(exc)[:300]}'
+
+
 @router.post('/studio/draft')
 def studio_draft(body: dict = Depends(json_body)):
     """Draft a song with the agent's own model, from the process that owns it.
@@ -770,7 +804,29 @@ def studio_draft(body: dict = Depends(json_body)):
     The framed pane cannot reach Hermes' model facade directly (it is a sandboxed page talking to a
     separate loopback host), so the pane forwards a draft request here over its plugin route and
     posts the answer back. One model path, one place it lives.
+
+    Nothing may escape as a bare 500: Hermes' default handler turns that into "hermes.api error 500:
+    Internal Server Error", which names neither the failure nor the fix. Every path below either
+    returns, or raises an HTTPException carrying a sentence the pane can show.
     """
+    try:
+        return _draft_song(body)
+    except HTTPException:
+        # This route's own refusals (400/422/502/503) already carry their sentence: unchanged.
+        raise
+    except (ImportError, AttributeError) as exc:
+        # Hermes has no module isolation: the first `music_studio`/`standalone` to load wins for every
+        # profile, so an older profile's copy can be the one executing this newer route and a name it
+        # imports is simply missing. That is a version mismatch, and the person needs the folder plus
+        # the update command — not a stack trace and not a bare 500.
+        raise HTTPException(502, copies.foreign_copy(_ROOT) or _failed(exc)) from None
+    except Exception as exc:  # noqa: BLE001 - a route that leaks a bare 500 tells nobody anything
+        _LOG.warning('Music Studio draft failed: %s', type(exc).__name__, exc_info=True)
+        raise HTTPException(502, _failed(exc)) from None
+
+
+def _draft_song(body):
+    """The draft itself; ``studio_draft`` owns the mapping from failures to answers."""
     from music_studio import llm_bridge
     from standalone.ideas import (MAX_REPLY_CHARS, build_request, parse_draft,
                                   trust_error_response)
