@@ -1,16 +1,12 @@
 """Read-only local GPU inventory for the hardware panel.
 
-Every fact here comes from ``nvidia-smi`` query output. Nothing is inferred
-from a filename, a config file or a guessed bus id: when a value is missing or
-``nvidia-smi`` cannot answer within the deadline, it is reported as such and
-the PID is left unmapped.
-
-Only the two query commands are used (both read-only):
-    --query-gpu=index,uuid,name,memory.total,memory.used,utilization.gpu
-    --query-compute-apps=pid,process_name,used_memory,gpu_uuid
+Facts come from the vendor's own read-only query: ``nvidia-smi`` (NVIDIA), ``rocm-smi --json``
+(AMD) or ``sysctl hw.memsize`` (Apple Silicon, unified memory). Nothing is guessed: a value the
+tool does not report stays ``None``, and with no tool at all the backend is ``cpu``.
 """
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
 import sys
@@ -22,6 +18,8 @@ GPU_FIELDS = ('index', 'uuid', 'name', 'memory_total_mb', 'memory_used_mb',
               'utilization_percent')
 APP_FIELDS = ('pid', 'process_name', 'used_memory_mb', 'gpu_uuid')
 NO_NVIDIA_GPU = 'no NVIDIA GPU found'
+NO_GPU = ('No supported GPU found. Rendering on this computer will be slow or may not work; '
+          'a ComfyUI or ACE-Step server on another computer works fine.')
 
 
 def _run(args):
@@ -121,8 +119,19 @@ def _apple_silicon():
             and platform.machine() == 'arm64')
 
 
+def _mac_memory_bytes():
+    """Unified memory the MPS GPU shares, from ``sysctl -n hw.memsize``; None when it will not say."""
+    try:
+        result = subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True,
+                                timeout=TIMEOUT_SECONDS, check=False, env=minimal_env())
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return _number(result.stdout or '') if result.returncode == 0 else None
+
+
 def _apple_silicon_info():
     """The one local accelerator a Mac has: the Apple Silicon GPU via MPS."""
+    memory = _mac_memory_bytes()
     return {
         'available': True,
         'backend': 'mps',
@@ -130,7 +139,7 @@ def _apple_silicon_info():
             'index': 0,
             'uuid': 'apple-silicon-mps',
             'name': 'Apple Silicon (MPS)',
-            'memory_total_mb': None,
+            'memory_total_mb': memory // (1024 * 1024) if memory is not None and memory >= 0 else None,
             'memory_used_mb': None,
             'utilization_percent': None,
         }],
@@ -140,24 +149,58 @@ def _apple_silicon_info():
     }
 
 
+def _rocm_devices():
+    code, _ = _run(['rocm-smi', '--showproductname', '--showmeminfo', 'vram', '--json'])
+    if code is None or code.returncode != 0:
+        return []
+    try:
+        data = json.loads(code.stdout)
+        if not isinstance(data, dict):
+            return []
+        devices = []
+        for card, values in data.items():
+            if not card.startswith('card') or not isinstance(values, dict):
+                continue
+            # rocm-smi spells these "Card Series" / "Card series" depending on the release.
+            values = {str(key).lower(): value for key, value in values.items()}
+            total = _number(str(values.get('vram total memory (b)', '')))
+            used = _number(str(values.get('vram total used memory (b)', '')))
+            devices.append({
+                'index': _number(card[4:]),
+                'uuid': None,
+                'name': values.get('card series') or values.get('card model') or 'AMD GPU',
+                'memory_total_mb': total // (1024 * 1024) if total is not None else None,
+                'memory_used_mb': used // (1024 * 1024) if used is not None else None,
+                'utilization_percent': None,
+            })
+        return devices
+    except (ValueError, TypeError, AttributeError):
+        return []
+
+
 def hardware_info():
-    """Local GPU devices plus the PIDs nvidia-smi attributes to each GPU."""
+    """Local GPU devices and available process information."""
     if _apple_silicon():
+        # A Mac has no nvidia-smi or rocm-smi to ask; MPS is its one accelerator.
         return _apple_silicon_info()
     devices, device_error = _devices()
-    if device_error is not None:
+    if devices and device_error is None:
+        processes, pid_to_gpu, process_error = _processes(devices)
         return {
-            'available': False,
-            'devices': [],
-            'processes': [],
-            'pid_to_gpu': {},
-            'error': device_error,
+            'available': True, 'backend': 'cuda', 'devices': devices,
+            'processes': processes, 'pid_to_gpu': pid_to_gpu, 'error': process_error,
         }
-    processes, pid_to_gpu, process_error = _processes(devices)
+    if device_error is not None and device_error != NO_NVIDIA_GPU:
+        # nvidia-smi exists but did not answer in time (a busy card): that is an NVIDIA machine.
+        return {'available': False, 'backend': 'cuda', 'devices': [], 'processes': [],
+                'pid_to_gpu': {}, 'error': device_error}
+    devices = _rocm_devices()
+    if devices:
+        return {
+            'available': True, 'backend': 'rocm', 'devices': devices,
+            'processes': [], 'pid_to_gpu': {}, 'error': None,
+        }
     return {
-        'available': True,
-        'devices': devices,
-        'processes': processes,
-        'pid_to_gpu': pid_to_gpu,
-        'error': process_error,
+        'available': False, 'backend': 'cpu', 'devices': [],
+        'processes': [], 'pid_to_gpu': {}, 'error': NO_GPU,
     }

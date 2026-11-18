@@ -89,3 +89,10 @@ you have confirmed no ACE process is running. See [TROUBLESHOOTING.md](TROUBLESH
 **How do I report a security problem?**
 Use GitHub private vulnerability reporting, as described in [../SECURITY.md](../SECURITY.md). Do not
 open a public issue for a vulnerability.
+
+**Why is no GPU shown?**
+
+The hardware panel checks `nvidia-smi` and `rocm-smi`, then Apple Silicon on macOS.
+Intel GPUs are not listed by the panel, although ACE-Step can select an available
+Intel XPU. CPU rendering may be slow or may not work. A ComfyUI or ACE-Step server
+on another computer is another option.
