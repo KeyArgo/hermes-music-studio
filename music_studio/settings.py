@@ -38,6 +38,8 @@ DEFAULTS = {
     'ace_remote_url': '',
     # The one hosted endpoint: ``{url, model, saved_at, key_env}``. Its key is in Hermes, never here.
     'ace_remote': {'url': '', 'model': '', 'saved_at': '', 'key_env': ''},
+    # Tiled MiniMax decode. auto turns it on when ComfyUI reports under 12 GB of VRAM.
+    'minimax_tiled_decode': 'auto',
     'minimax': {
         'steps': 30,
         'cfg': 4.0,
@@ -60,6 +62,7 @@ LIMITS = {
 
 SAMPLERS = ('euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_2m_sde', 'heun', 'lms')
 SCHEDULERS = ('simple', 'normal', 'karras', 'exponential', 'sgm_uniform')
+TILED_DECODE = ('auto', 'on', 'off')
 
 
 def settings_path(base: Path) -> Path:
@@ -70,6 +73,7 @@ def _merge(raw: dict) -> dict:
     out = {'comfy_url': DEFAULTS['comfy_url'], 'scan_hosts': DEFAULTS['scan_hosts'],
            'export_dir': DEFAULTS['export_dir'],
            'ace_remote': dict(DEFAULTS['ace_remote']),
+           'minimax_tiled_decode': DEFAULTS['minimax_tiled_decode'],
            'minimax': dict(DEFAULTS['minimax'])}
     if isinstance(raw.get('comfy_url'), str):
         out['comfy_url'] = raw['comfy_url']
@@ -85,6 +89,8 @@ def _merge(raw: dict) -> dict:
         out['scan_hosts'] = raw['scan_hosts']
     if isinstance(raw.get('export_dir'), str):
         out['export_dir'] = raw['export_dir']
+    if 'minimax_tiled_decode' in raw:
+        out['minimax_tiled_decode'] = raw['minimax_tiled_decode']
     raw_minimax = raw.get('minimax')
     if isinstance(raw_minimax, dict):
         for key in DEFAULTS['minimax']:
@@ -146,6 +152,9 @@ def validate(payload: dict) -> dict:
             raise ValueError(f'{key} must be a name')
         if value not in allowed:
             raise ValueError(f'{key} must be one of: {", ".join(allowed)}')
+    mode = merged['minimax_tiled_decode']
+    if mode not in TILED_DECODE:
+        raise ValueError('minimax_tiled_decode must be one of: ' + ', '.join(TILED_DECODE))
     return merged
 
 
