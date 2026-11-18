@@ -2,7 +2,7 @@
 
 A walkthrough of every user-facing feature, from the first draft to a file in your music folder.
 
-Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-17 · back to [docs/README.md](README.md).
 
 ![The create screen with an approved draft](screenshots/create-form.png)
 
@@ -44,6 +44,12 @@ without needing any engine.
 and unchanged; an edit revokes the approval. **Build the full song** is disabled until the draft is
 approved and the selected engine is ready. **Hear the chorus** renders a 25 s preview without
 approving the full song.
+
+### Help in the app
+
+Every field that needs an explanation has one. A **?** button shows its help text beside the button;
+press it again, press Escape, or click anywhere else to close it. Most other controls show a short
+tooltip when you rest the pointer on them. This is the same text a screen reader reads aloud.
 
 ### Choosing a model
 
