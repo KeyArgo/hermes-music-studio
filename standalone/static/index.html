@@ -56,8 +56,8 @@
 <span id="demo-facts" class="hint demo-facts">A real take made with this studio.</span>
 </div>
 <div class="mode-bar" role="group" aria-label="Creation mode">
-<button type="button" class="mode active" id="simple-mode">Simple</button>
-<button type="button" class="mode" id="custom-mode">Custom</button>
+<button type="button" class="mode active" id="simple-mode" title="Start with a few words. The studio fills in the rest.">Simple</button>
+<button type="button" class="mode" id="custom-mode" title="Set tempo, key and language yourself.">Custom</button>
 <span id="mode-help">A little direction is enough to begin.</span>
 </div>
 <div class="layout">
@@ -72,8 +72,8 @@
 </div>
 </div>
 <div class="preset-bar">
-<label class="preset-pick"><span>Presets</span><select id="preset-select" aria-label="Presets"><option value="">Choose a preset…</option></select></label>
-<button id="preset-save" class="sample" type="button">Save as preset</button>
+<label class="preset-pick"><span>Presets</span><select id="preset-select" aria-label="Presets" title="Load saved settings for a song."><option value="">Choose a preset…</option></select></label>
+<button id="preset-save" class="sample" type="button" title="Save the settings on this page as a preset.">Save as preset</button>
 <button id="preset-delete" class="link-button" type="button" hidden>Delete preset</button>
 </div>
 <div id="preset-save-row" class="preset-save-row" hidden>
@@ -82,16 +82,16 @@
 <button id="preset-save-confirm" class="button secondary" type="button">Save</button>
 <button id="preset-save-cancel" class="link-button" type="button">Cancel</button>
 </div>
-<label>Song title <input name="title" maxlength="120" placeholder="Give it a name"></label>
-<label>Sound &amp; style <textarea name="caption" maxlength="512" required placeholder="Warm acoustic folk, close vocals, a little tape hiss…"></textarea><small>Describe the mood, instruments, and energy.</small></label>
-<label>Lyrics <textarea name="lyrics" maxlength="4096" class="lyrics" placeholder="Write a verse, a chorus, or a story…"></textarea></label>
-<label class="check"><input name="instrumental" type="checkbox"> Instrumental only</label>
+<label>Song title <input name="title" maxlength="120" placeholder="Give it a name" title="Optional. Name this song so you can find it in your library."></label>
+<label>Sound &amp; style <textarea name="caption" maxlength="512" required placeholder="Warm acoustic folk, close vocals, a little tape hiss…" title="Comma-separated tags work best. Example: warm acoustic folk, close vocals"></textarea><small>Describe the mood, instruments, and energy.</small></label>
+<label>Lyrics <textarea name="lyrics" maxlength="4096" class="lyrics" placeholder="Write a verse, a chorus, or a story…" title="Use [verse] and [chorus] tags to shape the song. Preview the chorus needs a [chorus]."></textarea></label>
+<label class="check"><input name="instrumental" type="checkbox" title="No singing. The engine makes music only."> Instrumental only</label>
 <div id="custom-fields" hidden>
 <button type="button" id="metadata-toggle" class="metadata-toggle" aria-expanded="false">＋ Musical metadata <span>Tempo, key &amp; language</span></button>
 <div id="metadata-fields" class="metadata-fields" hidden>
-<label>Tempo (BPM)<input name="bpm" type="number" min="40" max="220" placeholder="Automatic"></label>
-<label>Key / scale<input name="keyscale" maxlength="24" placeholder="Automatic"></label>
-<label>Vocal language<select name="vocal_language">
+<label>Tempo (BPM)<input name="bpm" type="number" min="40" max="220" placeholder="Automatic" title="Beats per minute, 40 to 220. Leave it blank to let the engine choose."></label>
+<label>Key / scale<input name="keyscale" maxlength="24" placeholder="Automatic" title="Examples: C major, F# minor. Leave it blank to let the engine choose."></label>
+<label>Vocal language<select name="vocal_language" title="The language the singer uses. Automatic lets the engine pick.">
 <option value="en">English</option>
 <option value="auto">Automatic</option>
 <option value="es">Spanish</option>
@@ -110,11 +110,11 @@
 </div>
 </div>
 <div class="row">
-<label>Music engine <select name="engine" id="engine-select">
+<label>Music engine <select name="engine" id="engine-select" title="Which engine renders the song. Set one up on Music engines.">
 <option value="ace_local">ACE-Step 1.5</option>
 <option value="minimax_m3_comfy">MiniMax Music 3</option>
 </select></label>
-<label>Length (seconds) <input name="duration_seconds" type="number" min="10" max="180" value="30" required></label>
+<label>Length (seconds) <input name="duration_seconds" type="number" min="10" max="180" value="30" required title="How long the song should be, in seconds, 10 to 180."></label>
 </div>
 <div id="target-row" hidden>
 <label>MiniMax ComfyUI target<select name="comfy_target_id" id="target-select">
@@ -122,7 +122,7 @@
 </select><small>Pick a saved ComfyUI endpoint, or keep the engine default.</small></label>
 <p class="hint">The remote ComfyUI server must already be running. <button id="manage-targets" class="link-button" type="button">Manage compute targets</button></p>
 </div>
-<label>Workspace<select id="workspace-select">
+<label>Workspace<select id="workspace-select" title="Which workspace this song belongs to.">
 <option value="default">My workspace</option>
 </select></label>
 <div class="generate-block">
@@ -143,7 +143,7 @@
 <button class="button secondary" id="preview-chorus" type="button" disabled>Preview the chorus (renders audio)</button>
 <span id="chorus-reason" class="hint action-reason" role="status" hidden></span>
 <label class="takes-choice" for="render-takes">Takes
-<select id="render-takes" aria-label="How many takes to render">
+<select id="render-takes" aria-label="How many takes to render" title="How many takes to render at once. Pick the one you like best.">
 <option value="1">1</option>
 <option value="2">2</option>
 <option value="3">3</option>
@@ -159,10 +159,10 @@
 <p class="muted">Talk through an idea, then turn the conversation into a draft. Nothing renders without your approval.</p>
 <div class="model-row">
 <label>Find a model<input id="idea-filter" placeholder="Type a provider or model" autocomplete="off"></label>
-<label>Provider<select id="idea-provider">
+<label>Provider<select id="idea-provider" title="The AI that talks the idea through with you. It comes from your Hermes models.">
 <option value="">Connect Hermes</option>
 </select></label>
-<label>Model<select id="idea-model">
+<label>Model<select id="idea-model" title="Which model writes the draft.">
 <option value="">No model available</option>
 </select></label>
 </div>
@@ -178,7 +178,7 @@
 <label for="idea-input">Your idea</label>
 <textarea id="idea-input" maxlength="4000" placeholder="A late-night drive, warm synths and a hopeful chorus…"></textarea>
 <div class="idea-controls">
-<label>Tone<select id="idea-tone">
+<label>Tone<select id="idea-tone" title="The mood the draft aims for.">
 <option>Balanced</option>
 <option>Warm</option>
 <option>Energetic</option>
@@ -186,7 +186,7 @@
 <option>Dreamy</option>
 <option>Dark</option>
 </select></label>
-<label><span>Style influence <output id="idea-style-value">50</output>%</span><input id="idea-style" type="range" min="0" max="100" value="50"></label>
+<label><span>Style influence <output id="idea-style-value">50</output>%</span><input id="idea-style" type="range" min="0" max="100" value="50" title="How much the draft follows the style you typed."></label>
 </div>
 <small class="hint">Tone and style shape the AI-written draft, not the audio model settings.</small>
 <div class="actions">
@@ -261,18 +261,18 @@
 <label class="radio-label"><input type="radio" name="engine-kind" value="ace_server"><span class="radio-copy">ACE-Step server<span class="radio-help">That project's own address</span></span></label>
 <label class="radio-label"><input type="radio" name="engine-kind" value="hosted"><span class="radio-copy">Hosted service<span class="radio-help">A website that needs a key</span></span></label>
 </fieldset>
-<label>Engine name <input id="server-name" maxlength="80" placeholder="e.g. Studio MiniMax box" title="Choose a name you'll recognize"><button class="help-icon" type="button" aria-describedby="help-name">?</button><span id="help-name" class="sr-only">Choose a name you'll recognize.</span></label>
-<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Example: http://192.168.1.50:8188</span></label>
-<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" autocomplete="off" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
-<label id="server-model-label" hidden>Model <input id="server-model" maxlength="120" placeholder="optional" autocomplete="off" title="The model name your provider expects. Leave this blank if you do not have one."><button class="help-icon" type="button" aria-describedby="help-model">?</button><span id="help-model" class="sr-only">The model name your provider expects. Leave this blank if you do not have one.</span></label>
+<label>Engine name <input id="server-name" maxlength="80" placeholder="e.g. Studio MiniMax box" title="Choose a name you'll recognize"><button class="help-icon" type="button" aria-describedby="help-name" title="Choose a name you'll recognize.">?</button><span id="help-name" class="sr-only">Choose a name you'll recognize.</span></label>
+<label>Address <input id="server-url" maxlength="500" placeholder="http://192.168.1.50:8188" title="Enter the address shown on the computer running the service"><button class="help-icon" type="button" aria-describedby="help-addr" title="Enter the address shown on the computer running the service. Example: http://192.168.1.50:8188">?</button><span id="help-addr" class="sr-only">Enter the address shown on the computer running the service. Example: http://192.168.1.50:8188</span></label>
+<label id="api-key-label" hidden>API key <input id="server-key" type="password" maxlength="200" autocomplete="off" title="Your provider gives you this private key. Hermes stores it."><button class="help-icon" type="button" aria-describedby="help-key" title="Your provider gives you this private key. Hermes stores it.">?</button><span id="help-key" class="sr-only">Your provider gives you this private key. Hermes stores it.</span></label>
+<label id="server-model-label" hidden>Model <input id="server-model" maxlength="120" placeholder="optional" autocomplete="off" title="The model name your provider expects. Leave this blank if you do not have one."><button class="help-icon" type="button" aria-describedby="help-model" title="The model name your provider expects. Leave this blank if you do not have one.">?</button><span id="help-model" class="sr-only">The model name your provider expects. Leave this blank if you do not have one.</span></label>
 <div class="wizard-actions">
-<button class="button secondary" id="test-server-btn" type="button">Test this address</button>
+<button class="button secondary" id="test-server-btn" type="button" title="Checks this address before anything is saved. It does not make a song.">Test this address</button>
 </div>
 <div id="test-result" hidden class="test-result" aria-live="polite"></div>
 <div id="troubleshooting" hidden class="troubleshooting-card" aria-live="polite"></div>
 <p id="server-message" class="message" role="status"></p>
 <div class="wizard-actions">
-<button class="button primary" id="add-engine-btn" type="button" disabled>Add</button>
+<button class="button primary" id="add-engine-btn" type="button" disabled title="Turns on after a test passes.">Add</button>
 <button class="button secondary" id="cancel-server-btn" type="button">Cancel</button>
 </div>
 </form>
@@ -406,14 +406,14 @@
 </div>
 <form id="settings-form" class="studio-settings-form">
 <label>ComfyUI endpoint<input id="settings-comfy-url" maxlength="500" placeholder="http://192.168.1.20:8188"></label>
-<label>Other machines to scan<input id="settings-scan-hosts" maxlength="300" placeholder="studio-pc, 192.168.1.20"></label>
-<label>Export folder<input id="settings-export-dir" maxlength="500" placeholder="~/Music/Hermes Music Studio"></label>
-<label>Steps<input id="settings-steps" type="number" min="1" max="100" step="1"></label>
-<label>CFG<input id="settings-cfg" type="number" min="0" max="20" step="0.1"></label>
-<label>Guidance (cfg_scale)<input id="settings-cfg-scale" type="number" min="0" max="10" step="0.05"></label>
-<label>Top K<input id="settings-top-k" type="number" min="1" max="200" step="1"></label>
-<label>Sampler<select id="settings-sampler"></select></label>
-<label>Scheduler<select id="settings-scheduler"></select></label>
+<label>Other machines to scan<input id="settings-scan-hosts" maxlength="300" placeholder="studio-pc, 192.168.1.20" title="Other machines to look for a renderer. Names or addresses, comma separated."></label>
+<label>Export folder<input id="settings-export-dir" maxlength="500" placeholder="~/Music/Hermes Music Studio" title="Where finished songs are saved."></label>
+<label>Steps<input id="settings-steps" type="number" min="1" max="100" step="1" title="ComfyUI sampler steps. More steps take longer."></label>
+<label>CFG<input id="settings-cfg" type="number" min="0" max="20" step="0.1" title="How strongly the render follows the prompt."></label>
+<label>Guidance (cfg_scale)<input id="settings-cfg-scale" type="number" min="0" max="10" step="0.05" title="MiniMax music guidance. Higher follows the words more closely."></label>
+<label>Top K<input id="settings-top-k" type="number" min="1" max="200" step="1" title="Top K. Lower keeps only the most likely choices."></label>
+<label>Sampler<select id="settings-sampler" title="The sampler that runs the workflow."></select></label>
+<label>Scheduler<select id="settings-scheduler" title="The schedule the sampler follows."></select></label>
 <div class="settings-actions">
 <button class="button secondary" id="settings-test" type="button">Test endpoint</button>
 <button class="button secondary" id="discover-renderers" type="button">Find a renderer</button>
@@ -469,8 +469,8 @@
 </div>
 <form id="workflow-form" class="workspace-form target-form">
 <label>Name<input id="workflow-name" maxlength="80" required placeholder="e.g. ACE-Step 1.5"></label>
-<label>Endpoint<select id="workflow-target" required></select></label>
-<label>Workflow JSON<input id="workflow-file" type="file" accept=".json,application/json" required></label>
+<label>Endpoint<select id="workflow-target" required title="The engine that runs this workflow."></select></label>
+<label>Workflow JSON<input id="workflow-file" type="file" accept=".json,application/json" required title="ComfyUI Save (API format) JSON with {{lyrics}} {{style}} {{duration}} {{seed}} {{title}} {{instrumental}} and one SaveAudio node."></label>
 <button class="button primary" type="submit">Add workflow</button>
 </form>
 <p class="hint">In ComfyUI: Workflow → Export (API). Put <code>{{lyrics}}</code>, <code>{{style}}</code>, <code>{{duration}}</code>, <code>{{seed}}</code> in the fields the studio should fill.</p>

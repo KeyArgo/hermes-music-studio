@@ -270,3 +270,9 @@ svg.brandmark{display:block;width:40px;height:40px;background:none;border-radius
    shrinks, so none of them pushes the page wider than the window. */
 @media (max-width: 850px) { .shell > * { min-width: 0; } .rail { min-width: 0; } .rail nav { min-width: 0; overflow-x: auto; scrollbar-width: thin; } .rail .nav { flex: 0 0 auto; } }
 @media (max-width: 560px) { .topbar { height: auto; min-height: 60px; flex-wrap: wrap; gap: 8px; padding-block: 10px; } .version-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; } .player-scrub, .player-time, .player-track, #player-seek { min-width: 0; } }
+
+/* A ? button opens its help text beside itself, in the app's own colours so it reads in the
+   dark theme and in a light one, and shrinks to the window on a phone. */
+.help-popover{position:fixed;z-index:70;width:max-content;max-width:min(288px,calc(100vw - 16px));padding:10px 12px;background:var(--panel,#211e24);color:var(--ink,#faf3ed);border:1px solid var(--line,#39323b);border-radius:10px;box-shadow:0 14px 40px #0007;font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.help-icon[aria-expanded="true"]{border-color:var(--accent,#e5b987);outline:2px solid var(--accent,#e5b987);outline-offset:1px}
+

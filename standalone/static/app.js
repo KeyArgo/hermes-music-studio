@@ -3724,3 +3724,85 @@ function applyDraft(draft) {
   } catch (e) { /* a restore is a convenience, never a failure the person must read */ }
 })();
 
+// Help where the question is: every ? button opens the text it points at, beside the button.
+// One delegated handler, so a ? added later (an engine found on this computer) works too.
+(function () {
+  const BOX_MAX = 288, EDGE = 8;
+  let openHelp = null;
+  const helpText = button => {
+    const ids = (button.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    const said = ids.map(id => {
+      const node = document.getElementById(id);
+      return node ? node.textContent.trim() : '';
+    }).filter(Boolean).join(' ');
+    return said || (button.getAttribute('title') || '').trim();
+  };
+  function closePopover() {
+    if (!openHelp) return null;
+    const closed = openHelp;
+    openHelp = null;
+    closed.pop.remove();
+    closed.button.setAttribute('aria-expanded', 'false');
+    return closed.button;
+  }
+  // A help box that runs off the side of a phone screen cannot be read, so it is measured
+  // against the window and moved inside it.
+  function place(pop, button) {
+    const rect = button.getBoundingClientRect();
+    const room = Math.max(120, window.innerWidth - EDGE * 2);
+    const width = Math.min(BOX_MAX, room);
+    pop.style.maxWidth = width + 'px';
+    const left = Math.max(EDGE, Math.min(rect.left, window.innerWidth - width - EDGE));
+    pop.style.left = Math.round(left) + 'px';
+    pop.style.top = Math.round(rect.bottom + 6) + 'px';
+    const height = pop.offsetHeight || 0;
+    if (height && rect.bottom + 6 + height > window.innerHeight - EDGE) {
+      pop.style.top = Math.round(Math.max(EDGE, rect.top - 6 - height)) + 'px';
+    }
+  }
+  function showPopover(button) {
+    const pop = document.createElement('div');
+    pop.className = 'help-popover';
+    pop.setAttribute('role', 'tooltip');
+    pop.textContent = helpText(button) || 'No help text for this button yet.';
+    document.body.append(pop);
+    openHelp = { button, pop };
+    button.setAttribute('aria-expanded', 'true');
+    place(pop, button);
+  }
+  function toggleHelp(button) {
+    if (openHelp && openHelp.button === button) { closePopover(); return; }
+    closePopover();
+    showPopover(button);
+  }
+  const helpButton = node => {
+    if (!node || typeof node.closest !== 'function') return null;
+    const button = node.closest('.help-icon');
+    return button && document.contains(button) ? button : null;
+  };
+  document.addEventListener('click', event => {
+    const button = helpButton(event.target);
+    if (button) { toggleHelp(button); return; }
+    if (openHelp && !openHelp.pop.contains(event.target)) closePopover();
+  });
+  // A real button turns Enter and Space into a click. Cancelling that default here keeps one
+  // press to one toggle instead of two.
+  document.addEventListener('keydown', event => {
+    const button = helpButton(event.target);
+    if (button && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) {
+      event.preventDefault();
+      toggleHelp(button);
+      return;
+    }
+    if (event.key === 'Escape' && openHelp) {
+      const prior = closePopover();
+      event.preventDefault();
+      if (prior && prior.isConnected && typeof prior.focus === 'function') prior.focus();
+    }
+  });
+  window.addEventListener('resize', () => { if (openHelp) place(openHelp.pop, openHelp.button); });
+  document.querySelectorAll('.help-icon').forEach(button => {
+    if (!button.hasAttribute('aria-expanded')) button.setAttribute('aria-expanded', 'false');
+  });
+})();
+
