@@ -2913,7 +2913,7 @@ async function refreshVersion() {
     if (update) {
       update.disabled = !data.update_available;
       // Hermes installs and updates plugins; the studio's own update routes always refuse.
-      update.textContent = 'Update with: hermes plugins update hermes-music-studio';
+      update.textContent = 'How to update';
       update.title = 'Hermes installs updates. Run: hermes plugins update hermes-music-studio';
     }
     const undo = $('version-undo');

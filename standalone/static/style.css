@@ -26,10 +26,10 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .target-card b{font-family:Georgia,serif;font-weight:400;font-size:20px}
 .target-card p{overflow-wrap:anywhere;margin:6px 0 0}
 .target-result{margin:10px 0 0}
-.hardware-card p{margin:6px 0 0}
+.hardware-card p{margin:6px 0 0;overflow-wrap:anywhere}
 .hardware-card b{font-family:Georgia,serif;font-weight:400;font-size:20px}
 #hardware-refresh{margin:6px 0 16px}
-@media(max-width:1000px){.compute-grid{grid-template-columns:1fr}}
+@media(max-width:1000px){.compute-grid{grid-template-columns:minmax(0,1fr)}.compute-grid>*,.compute-grid .library{min-width:0;grid-template-columns:minmax(0,1fr)}}
 @media(max-width:650px){.target-form{align-items:stretch;flex-direction:column}.target-actions{flex-wrap:wrap}.render-head{align-items:flex-start;flex-direction:column}}
 
 .about-code { background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.08);

@@ -379,7 +379,7 @@ test('the version panel does not offer an undo that cannot work', async t => {
   const doc = booted.window.document;
   await pause(80);
   assert.equal(doc.getElementById('version-undo').hidden, true, 'Undo is not shown');
-  assert.match(text(doc.getElementById('version-update')), /hermes plugins update hermes-music-studio/,
+  assert.match(doc.getElementById('version-update').title, /hermes plugins update hermes-music-studio/,
     'the update button names the command that does work');
 });
 
