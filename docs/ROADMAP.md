@@ -5,6 +5,22 @@ listed in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Next update
 
+### First: guided help that ships with the plugin
+- **Setup guide skill**: asks what hardware you have (NVIDIA, AMD, Intel, Apple Silicon, no graphics card)
+  and where the engine should run (this computer, another computer on your network, or a hosted server),
+  then walks you through it step by step.
+- **Idea and sound coach skill**: helps you spitball ideas, then fine-tune how the song sounds: turns
+  "warmer", "more 80s" or "less busy" into exact style words, tempo and key, and suggests A/B versions on
+  the same seed.
+- **Change one part so the song still flows**: render the new part a little wider than the chosen range,
+  blend over 1–2 seconds, and cut on the beat using the song's tempo. Later, make the part from the song's
+  own audio on ComfyUI ACE-Step (see below).
+- The agent tool gets the same "render the part on its own" fallback the page has, so changing one part
+  works through chat on engines without repaint (MiniMax).
+- Windows test fixes: skip the FLAC fixture tests when ffmpeg is missing, compare export paths
+  case-insensitively, and fix the worker-cleanup check on Windows.
+
+
 ### Setting up a music engine, step by step
 - A guide at the top of **Music engines**: what do you have, a check of this computer's hardware, one
   recommended path, a test, done. Plain tooltips on every field, and a ready path for "ComfyUI on another

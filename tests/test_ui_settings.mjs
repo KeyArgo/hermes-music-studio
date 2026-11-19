@@ -1039,7 +1039,7 @@ const DOCTOR = {
   success: true,
   engines: [
     { id: 'ace_local', label: 'ACE-Step 1.5 (local GPU)', ready: false, state: 'unavailable',
-      detail: 'source missing', checks: [], fix: 'Set the ACE-Step runtime and source folders on the Music engines page, or export ACE_RUNTIME_DIR and ACE_SOURCE_DIR. Needs an NVIDIA GPU (or Apple MPS, unverified).' },
+      detail: 'source missing', checks: [], fix: 'Most people use a ComfyUI or ACE-Step server instead: Music engines, "Use a server I already have". To run ACE-Step on this computer, export ACE_RUNTIME_DIR and ACE_SOURCE_DIR before starting Hermes. Needs an NVIDIA GPU (or Apple MPS, unverified).' },
     { id: 'minimax_m3_comfy', label: 'MiniMax Music 3 (ComfyUI)', ready: true, state: 'ready',
       detail: 'nodes present', checks: [], fix: 'Install ffmpeg if ComfyUI outputs FLAC.' }
   ]
@@ -1053,7 +1053,7 @@ test('the compute pane shows each engine doctor row and its fix beneath it', asy
   const miniRow = doc.querySelector('#engine-doctor [data-engine="minimax_m3_comfy"]');
   assert.ok(aceRow && miniRow, 'one doctor row per engine');
   assert.match(text(aceRow), /ACE-Step 1\.5 \(local GPU\) · unavailable: source missing/);
-  assert.match(text(aceRow), /Set the ACE-Step runtime and source folders on the Music engines page/);
+  assert.match(text(aceRow), /Use a server I already have/);
   assert.match(text(miniRow), /MiniMax Music 3 \(ComfyUI\) · ready: nodes present/);
   assert.match(text(miniRow), /Install ffmpeg if ComfyUI outputs FLAC/);
 });

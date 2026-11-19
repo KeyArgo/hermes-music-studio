@@ -178,9 +178,9 @@ def _engine_status(reg, engine):
 # Per-engine next steps for the doctor: plain words from what the code actually
 # reads. Only add a shell command here once it has been verified on a real machine.
 FIXES: dict[str, str | None] = {
-    'ace_local': ('Set the ACE-Step runtime and source folders on the Music engines page, '
-                  'or export ACE_RUNTIME_DIR and '
-                  'ACE_SOURCE_DIR. Needs an NVIDIA GPU (or Apple MPS, unverified).'),
+    'ace_local': ('Most people use a ComfyUI or ACE-Step server instead: Music engines, "Use a server I '
+                  'already have". To run ACE-Step on this computer, export ACE_RUNTIME_DIR and '
+                  'ACE_SOURCE_DIR before starting Hermes. Needs an NVIDIA GPU (or Apple MPS, unverified).'),
     'ace_remote': ('If you run an ACE-Step server, set its URL on the Music engines page or export '
                    'ACE_REMOTE_URL, and set ACE_REMOTE_API_KEY if it needs a key; '
                    'otherwise use the local engine.'),
