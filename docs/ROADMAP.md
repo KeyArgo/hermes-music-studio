@@ -6,6 +6,14 @@ listed in [CHANGELOG.md](../CHANGELOG.md).
 ## Next update
 
 ### First: guided help that ships with the plugin
+- **Studio doctor**: one tool that Hermes (and other agents) can call to troubleshoot and tune the
+  studio, shipped with the plugin so a user's own Hermes can fix their setup.
+  - *Diagnose*: reads the last lines of `logs/studio.log` and the failed take's worker log, tests every
+    saved engine, and checks the newest take (silence %, longest gap, clipping, length against the
+    request), then answers in plain words with the fix.
+  - *A/B tune*: renders the same song and seed with two settings (for example CFG 1.7 against 4.0) and
+    reports which came out cleaner by those measures, so a setting is changed on evidence.
+  - Same checks from the page (**Check my setup**) and from `scripts/ms.py doctor`.
 - **Setup guide skill**: asks what hardware you have (NVIDIA, AMD, Intel, Apple Silicon, no graphics card)
   and where the engine should run (this computer, another computer on your network, or a hosted server),
   then walks you through it step by step.
