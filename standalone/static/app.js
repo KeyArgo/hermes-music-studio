@@ -2461,12 +2461,12 @@ syncRevampNav();
 const REVAMP_PAGE = 'https://github.com/KeyArgo/hermes-revamp';
 const REVAMP_PROMO = {
   // Every line is a feature REVamp ships today (its README's feature list); nothing here is a promise.
-  headline: 'Your songs deserve a real player',
-  subhead: 'REVamp is a free Winamp-style music player for Hermes, from the same maker as Music Studio.',
+  headline: 'Make a song. Hear it in your playlist.',
+  subhead: 'Sit here making music, and every song you like goes into your REVamp playlist, playing while you keep creating. REVamp is a free Winamp-style player for Hermes, from the same maker as Music Studio.',
   together: [
-    'Press “Add to REVamp” and the song is in your player.',
-    'Send a whole playlist of your takes over in one step.',
-    'Radio mode writes new songs on your theme into a playlist that keeps playing.',
+    'Make a song you like, press “Add to REVamp”, and it joins your playlist.',
+    'Keep creating while REVamp plays everything you have made so far.',
+    'Radio mode writes new songs on your theme and adds each one for you.',
   ],
   features: [
     'MilkDrop visuals that move with the songs you make.',

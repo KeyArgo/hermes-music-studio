@@ -596,3 +596,26 @@ def test_a_cancelled_take_after_stop_is_no_strike_on_resume(world):
     state = radio.read()
     assert state['last_error'] is None, state['last_error']
     assert state['consecutive_failures'] == 0
+
+
+def test_revamp_in_any_profile_or_its_desktop_pane_counts_as_installed(tmp_path, monkeypatch):
+    # The owner removed REVamp from the default profile, kept it in another, and still saw it in
+    # Desktop: REVamp is one player per computer, so Music Studio must not offer "Get REVamp" then.
+    monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
+    root = tmp_path / 'hermes'
+    default_home = root
+    jester = root / 'profiles' / 'jester'
+    (jester / 'plugins').mkdir(parents=True)
+    for home in (default_home, jester):
+        monkeypatch.setattr(revamp, '_hermes_homes', lambda home=home: [home])
+        assert revamp.plugin_installed() is False
+    (jester / 'plugins' / 'revamp').mkdir()
+    (jester / 'plugins' / 'revamp' / 'plugin.yaml').write_text('name: revamp\n')
+    for home in (default_home, jester):
+        monkeypatch.setattr(revamp, '_hermes_homes', lambda home=home: [home])
+        assert revamp.plugin_installed() is True, home
+    (jester / 'plugins' / 'revamp' / 'plugin.yaml').unlink()
+    (root / 'desktop-plugins' / 'revamp').mkdir(parents=True)
+    (root / 'desktop-plugins' / 'revamp' / 'plugin.js').write_text('//')
+    monkeypatch.setattr(revamp, '_hermes_homes', lambda: [jester])
+    assert revamp.plugin_installed() is True, 'its Desktop pane is still there'

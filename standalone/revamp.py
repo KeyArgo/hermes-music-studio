@@ -33,17 +33,35 @@ def _hermes_homes():
     return [home] if home else []
 
 
-def plugin_installed():
-    """Is the REVamp plugin itself installed in this Hermes home?
+def _hermes_root(home: Path) -> Path:
+    """The Hermes root for a profile home: ``<root>/profiles/<name>`` belongs to ``<root>``."""
+    return home.parent.parent if home.parent.name == 'profiles' else home
 
-    Not the same as finding ``revampctl``: on Linux and macOS the client is copied to
-    ``~/.local/bin`` and stays there after the plugin is removed, so a found client alone would keep
-    offering a REVamp screen for a player that is gone. An explicit client override still counts.
+
+def plugin_installed():
+    """Is REVamp installed on this computer?
+
+    REVamp is one player per computer: every profile shares its data folder, its client and its
+    Desktop pane (``<root>/desktop-plugins/revamp``), so a REVamp installed in any profile is the
+    REVamp the person sees. Finding ``revampctl`` alone is not enough: on Linux and macOS the client
+    is copied to ``~/.local/bin`` and stays there after the plugin is removed everywhere. An explicit
+    client override still counts.
     """
     override = os.environ.get('HERMES_MUSIC_REVAMPCTL')
     if override and Path(override).is_file():
         return True
-    return any((home / 'plugins' / 'revamp' / 'plugin.yaml').is_file() for home in _hermes_homes())
+    for home in _hermes_homes():
+        root = _hermes_root(home)
+        candidates = [home / 'plugins' / 'revamp' / 'plugin.yaml',
+                      root / 'plugins' / 'revamp' / 'plugin.yaml',
+                      root / 'desktop-plugins' / 'revamp' / 'plugin.js']
+        profiles = root / 'profiles'
+        if profiles.is_dir():
+            candidates.extend(child / 'plugins' / 'revamp' / 'plugin.yaml'
+                              for child in profiles.iterdir())
+        if any(path.is_file() for path in candidates):
+            return True
+    return False
 
 
 def _client_path():
