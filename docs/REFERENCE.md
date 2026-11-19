@@ -209,6 +209,8 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | GET/POST | `/api/studio/covers/{project_id}` | Read or upload cover art (no generation route) |
 | GET | `/api/studio/revamp/status`, `/tracks`, `/playlists`, `/added` | REVamp state |
 | POST | `/api/studio/revamp/playlists`, `/play`, `/add`, `/add-take`, `/playlist`, `/remove` | REVamp actions |
+| GET | `/api/studio/radio` | The station: state, songs, and the sentence the page shows |
+| POST | `/api/studio/radio/start`, `/pause`, `/resume`, `/stop` | Run the station; refusals are 400 with one sentence |
 
 The standalone server accepts only a loopback `Host`, requires `application/json` on writes that carry
 a body, and rejects cross-site requests while unauthenticated. Every `/api` route needs the per-launch

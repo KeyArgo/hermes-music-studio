@@ -630,6 +630,31 @@
 <button id="open-revamp" class="button secondary" type="button">Open REVamp</button>
 </aside>
 </div>
+<div class="panel" id="radio-panel" hidden>
+<div class="panel-title">
+<div>
+<span class="kicker">RADIO MODE</span>
+<h2>A station that keeps writing</h2>
+</div>
+</div>
+<p class="hint">Set the station up once and press Start. It writes one song at a time, renders it, and adds it to a REVamp playlist that keeps playing while it grows.</p>
+<div class="workspace-form">
+<label>Theme and style<textarea id="radio-theme" rows="3" maxlength="300" placeholder="Warm folk for a long drive — fingerpicked guitar, close vocals, 90 bpm"></textarea></label>
+<label>Number of songs<input id="radio-count" type="number" min="1" max="50" value="10"></label>
+<label>Words<select id="radio-instrumental"><option value="">Lyrics</option><option value="1">Instrumental</option></select></label>
+<label>Music engine<select id="radio-engine"><option value="ace_local">ACE-Step 1.5</option><option value="minimax_m3_comfy">MiniMax Music 3</option></select></label>
+<label>Playlist name<input id="radio-playlist" maxlength="80" value="Music Studio Radio"></label>
+</div>
+<div class="settings-actions">
+<button id="radio-start" class="button" type="button">Start</button>
+<button id="radio-pause" class="button secondary" type="button" hidden>Pause</button>
+<button id="radio-resume" class="button secondary" type="button" hidden>Resume</button>
+<button id="radio-stop" class="button secondary" type="button" hidden>Stop</button>
+</div>
+<p class="hint">Starting approves every song this station writes; each one is rendered and added to the playlist automatically.</p>
+<p id="radio-status" class="hint" role="status"></p>
+<div id="radio-songs" class="library"></div>
+</div>
 </section>
 </main>
 </div>

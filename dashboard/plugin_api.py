@@ -953,6 +953,45 @@ router.include_router(ideas_router)
 router.include_router(workspaces_router)
 router.include_router(revamp_router)
 
+# -- radio mode -------------------------------------------------------------
+# One station at a time, written and played by a daemon thread in this process. The page only
+# starts, pauses and polls it. The routes refuse on the same facts the page hides the panel by,
+# so a hand-made request cannot start a station whose songs nobody would hear.
+
+@router.get('/studio/radio')
+def radio_state():
+    from music_studio import radio
+
+    return _page_error(radio.snapshot)
+
+
+@router.post('/studio/radio/start')
+def radio_start(body: dict = Depends(json_body)):
+    from music_studio import radio
+
+    return _page_error(radio.start, body)
+
+
+@router.post('/studio/radio/pause')
+def radio_pause(body: dict = Depends(json_body)):
+    from music_studio import radio
+
+    return _page_error(radio.pause, body)
+
+
+@router.post('/studio/radio/resume')
+def radio_resume(body: dict = Depends(json_body)):
+    from music_studio import radio
+
+    return _page_error(radio.resume, body)
+
+
+@router.post('/studio/radio/stop')
+def radio_stop(body: dict = Depends(json_body)):
+    from music_studio import radio
+
+    return _page_error(radio.stop, body)
+
 
 def _autostart_host() -> None:
     """Start the loopback studio host beside the gateway, in the background.

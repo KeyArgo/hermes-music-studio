@@ -397,6 +397,15 @@ def register(ctx):
         import logging
         logging.getLogger(__name__).warning('ctx.llm is unavailable; drafting will report that')
 
+    # A station that was running when Hermes restarted picks itself back up. The radio lock decides:
+    # if another process still holds it, this one stays out instead of driving the same playlist.
+    try:
+        from music_studio import radio
+        radio.resume_on_load()
+    except Exception:  # noqa: BLE001 - a station must never stop the plugin loading
+        import logging
+        logging.getLogger(__name__).exception('Radio mode did not resume')
+
     ctx.register_tool(name='music_studio', toolset='music_studio',
                       schema=SCHEMA, handler=handler)
 

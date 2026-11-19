@@ -1867,7 +1867,10 @@ function aceRemoteMenuLabel() {
   return host ? `ACE-Step server · ${host}` : 'ACE-Step server';
 }
 function fillWorkflowEngineOptions() {
-  const select = $('engine-select');
+  fillEngineSelect($('engine-select'));
+}
+// The same list as Create, for any engine menu: built here once so Radio mode cannot drift.
+function fillEngineSelect(select) {
   if (!select) return;
   const previous = select.value;
   const add = (value, text) => { const option = el('option', text); option.value = value; select.append(option); };
@@ -2307,6 +2310,7 @@ async function loadRevamp(){
     const status = await api('/studio/revamp/status').catch(() => ({}));
     if (status.available !== true) {
       $('revamp-status').textContent = status.reason || 'REVamp is not installed. Your takes still play and export from here.';
+      if ($('radio-panel')) $('radio-panel').hidden = true;
       revampItems = [];
       box.replaceChildren(el('p','Nothing added yet. Open a draft in Library and press “Add to REVamp”.'));
       return;
@@ -2314,6 +2318,14 @@ async function loadRevamp(){
     $('revamp-status').textContent = status.player_connected
       ? 'REVamp connected. Press Play here, or open REVamp to hear it there.'
       : 'REVamp is available. Open its player in Hermes to hear playback.';
+    // Radio mode exists only where REVamp does: it writes into a REVamp playlist, and a playlist
+    // nobody can play is not a feature.
+    if ($('radio-panel')) {
+      $('radio-panel').hidden = false;
+      fillEngineSelect($('radio-engine'));
+      startRadioPolling();
+      loadRadio();
+    }
     fillRevampPlaylists();
     const data = await api('/studio/revamp/added').catch(() => ({ items: [] }));
     const items = data.items || [];
@@ -2344,6 +2356,65 @@ async function loadRevamp(){
     box.replaceChildren(el('p', err.message, 'message error'));
   }
 }
+
+// Radio mode: one station, written one song at a time into a REVamp playlist. The server owns the
+// loop; this page only starts, pauses and shows what happened.
+let radioTimer = null;
+function radioOnScreen() { const view = $('listen-view'); return !!view && !view.hidden; }
+function renderRadio(data) {
+  const panel = $('radio-panel');
+  if (!panel) return;
+  const station = (data && data.station) || {};
+  const state = station.state || 'stopped';
+  const done = Number(station.done || 0);
+  const target = Number(station.target_count || 0);
+  $('radio-status').textContent = (data && data.message) || '';
+  $('radio-start').hidden = state === 'running' || state === 'paused';
+  $('radio-pause').hidden = state !== 'running';
+  $('radio-resume').hidden = !(state === 'paused' || (state === 'stopped' && done > 0 && (target === 0 || done < target)));
+  $('radio-stop').hidden = !(state === 'running' || state === 'paused');
+  const box = $('radio-songs');
+  box.replaceChildren();
+  const songs = (station.songs || []).filter(song => song && song.title);
+  if (!songs.length) { box.append(el('p', 'No songs added yet.')); return; }
+  songs.forEach(song => {
+    const row = el('article', '', 'project');
+    row.append(el('h2', song.title));
+    row.append(el('p', song.appended ? 'In the playlist' : 'Waiting for REVamp', 'hint'));
+    box.append(row);
+  });
+}
+async function loadRadio() {
+  const panel = $('radio-panel');
+  if (!panel || panel.hidden) return;
+  try {
+    renderRadio(await api('/studio/radio'));
+  } catch (err) {
+    $('radio-status').textContent = err.message;
+  }
+}
+function startRadioPolling() {
+  if (radioTimer) return;
+  // Three seconds, and only while this screen is open: a page nobody is looking at asks for nothing.
+  radioTimer = setInterval(() => { if (radioOnScreen()) loadRadio(); }, 3000);
+}
+async function radioAction(path, payload) {
+  try {
+    renderRadio(await api(path, payload));
+  } catch (err) {
+    $('radio-status').textContent = err.message;
+  }
+}
+if ($('radio-start')) $('radio-start').addEventListener('click', () => radioAction('/studio/radio/start', {
+  theme: ($('radio-theme').value || '').trim(),
+  target_count: Number(($('radio-count').value || '').trim() || 10),
+  instrumental: $('radio-instrumental').value === '1',
+  engine_id: $('radio-engine').value,
+  playlist_name: ($('radio-playlist').value || '').trim(),
+}));
+if ($('radio-pause')) $('radio-pause').addEventListener('click', () => radioAction('/studio/radio/pause', {}));
+if ($('radio-resume')) $('radio-resume').addEventListener('click', () => radioAction('/studio/radio/resume', {}));
+if ($('radio-stop')) $('radio-stop').addEventListener('click', () => radioAction('/studio/radio/stop', {}));
 
 if ($('revamp-create')) $('revamp-create').addEventListener('click', async () => {
   const name = ($('revamp-new-name').value || '').trim();

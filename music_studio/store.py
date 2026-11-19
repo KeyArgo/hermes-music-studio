@@ -15,6 +15,9 @@ from .sections import derive_sections, validate_sections
 FIELDS = {'title': '', 'idea': '', 'caption': '', 'lyrics': '', 'engine': 'ace',
           'duration_seconds': 30, 'instrumental': False, 'vocal_language': 'en',
           'bpm': None, 'keyscale': None, 'sections': [], 'minimax_guidance': None,
+          # Provenance for a draft nobody reviewed by hand: a radio station writes and approves its
+          # own songs, and says so here rather than looking like a person's approval.
+          'approved_by': None,
           # A named ComfyUI endpoint, when the user chose one. The id is
           # resolved against TargetStore; None means the engine's default URL.
           'comfy_target_id': None}
@@ -203,6 +206,11 @@ def validate(draft, *, engine=None):
             # this only rejects the wrong shape (a bool, a list, an empty id).
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError('comfy_target_id must be a target id or null')
+        elif key == 'approved_by':
+            # Provenance, not draft text: None means a person approved it, 'radio' means the
+            # station did. Only the name is stored, never anything a person typed.
+            if value is not None and (not isinstance(value, str) or len(value) > 40):
+                raise ValueError('approved_by must be a short name or null')
         elif key == 'engine':
             # Any registered engine is a legal draft value (a draft may pin
             # 'minimax_m3_comfy'); the legacy name 'ace' stays valid and maps to
@@ -443,6 +451,9 @@ class Store:
             if any(project.get(k) != v for k, v in draft.items()):
                 project.update(draft)
                 project['approved'] = False
+                # An edited draft needs a fresh approval, so it must not keep saying a station
+                # already approved what now says something else.
+                project['approved_by'] = None
             self._save(project)
             return project
 

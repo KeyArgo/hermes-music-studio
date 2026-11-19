@@ -1220,6 +1220,8 @@ def duplicate_project(project_id, title=None):
         base_title = (title or source.get('title') or 'Untitled').strip() or 'Untitled'
         clone['title'] = base_title + ' (copy)'
         clone['approved'] = False
+        # A copy is a new song: whatever approved the original does not approve this one.
+        clone['approved_by'] = None
         clone['created_at'] = time.time()   # the copy is a new song, made now
         clone['takes'] = []
         for take in source.get('takes') or []:

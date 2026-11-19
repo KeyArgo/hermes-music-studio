@@ -6,6 +6,12 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## Unreleased
 
+### Radio mode
+
+- **A station that writes and plays while you listen.** With REVamp installed, the REVamp screen now offers a station: set a theme, a song count (1–50), lyrics or instrumental, an engine and a playlist name, then press **Start**. It drafts each song with Hermes' model, renders it, exports it into its own folder and appends it to that playlist one song at a time, so the playlist keeps playing while it grows. Starting is your approval for every song the station writes, and each song records that it was approved by the station.
+- **It stops instead of burning renders.** Three failed drafts or renders in a row, REVamp not answering, or under 2 GB free on the library disk pauses the station with a plain sentence. Pause finishes the song in flight; Stop also cancels anything queued; Resume continues from where it stopped and retries a song that never reached the playlist without exporting it again.
+- **Hidden when REVamp is not installed.** The panel only appears where a playlist can actually be played, and a station that loses REVamp mid-run stops before rendering anything else.
+
 ### Live-test fixes (round 13)
 
 - **A slow draft is no longer thrown away.** The page waited 60 seconds while the plugin allows the model 120; it now waits 150.

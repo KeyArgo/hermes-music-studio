@@ -2,7 +2,7 @@
 
 A walkthrough of every user-facing feature, from the first draft to a file in your music folder.
 
-Applies to 1.0.0 · revised 2026-11-17 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-19 · back to [docs/README.md](README.md).
 
 ![The create screen with an approved draft](screenshots/create-form.png)
 
@@ -213,6 +213,23 @@ Only takes you add appear in the REVamp screen. Create a playlist from exported 
 exports the files, adds the folder to REVamp's library, rescans, then creates the playlist. With
 REVamp absent the screen says so, and playing and exporting still work. A take plays from the studio
 while it is running; keep the studio open for that.
+
+### Radio mode
+
+With REVamp installed, the same screen offers a station. Give it a theme, how many songs (1–50),
+lyrics or instrumental, a music engine and a playlist name, then press **Start**. It writes one song
+at a time — drafting it with Hermes' model, rendering it, exporting it into a folder of its own and
+appending it to that playlist — so the playlist keeps playing while it grows.
+
+Starting the station is your approval for every song it writes: it says so under the button, and each
+song records that it was approved by the station rather than by hand. **Pause** stops after the song in
+flight, **Stop** does the same and cancels anything queued for it, and **Resume** carries on from where
+it stopped — retrying first any song that never made it into the playlist.
+
+The station pauses itself with a plain sentence when something needs you: three failed drafts or renders
+in a row, REVamp not answering, or under 2 GB free on the library disk. The panel is hidden when REVamp
+is not installed, and a station stops rendering the moment REVamp stops answering, so it never writes
+songs you could not hear.
 
 ## From a chat: the `music_studio` tool
 
