@@ -1002,9 +1002,24 @@ def setup_ace(body: dict = Depends(json_body)):
 
     result = studio_setup.probe_ace(body.get('url'))
     if result.get('ok') and body.get('save', True):
-        service.save_settings({'ace_remote_url': result['url']})
+        # An ACE-Step server owns the address now, not a hosted endpoint: its blank ``saved_at`` is
+        # what stops a later hosted save from writing over it (setup.save_cloud).
+        service.save_settings({'ace_remote_url': result['url'],
+                               'ace_remote': {'url': '', 'model': '', 'saved_at': '', 'key_env': ''}})
         result['saved'] = True
     return result
+
+
+@router.post('/studio/setup/ace/remove')
+def setup_ace_remove():
+    """Forget the ACE-Step server address saved on the Music engines page.
+
+    One setting holds that address, so removing the row is clearing it. Nothing the server
+    rendered is deleted, and a hosted key stays in Hermes.
+    """
+    from music_studio import setup as studio_setup
+
+    return _page_error(studio_setup.forget_endpoint, _studio_data())
 
 
 @router.get('/studio/setup/hf')

@@ -2560,6 +2560,14 @@ function extendRow(project, take, row) {
   row.append(form);
 }
 
+// The shortest part an engine will render on its own. MiniMax Music 3 refuses anything under 10 s,
+// so a range that starts life at 8 s is a range that fails only after the round trip.
+function engineMinimumSeconds(engineId) {
+  const engine = engineFor(engineId);
+  const min = Number(((engine || {}).limits || {}).min_seconds);
+  return Number.isFinite(min) && min > 0 ? Math.ceil(min) : 10;
+}
+
 // Change eight seconds without touching the rest of the song. Every control is on the row: three
 // typed dialogs (`window.prompt`) used to stand between the person and the edit, which is why "it is
 // hard to make changes to any field". When the replacement finishes it is spliced back automatically,
@@ -2568,6 +2576,9 @@ function extendRow(project, take, row) {
 function snippetRow(project, take, row, options = {}) {
   if (row.querySelector('.snippet-form')) return;      // one form per take, not a stack of them
   const canRepaint = options.repaint !== false;
+  // A repaint keeps the song's own 3 s floor; a section render is a plain generate of the range, so
+  // it has to clear that engine's own minimum.
+  const shortest = canRepaint ? 1 : engineMinimumSeconds(take.engine_id || project.engine);
   const form = el('div', '', 'snippet-form');
   if (!canRepaint) {
     form.append(el('p', `${options.engine || 'This engine'} cannot ${options.missing || 'repaint a range'}; it renders the part on its own and the rest of the song is copied back.`,
@@ -2577,7 +2588,9 @@ function snippetRow(project, take, row, options = {}) {
   start.value = '0'; start.className = 'snippet-start'; start.placeholder = 'from (s)';
   const end = el('input'); end.type = 'number'; end.min = '1'; end.step = '0.5';
   const total = Number(take.audio_seconds || (take.qc || {}).file_s || 0);
-  end.value = String(Math.min(8, Math.max(3, Math.round(total || 8))));
+  // The default range is one the engine will actually render, and never past the end of the take.
+  const wanted = Math.max(shortest, 8);
+  end.value = String(Math.max(1, Math.round(total > 0 ? Math.min(wanted, total) : wanted)));
   end.className = 'snippet-end'; end.placeholder = 'to (s)';
 
   const parts = project.sections || [];
@@ -2606,10 +2619,22 @@ function snippetRow(project, take, row, options = {}) {
   const go = el('button', 'Render the new part', 'button secondary'); go.type = 'button';
 
   go.addEventListener('click', async () => {
-    const from = Number(start.value), to = Number(end.value);
+    const from = Number(start.value);
+    let to = Number(end.value);
     const instruction = (words.value || '').trim();
     if (!(from >= 0 && to > from)) { libMessage('Give a range: from 0, to 8, for example.', true); return; }
     if (canRepaint && to - from < 3) { libMessage('The engine repaints at least 3 seconds at a time.', true); return; }
+    // Clamp to the engine's own floor before sending: MiniMax refuses a range under 10 s, and that
+    // refusal used to arrive as a failed take after the button had already been pressed.
+    if (!canRepaint && to - from < shortest) {
+      const grown = Math.min(from + shortest, total > from ? total : from + shortest);
+      if (grown - from < shortest) {
+        libMessage(`${options.engine || 'This engine'} needs at least ${shortest} seconds for a part, and this take is shorter than that.`, true);
+        return;
+      }
+      to = grown;
+      end.value = String(to);
+    }
     if (!instruction) { libMessage('Say what this part should become.', true); return; }
     go.disabled = true;
     try {
@@ -3025,12 +3050,35 @@ function renderEngineList() {
     testBtn.addEventListener('click', () => {
       checkEngineRow({ id: 'ace_remote', kind: 'ace_server', url: aceRemoteUrl }, true);
     });
+    // One setting holds this address, so removing the row is clearing it. Confirmed first: the
+    // address is the only copy, and re-typing a server address is the annoying part.
+    const removeBtn = el('button', 'Remove', 'button secondary');
+    removeBtn.type = 'button';
+    removeBtn.title = 'Forget this address. Takes it already made stay in your library.';
+    removeBtn.addEventListener('click', async () => {
+      if (!(await askConfirm(`Remove the ACE-Step server ${aceRemoteUrl}?`,
+                             {confirmLabel: 'Remove', danger: true}))) return;
+      try {
+        await api('/studio/setup/ace/remove', {});
+        aceRemoteUrl = '';
+        await loadEngines();
+        await refreshWorkflows();
+        await refreshNow();
+        // Drawn again after the status refresh: loadEngines drew the list from the engine status as it
+        // was before the Remove, which still said this server was available.
+        renderEngineList();
+        engineMessage('Removed the ACE-Step server. Your takes stay in the library.');
+      } catch (err) { engineMessage(err.message, true); }
+    });
     // This session's test answer for that address when there is one, else the engine's own status.
     const live = engines.find(e => e && e.id === 'ace_remote');
-    const state = engineRowStatus[aceRemoteUrl] || (live && live.available ? 'ready' : '');
+    // No address, no status: the engine list the pill would read can still be the one from before a
+    // Remove, and "Ready" next to "No address saved" is a contradiction on screen.
+    const state = !aceRemoteUrl ? ''
+      : engineRowStatus[aceRemoteUrl] || (live && live.available ? 'ready' : '');
     row.append(info, enginePill(state));
-    // Nothing to test without an address to test.
-    if (aceRemoteUrl) row.append(testBtn);
+    // Nothing to test or remove without an address to test or remove.
+    if (aceRemoteUrl) row.append(testBtn, removeBtn);
     container.append(row);
   }
   for (const eng of enginesList) {

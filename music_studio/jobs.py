@@ -36,6 +36,28 @@ def _pinned_target(snapshot):
             'name': snapshot.get('comfy_target_name')}
 
 
+# The caption a section render carries: the parent take's own words, with the typed change appended.
+# The engine's caption limit (store.TEXT_LIMITS) is 512, so the parent's side gives way, never the
+# change the person just typed.
+SECTION_CAPTION_LIMIT = 512
+
+
+def _captioned_change(base, change, limit=SECTION_CAPTION_LIMIT):
+    """``base`` kept and ``change`` appended, within ``limit`` characters."""
+    base = (base or '').strip()
+    change = (change or '').strip()
+    if not change:
+        return base[:limit]
+    if not base:
+        return change[:limit]
+    suffix = f'. Change: {change}'
+    room = limit - len(suffix)
+    if room < 1:
+        return change[:limit]
+    kept = base if len(base) <= room else base[:room].rsplit(' ', 1)[0]
+    return f'{kept.rstrip(" .,;")}{suffix}' if kept else change[:limit]
+
+
 def _linux_start_time(pid):
     """Kernel process start time (clock ticks since boot) or None."""
     try:
@@ -337,9 +359,12 @@ class Jobs:
         """Queue one section of a succeeded take as its own auditionable take.
 
         Unlike repaint, this asks nothing special of the engine: it renders a
-        short take with the draft's caption replaced by the section direction.
-        The user auditions it, then decides whether to splice it into the song —
-        the parent's bytes are never touched.
+        short take of that range. The typed words describe a change to this
+        part, so the parent take's own caption is kept and the words are
+        appended to it; its lyrics, BPM and key come from the parent take's
+        snapshot too, because the live draft may have been edited since that
+        take was rendered. The user auditions the result, then decides whether
+        to splice it into the song — the parent's bytes are never touched.
         """
         if type(seed) is not int or not 0 <= seed <= 2**32 - 1:
             raise ValueError('invalid seed')
@@ -360,7 +385,8 @@ class Jobs:
             self._assert_gpu_free()
             # A section is rendered from the parent take, so it belongs to the
             # endpoint the parent was preflighted against, not a live default.
-            target = _pinned_target(parent.get('snapshot') or {})
+            parent_snapshot = parent.get('snapshot') or {}
+            target = _pinned_target(parent_snapshot)
             take = self._new_take(project, seed=seed, requested_seed=seed, seed_locked=True,
                                   kind='section', parent=parent, duration_override=length,
                                   engine_id=engine_id or parent.get('engine_id'), target=target,
@@ -368,9 +394,17 @@ class Jobs:
                                          'section_of': {'project_id': project_id,
                                                         'take_id': parent_take_id,
                                                         'start_s': start_s, 'end_s': end_s}})
+            snapshot = take['snapshot']
+            # The live draft is only a last resort: the take that was actually
+            # rendered is the one this range belongs to.
+            for field in ('lyrics', 'instrumental', 'bpm', 'keyscale'):
+                if field in parent_snapshot:
+                    snapshot[field] = copy.deepcopy(parent_snapshot[field])
+            snapshot['caption'] = _captioned_change(
+                parent_snapshot.get('caption') or project.get('caption') or '', caption)
             if caption:
-                take['snapshot']['caption'] = caption
-                take['snapshot']['sections'] = []
+                # A stand-alone range is not divided into the song's own parts.
+                snapshot['sections'] = []
             project['takes'].append(take)
             self.store.save_take(project)
             return take

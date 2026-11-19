@@ -14,9 +14,10 @@ import tempfile
 import time
 import wave
 
-# No paths are baked in: an ACE-Step install is per-machine. Set ACE_RUNTIME_DIR / ACE_SOURCE_DIR
-# (the studio's Music engines page writes them, or export them yourself). Empty means "not installed
-# here", and the engine says so instead of pointing at a folder that belongs to another machine.
+# No paths are baked in: an ACE-Step install is per-machine. Export ACE_RUNTIME_DIR / ACE_SOURCE_DIR
+# before Hermes starts (or write ``ace_runtime_dir`` / ``ace_source_dir`` in engine-settings.json,
+# which the studio host reads). Empty means "not installed here", and the engine says so instead of
+# pointing at a folder that belongs to another machine.
 _RUNTIME = os.environ.get('ACE_RUNTIME_DIR') or ''
 _SOURCE = os.environ.get('ACE_SOURCE_DIR') or ''
 # A path that is never created stands in for "not installed": `available()` then answers False and
@@ -101,8 +102,11 @@ def available():
 def unavailable_reason():
     """Why ACE cannot render here, in the words a person needs to fix it."""
     if not _RUNTIME or not _SOURCE:
-        return ('ACE-Step is not configured on this machine: set the runtime and source folders on '
-                'the Music engines page, or export ACE_RUNTIME_DIR and ACE_SOURCE_DIR')
+        # There is no field for these two folders on the Music engines page (only ComfyUI and an
+        # ACE-Step server have one there), so the sentence names the way that actually works.
+        return ('ACE-Step is not configured on this machine: export ACE_RUNTIME_DIR (the folder with '
+                'the venv and checkpoints) and ACE_SOURCE_DIR (the folder with acestep/ inside it) '
+                'before starting Hermes')
     if not _interpreter().is_file():
         return f'ACE-Step runtime has no interpreter at {_interpreter()}'
     if not (RUNTIME / 'checkpoints').is_dir():

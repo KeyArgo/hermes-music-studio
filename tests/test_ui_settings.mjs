@@ -835,15 +835,17 @@ test('a take whose engine cannot repaint renders the part as a section instead',
   assert.match(text(form), /cannot repaint/i);
 
   form.querySelector('.snippet-start').value = '2';
-  form.querySelector('.snippet-end').value = '6';
+  form.querySelector('.snippet-end').value = '6';   // 4 s: shorter than this engine renders
   form.querySelector('.snippet-words').value = 'dreamier strings';
   [...form.querySelectorAll('button')].find(b => text(b) === 'Render the new part').click();
   await new Promise(resolve => setTimeout(resolve, 30));
 
   const posted = calls.filter(c => c.path === '/api/section/render').pop();
   assert.ok(posted, 'the section render route is used, not repaint');
+  // MiniMax refuses anything under 10 s, so the range is grown to its floor before it is sent —
+  // that refusal used to arrive as a failed take after the button was pressed.
   assert.deepEqual(posted.body,
-    { project_id: 'p1', take_id: 't1', start_s: 2, end_s: 6, caption: 'dreamier strings' });
+    { project_id: 'p1', take_id: 't1', start_s: 2, end_s: 12, caption: 'dreamier strings' });
   assert.ok(!calls.some(c => c.path === '/api/snippet'), 'repaint is never requested on this engine');
 });
 

@@ -115,13 +115,15 @@ class AceProbeTests(unittest.TestCase):
             server.shutdown()
         self.assertTrue(result['ok'])
 
-    def test_a_refused_path_still_means_something_is_listening(self):
+    def test_a_refused_path_does_not_make_it_an_ace_server(self):
+        """A 404 proves a socket answered — a ComfyUI answers this way and is NOT an ACE server."""
         server, base = serve({'/health': (404, {'detail': 'no'})})
         try:
             result = setup.probe_ace(base)
         finally:
             server.shutdown()
-        self.assertTrue(result['ok'], 'a 404 proves a server answered, which is the question')
+        self.assertFalse(result['ok'], 'an HTTP error says nothing about the software')
+        self.assertIn('HTTP 404', result['detail'])
 
 
 class HuggingFacePlanTests(unittest.TestCase):

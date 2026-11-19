@@ -103,6 +103,10 @@ the plugin data directory. An older `cloud-keys.json` is migrated into the crede
 only deleted after the key reads back; if that cannot be done it is left alone and Setup says to
 re-enter the key. The studio is not a hosted service and has no account of its own.
 
+The hosted endpoint and the ACE-Step server share the one `ace_remote_url` setting, so a hosted save
+is refused, with a sentence naming the saved address, when that setting already holds a different one.
+`POST /api/studio/setup/ace/remove` clears it (refused while a take renders on it); the hosted key stays in Hermes.
+
 ## Offline hints (not a sandbox)
 
 The ACE subprocess is started with `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`,

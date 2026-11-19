@@ -16,6 +16,8 @@ Compute screen already renders for `/settings/test`, so a failure names the chec
 import contextlib
 import json
 import logging
+import os
+import re
 import shutil
 import threading
 import time
@@ -109,23 +111,72 @@ def probe_comfy(url):
                        'on that machine, then test again')}
 
 
+# An ACE-Step server names itself in the JSON its root path returns. A ComfyUI, a proxy or a plain
+# web server does not, which is the whole reason this probe reads the answer instead of the status.
+_ACE_STEP_WORD = re.compile(r'\bace[-_ ]?step\b', re.IGNORECASE)
+
+
+def _json_body(body):
+    """True when a body is a JSON object or list."""
+    try:
+        return isinstance(json.loads(body), (dict, list))
+    except Exception:
+        return False
+
+
+def _looks_like_ace(body):
+    """True when a body is JSON that names ACE-Step; anything else is another kind of server."""
+    try:
+        payload = json.loads(body)
+    except Exception:
+        return False
+    if not isinstance(payload, (dict, list)):
+        return False
+    return bool(_ACE_STEP_WORD.search(json.dumps(payload)))
+
+
 def probe_ace(url):
-    """Is this an ACE-Step server? It answers /health or returns audio on /query_result."""
+    """Is this an ACE-Step server? Its /health answers 2xx, or / returns JSON naming ACE-Step.
+
+    An HTTP error is *not* an answer about the software: a ComfyUI answers /health with 404 and a
+    static web server answers 200 with a page. Both used to count as "an ACE server answers", and
+    the page then saved that address as the ACE-Step engine — so the check is now the body, not the
+    fact that a socket replied.
+    """
     base = normalise_url(url)
     checks = []
+    statuses = []
     for path in ('/health', '/'):
         try:
-            _get(f'{base}{path}')
-            checks.append(_check(f'answers {path}', True))
-            return {'ok': True, 'url': base, 'checks': checks, 'detail': 'ACE server answers'}
+            body = _get(f'{base}{path}')
         except urllib.error.HTTPError as exc:
-            checks.append(_check(f'answers {path}', True, f'HTTP {exc.code}'))
-            return {'ok': True, 'url': base, 'checks': checks,
-                    'detail': 'ACE server answers (it refused that path, which still means it is up)'}
+            if path == '/health' and exc.code in (401, 403):
+                # An ACE-Step server behind a key refuses an unkeyed health check; a ComfyUI never
+                # asks for one. The key is entered with the hosted fields and sent on every render.
+                checks.append(_check(f'answers {path}', True, f'HTTP {exc.code}: needs its key'))
+                return {'ok': True, 'url': base, 'checks': checks,
+                        'detail': 'ACE server answers (it asks for a key)'}
+            checks.append(_check(f'answers {path}', False, f'HTTP {exc.code}'))
+            statuses.append(exc.code)
+            continue
         except Exception as exc:
             checks.append(_check(f'answers {path}', False, exc))
+            continue
+        if path == '/health' and not _json_body(body):
+            # ACE-Step's API answers /health in JSON. A page or plain text is some other server that
+            # happens to answer every path, and saving it would only fail at the first render.
+            checks.append(_check(f'answers {path}', False, 'answered, but not with a JSON health check'))
+            continue
+        if path == '/' and not _looks_like_ace(body):
+            checks.append(_check(f'answers {path}', False, 'did not name ACE-Step'))
+            continue
+        checks.append(_check(f'answers {path}', True))
+        return {'ok': True, 'url': base, 'checks': checks, 'detail': 'ACE server answers'}
+    if statuses:
+        return {'ok': False, 'url': base, 'checks': checks,
+                'detail': f'{base} answers but is not an ACE-Step server: HTTP {statuses[0]}'}
     return {'ok': False, 'url': base, 'checks': checks,
-            'detail': f'nothing answered at {base}'}
+            'detail': f'nothing answered at {base} as an ACE-Step server'}
 
 
 # -- path 2: a model from Hugging Face ------------------------------------
@@ -280,6 +331,34 @@ def _store_endpoint(data_dir, url, model):
     return entry
 
 
+def forget_endpoint(data_dir):
+    """Forget the one stored server address, so nothing keeps pointing at a server that is gone.
+
+    The address is a single setting, so removing the row on the Music engines page is clearing it.
+    Nothing the server rendered is deleted, and the hosted key stays in Hermes: dropping a
+    credential is never a side effect of removing an address.
+    """
+    from . import settings
+    from .store import Store
+
+    for project in Store(Path(data_dir)).all():
+        for take in project.get('takes') or []:
+            if (isinstance(take, dict) and take.get('state') in ('queued', 'running')
+                    and take.get('engine_id') == 'ace_remote'):
+                # Clearing the address now would fail that render halfway; the same rule the page
+                # already applies to removing a saved ComfyUI engine.
+                raise ValueError('This server is used by a song that is still being made.')
+    # The nested ``url`` is cleared with it: an old value read by a previous release must not
+    # outlive the address the page just removed.
+    settings.write(Path(data_dir), {'ace_remote': {'url': '', 'model': '', 'saved_at': ''},
+                                    'ace_remote_url': ''})
+    # The launcher handed the saved address to this host as ACE_REMOTE_URL when it started, and the
+    # engine falls back to that variable when the setting is blank, so the running host would keep
+    # rendering on the removed server until Hermes restarts. Workers inherit it too. Drop it here.
+    os.environ.pop('ACE_REMOTE_URL', None)
+    return {'ok': True, 'ace_remote_url': ''}
+
+
 @contextlib.contextmanager
 def _cloud_key_guard(data_dir):
     """Serialise the legacy migration and the key write across processes."""
@@ -353,17 +432,32 @@ def _migrate_legacy_keys_unlocked(data_dir):
     return None
 
 
+def _same_address(left, right):
+    """One address written two ways (a trailing slash, a capitalised host) is still one address."""
+    return (left or '').rstrip('/').lower() == (right or '').rstrip('/').lower()
+
+
 def save_cloud(data_dir, name, url, key, model=''):
     """Save the hosted endpoint and put its key only in Hermes' credential store."""
     base = normalise_url(url)
     if not (key or '').strip():
         raise ValueError('an API key is required for a hosted endpoint')
-    from .hermes_secrets import SAVE_FAILED, save_secret
+    from .hermes_secrets import SAVE_FAILED, read_secret, save_secret
 
     with _cloud_key_guard(data_dir):
         # Migration and the owner's new key are one transaction: without the lock a concurrent
         # list_cloud could import the legacy key right after this one was saved.
         message = _migrate_legacy_keys_unlocked(data_dir)
+        # The studio keeps one server address, shared with the ACE-Step server on the Music engines
+        # page (a render reads the same setting), and a hosted save used to replace that server
+        # without a word. A hosted save stamps ``saved_at``; saving an ACE-Step server, or Remove,
+        # clears it. So a different address may be replaced only when a hosted save put it there; a key
+        # left in Hermes after a Remove says nothing about what is in the slot now.
+        stored = _stored_endpoint(data_dir)
+        existing = stored['url']
+        if existing and not _same_address(existing, base) and not stored['saved_at']:
+            raise ValueError(f'{existing} is already saved as the studio\'s ACE-Step server address. '
+                             'Remove it on the Music engines page, then save this one.')
         if not save_secret(CLOUD_KEY_ENV, key.strip()):
             raise ValueError(SAVE_FAILED)
         entry = _store_endpoint(data_dir, base, model)

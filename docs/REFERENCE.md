@@ -3,7 +3,7 @@
 Every tool the plugin registers, every slash command, every CLI command, every hook, every HTTP route
 and every configuration key.
 
-Applies to 1.0.0 · revised 2026-11-16 · back to [docs/README.md](README.md).
+Applies to 1.0.0 · revised 2026-11-18 · back to [docs/README.md](README.md).
 
 ## Agent tool: `music_studio`
 
@@ -188,7 +188,8 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | POST | `/discover` | Find a renderer |
 | POST | `/export` | `{project_id, take_id, folder?, title?}` |
 | GET | `/library`; POST `/library/relocate`, `/library/reset` | Library folder info, move/copy, reset |
-| POST | `/studio/setup/comfy`, `/studio/setup/ace` | Test and save an engine server |
+| POST | `/studio/setup/comfy`, `/studio/setup/ace` | Test and save an engine server. ACE-Step is accepted only when `/health` answers 2xx or `/` returns JSON that names ACE-Step; a 404 from another server is reported, never saved |
+| POST | `/studio/setup/ace/remove` | Forget the saved ACE-Step address (the hosted endpoint shares that one slot); refused while a take renders on it |
 | GET/POST | `/studio/setup/hf`; POST `/studio/setup/hf/copy` | Hugging Face weight plan/download/copy |
 | GET/POST | `/studio/setup/cloud`; POST `/studio/setup/cloud/test` | Hosted provider entry and test |
 | GET | `/verify`, `/verify.json` | What this build can measure |

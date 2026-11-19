@@ -143,6 +143,8 @@ Updates come through Hermes; the studio never replaces its own code:
 hermes plugins update hermes-music-studio
 ```
 
+Then restart Hermes (quit Hermes Desktop fully and open it again, or `hermes gateway restart`) so the studio loads the new version.
+
 ### Uninstall
 
 ```bash
