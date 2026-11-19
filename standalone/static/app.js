@@ -1941,6 +1941,20 @@ function saveModelPreference() {
     provider: $('idea-provider').value, model: $('idea-model').value
   })); } catch (e) {}
 }
+// The saved pair, or null when it is not a choice this Hermes still offers. Choosing a provider is
+// a provider override, which Hermes refuses unless it was told to allow it, so a value that half
+// survives (provider gone, or its model retired) would show an override in the menu and send none.
+function savedModelChoice(pref) {
+  const provider = pref && typeof pref.provider === 'string' ? pref.provider : '';
+  const model = pref && typeof pref.model === 'string' ? pref.model : '';
+  if (!provider || !model) return null;
+  const row = modelCatalog.find(p => p.slug === provider);
+  if (!row) return null;
+  const known = (row.models || [])
+    .map(m => (typeof m === 'string' ? m : (m.id || m.name)))
+    .filter(Boolean);
+  return known.includes(model) ? { provider, model } : null;
+}
 async function loadModels() {
   try {
     const d = await modelChoices();
@@ -1953,11 +1967,15 @@ async function loadModels() {
       return;
     }
     $('idea-connection').textContent = 'Your Hermes model is used unless you pick another provider and model.';
-    // Try to restore saved preference, otherwise use first provider
-    if (pref.provider && modelCatalog.some(p => p.slug === pref.provider)) {
-      $('idea-provider').value = pref.provider;
-      fillModels(pref.model);
+    // Nothing chosen means the Hermes model, which is what the first blank option stands for: a
+    // provider picked for the person (a Hermes with one connected provider used to fill the menu in
+    // itself) is an override they never asked for, and Hermes' refusal killed their first draft.
+    const choice = savedModelChoice(pref);
+    if (choice) {
+      $('idea-provider').value = choice.provider;
+      fillModels(choice.model);
     } else {
+      $('idea-provider').value = '';
       fillModels();
     }
   } catch (e) {
@@ -1990,9 +2008,12 @@ function fillProviders(preferred) {
     o.value = p.slug;
     select.append(o);
   });
+  // Keep whatever the person chose (a filter that rebuilds this list must not lose it). The old
+  // fallback here — "only one provider, so select it" — is what opened the studio on a provider
+  // override nobody picked, and Hermes then refused the first draft. A menu that shows the Hermes
+  // model until somebody chooses is the honest default.
   if (typeof preferred === 'string' && rows.some(p => p.slug === preferred)) select.value = preferred;
   else if (rows.some(p => p.slug === had)) select.value = had;
-  else if (rows.length === 1) select.value = rows[0].slug;
 }
 function fillModels(preferred) {
   fillProviders();

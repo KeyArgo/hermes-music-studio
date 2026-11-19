@@ -13,6 +13,7 @@ All notable changes to Music Studio are recorded here. The format follows
 - **Right-click menu fixes.** Copy works on selected chat text; clicking elsewhere or pressing Tab no longer pulls the cursor back to the old field; read-only fields offer Copy and Select all; a menu opened with Shift+F10 or the menu key opens at the field, not the window corner.
 - **The other-profile message is accurate.** It says "a different copy" (it cannot tell which is older), and for the default profile it prints `hermes plugins update hermes-music-studio` without `-p`.
 - **An update reaches the pane without restarting Desktop.** The page asks for `app.js` and `style.css` with a `?v=` hash of the files, so a webview cannot keep running last version's script.
+- **The model picker starts on your Hermes model.** With nothing saved, the Provider menu used to open on whichever provider was listed first — on a Hermes with one connected provider, that one — with its model. Choosing a provider is a provider override, which Hermes refuses until you allow it, so the first draft failed over a choice nobody made. The menu now opens on "Your Hermes model (recommended)" and sends no provider or model. A saved choice is still restored; one whose provider or model no longer exists falls back to your Hermes model instead of being half restored.
 
 ### Model picker and provider override
 
