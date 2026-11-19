@@ -7,6 +7,7 @@ Applies to 1.0.0 · revised 2026-11-16.
 | Document | Read it for |
 |---|---|
 | [../README.md](../README.md) | What the product is, install, quick start, badges, screenshots |
+| [GETTING-STARTED.md](GETTING-STARTED.md) | **Start here.** Your first song in 5 steps, and how to find your ComfyUI address |
 | [USAGE.md](USAGE.md) | Every user-facing feature as a walkthrough, with screenshots |
 | [REFERENCE.md](REFERENCE.md) | Tool actions, slash commands, CLI commands, hooks, HTTP routes, config keys |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Processes, locks, take state machine, data directory, delivery boundaries |

@@ -219,6 +219,7 @@ Providers you have set up in Hermes are marked ready. The studio connects throug
 | Document | What it covers |
 |---|---|
 | [docs/README.md](docs/README.md) | Index of every document |
+| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | **Start here.** Your first song in 5 steps, and how to find your ComfyUI address |
 | [docs/USAGE.md](docs/USAGE.md) | Every user-facing feature, with screenshots |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | Every tool action, slash command, CLI command, HTTP route and config key |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Processes, locks, state machine, data directory, route table |
