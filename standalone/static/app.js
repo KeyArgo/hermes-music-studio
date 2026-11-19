@@ -2111,6 +2111,21 @@ function fillModels(preferred) {
   const placeholder = el('option', 'Select a model');
   placeholder.value = '';
   select.append(placeholder);
+  if (!p && ideaQuery()) {
+    // Searching with no provider chosen: list every match from every provider, so typing in
+    // "Find a model" shows models at once instead of an empty list. Picking one sets its provider.
+    let count = 0;
+    modelCatalog.forEach(row => (row.models || []).forEach(m => {
+      const id = typeof m === 'string' ? m : (m.id || m.name);
+      if (!id || !modelMatches(row, id) || count >= 200) return;
+      const option = el('option', `${row.name || row.slug} · ${id}`);
+      option.value = PICK_PREFIX + JSON.stringify([row.slug, id]);
+      select.append(option);
+      count += 1;
+    }));
+    placeholder.textContent = count ? `Select a model (${count} found)` : 'No model matches that search';
+    return;
+  }
   (p?.models || []).forEach(m => {
     const id = typeof m === 'string' ? m : (m.id || m.name);
     if (!id) return;
@@ -2123,13 +2138,24 @@ function fillModels(preferred) {
   // The choice is saved by the change handlers, never here: the filter box rebuilds this
   // list too, and a search that matches nothing would erase the saved model.
 }
+// A search result names its provider too; choosing it selects both.
+const PICK_PREFIX = 'pick:';
+function applyModelPick(value) {
+  if (!String(value || '').startsWith(PICK_PREFIX)) return false;
+  let slug = '', id = '';
+  try { [slug, id] = JSON.parse(value.slice(PICK_PREFIX.length)); } catch { return false; }
+  $('idea-provider').value = slug;
+  fillModels(id);
+  return true;
+}
 $('idea-provider').onchange = () => { fillModels(); saveModelPreference(); };
-$('idea-model').onchange = () => { saveModelPreference(); };
+$('idea-model').onchange = () => { applyModelPick($('idea-model').value); saveModelPreference(); };
 $('idea-filter').oninput = () => { fillProviders(); fillModels(); };
 $('idea-filter').onkeydown = e => {
   if (e.key === 'Enter' && $('idea-model').options.length > 1 && !$('idea-model').value) {
+    e.preventDefault();
     $('idea-model').selectedIndex = 1;
-    fillModels($('idea-model').value);
+    if (!applyModelPick($('idea-model').value)) fillModels($('idea-model').value);
     saveModelPreference();
   }
 };
