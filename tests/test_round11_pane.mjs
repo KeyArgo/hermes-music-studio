@@ -54,12 +54,14 @@ test.afterEach(() => {
 });
 
 // Mount the pane, wait for the frame, then send a draft message the route fails.
+const draftCalls = [];
 async function failedDraft(err) {
   const contributions = [];
   plugin.register({
     register: c => contributions.push(c),
-    rest: async path => {
+    rest: async (path, opts) => {
       if (path === '/studio/host') return { url: 'http://127.0.0.1:8775', token: 'tok' };
+      draftCalls.push({ path, opts });
       throw err;
     }
   });
@@ -101,4 +103,15 @@ test('a failure with no JSON body is left as the host said it', async () => {
   const answer = await failedDraft(new Error('hermes.api error 500: internal server error'));
   assert.equal(answer.ok, false);
   assert.equal(answer.error, 'hermes.api error 500: internal server error');
+});
+
+test('a draft asks Desktop to wait longer than the model may take', async () => {
+  // Desktop gives a plugin request 30 s by default; on levy9 a draft failed as "Timed out connecting
+  // to Hermes backend after 30000ms" while the model was still writing (it may take 120 s).
+  draftCalls.length = 0;
+  await failedDraft(new Error('502: {"detail":"x"}'));
+  const call = draftCalls.find(c => c.path === '/studio/draft');
+  assert.ok(call, 'the draft went to the plugin route');
+  assert.ok(call.opts && call.opts.timeoutMs > 120000,
+    `timeoutMs ${call.opts && call.opts.timeoutMs} must exceed the model's 120 s`);
 });

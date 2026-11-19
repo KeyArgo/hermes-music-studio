@@ -16,6 +16,8 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 
 const PLUGIN_ID = 'hermes-music-studio'
 const PATH = '/music-studio'
+// Longer than the model's 120 s and shorter than the framed page's own 150 s wait.
+const DRAFT_TIMEOUT_MS = 140000
 
 const frameWrap = { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }
 const notice = { padding: 24, maxWidth: 640, lineHeight: 1.5 }
@@ -153,9 +155,13 @@ export function Studio({ ctx }) {
           action: data.action === 'chat' ? 'chat' : 'draft' }
         if (data.provider) body.provider = data.provider
         if (data.model) body.model = data.model
+        // Desktop gives a plugin request 30 s unless told otherwise, and the plugin lets the model take
+        // up to 120 s (llm_bridge.TIMEOUT_SECONDS): a slow but healthy draft failed as "Timed out
+        // connecting to Hermes backend after 30000ms". Wait past the model's own limit instead.
         Promise.resolve(ctx.rest('/studio/draft', {
           method: 'POST',
-          body
+          body,
+          timeoutMs: DRAFT_TIMEOUT_MS
         }))
           .then(reply => answer({ ok: true, draft: reply && reply.draft, content: reply && reply.content }))
           .catch(err => answer(draftFailure(err)))
