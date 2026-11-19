@@ -311,7 +311,7 @@ async function loadProject(p) {
   if (p.engine === 'ace') form.elements.engine.value = 'ace_local';
   form.elements.instrumental.checked = !!p.instrumental;
   form.elements.bpm.value = p.bpm ?? ''; form.elements.keyscale.value = p.keyscale ?? ''; form.elements.vocal_language.value = p.vocal_language || 'en';
-  form.elements.minimax_guidance.value = p.minimax_guidance ?? 1.5; $('minimax-guidance-value').value = form.elements.minimax_guidance.value;
+  form.elements.minimax_guidance.value = p.minimax_guidance ?? 1.7; $('minimax-guidance-value').value = form.elements.minimax_guidance.value;
   ensureTargetOption(p.comfy_target_id);
   form.elements.comfy_target_id.value = p.comfy_target_id || '';
   $('workspace-select').value = workspaces.find(w => w.project_ids.includes(p.project_id))?.id || 'default';
@@ -815,8 +815,64 @@ function refreshLibraryWhenIdle() {
 for (const type of ['focusout', 'click', 'keyup']) {
   document.addEventListener(type, () => setTimeout(refreshLibraryWhenIdle, 0));
 }
+// When a song was made: its own stamp, else (a song saved before songs had one) its first take.
+function songMadeAt(p) {
+  const own = Number(p && p.created_at);
+  if (own > 0) return own;
+  const stamps = ((p && p.takes) || []).map(t => Number(t && t.created_at)).filter(n => n > 0);
+  return stamps.length ? Math.min(...stamps) : 0;
+}
+function madeLabel(seconds) {
+  if (!(seconds > 0)) return '';
+  return new Date(seconds * 1000).toLocaleString([], {year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+}
+// Select mode: tick several songs, then one confirmation deletes them all.
+let librarySelecting = false;
+const librarySelected = new Set();
+function syncLibrarySelection() {
+  const toggle = $('library-select'), all = $('library-select-all'), del = $('library-delete-selected');
+  if (!toggle || !all || !del) return;
+  toggle.textContent = librarySelecting ? 'Done' : 'Select';
+  toggle.setAttribute('aria-pressed', String(librarySelecting));
+  all.hidden = !librarySelecting;
+  del.hidden = !librarySelecting;
+  del.disabled = !librarySelected.size;
+  del.textContent = librarySelected.size ? `Delete selected (${librarySelected.size})` : 'Delete selected';
+}
+function wireLibrarySelection() {
+  const toggle = $('library-select'), all = $('library-select-all'), del = $('library-delete-selected');
+  if (!toggle || toggle.dataset.wired) return;
+  toggle.dataset.wired = '1';
+  toggle.addEventListener('click', () => {
+    librarySelecting = !librarySelecting;
+    librarySelected.clear();
+    syncLibrarySelection(); library();
+  });
+  all.addEventListener('click', () => {
+    document.querySelectorAll('#library .project[data-project]').forEach(card => librarySelected.add(card.dataset.project));
+    syncLibrarySelection(); library();
+  });
+  del.addEventListener('click', async () => {
+    const ids = [...librarySelected];
+    if (!ids.length) return;
+    const names = ids.map(id => (projects.find(p => p.project_id === id) || {}).title || 'Untitled');
+    const shown = names.slice(0, 5).map(n => `\u201c${n}\u201d`).join(', ') + (names.length > 5 ? ` and ${names.length - 5} more` : '');
+    if (!(await askConfirm(`Delete ${ids.length} song${ids.length === 1 ? '' : 's'} (${shown}) and all of their audio? This cannot be undone.`, {confirmLabel: `Delete ${ids.length}`, danger: true}))) return;
+    del.disabled = true;
+    let deleted = 0; const skipped = [];
+    for (const id of ids) {
+      try { await api('/delete', {project_id: id}); deleted += 1; librarySelected.delete(id); }
+      catch (err) { skipped.push(err.message); }
+    }
+    libMessage(`Deleted ${deleted}.` + (skipped.length ? ` ${skipped.length} not deleted: ${skipped[0]}` : ''), skipped.length > 0);
+    if (!librarySelected.size) librarySelecting = false;
+    syncLibrarySelection();
+    await refresh(); library();
+  });
+}
 function library() {
   libraryRefreshPending = false;
+  wireLibrarySelection(); syncLibrarySelection();
   const container = $('library'); container.replaceChildren();
   if (!projects.length) {
     const empty = el('div','','library-empty');
@@ -850,6 +906,16 @@ function library() {
     title.addEventListener('click', () => loadProject(p));
     title.addEventListener('keydown', e => { if (e.key === 'Enter') loadProject(p); });
     card.dataset.project = p.project_id;   // so a panel can find this card after a refresh
+    if (librarySelecting) {
+      const pick = document.createElement('input'); pick.type = 'checkbox'; pick.className = 'library-pick';
+      pick.checked = librarySelected.has(p.project_id);
+      pick.setAttribute('aria-label', `Select \u201c${p.title || 'Untitled'}\u201d`);
+      pick.addEventListener('change', () => {
+        if (pick.checked) librarySelected.add(p.project_id); else librarySelected.delete(p.project_id);
+        syncLibrarySelection();
+      });
+      head.append(pick);
+    }
     const edit = el('button','Open draft','button secondary'); edit.type='button'; edit.addEventListener('click', () => loadProject(p));
     const ver = el('button','3 versions','button secondary'); ver.type='button'; ver.addEventListener('click', async () => {
       ver.disabled = true;
@@ -905,6 +971,9 @@ function library() {
       } catch (err) { libMessage(err.message, true); } finally { changeIt.disabled = false; }
     });
     const identity=el('div','','project-identity'); if (p.has_cover !== false) { const cover=document.createElement('img'); cover.className='project-cover'; cover.alt=''; cover.loading='lazy'; cover.src=mediaUrl(STUDIO.api+'/studio/covers/'+encodeURIComponent(p.project_id)); cover.addEventListener('error',()=>cover.remove()); identity.append(cover); } identity.append(title); const actions = el('div','','project-actions'); actions.append(edit, ver, cmp, dup, rename, del); head.append(identity,actions); card.append(head,el('p',p.caption || 'No style description yet.'));
+    const made = madeLabel(songMadeAt(p));
+    const edited = madeLabel(Number(p.updated_at) || 0);
+    if (made) card.append(el('p', `Made ${made}` + (edited && edited !== made ? ` · last edited ${edited}` : ''), 'hint song-dates'));
     const changeRow = el('div','','project-change'); changeRow.append(words, changeIt); changeRow.hidden = true; card.append(changeRow);
     const changeToggle = el('button','Change with words…','button secondary'); changeToggle.type='button';
     changeToggle.setAttribute('aria-expanded','false');
@@ -920,9 +989,10 @@ function library() {
     }
     const takes = p.takes || [];
     if (!takes.length) card.append(el('p','No takes yet.'));
-    takes.forEach((t, i) => { const row = el('div','','take'); row.dataset.take = t.take_id; let detail = `Take ${i+1} · ${t.engine_id || p.engine || 'engine'} · ${t.state || 'unknown'} · seed ${t.requested_seed ?? t.seed ?? '—'}`;
+    takes.forEach((t, i) => { const row = el('div','','take'); row.dataset.take = t.take_id; row.dataset.engine = t.engine_id || ''; let detail = `Take ${i+1} · ${engineDisplayName(t.engine_id || p.engine)} · ${t.state || 'unknown'} · seed ${t.requested_seed ?? t.seed ?? '—'}`;
       const targetLabel = takeTargetLabel(t);
       if (targetLabel) detail += ` · ${targetLabel}`;
+      if (t.created_at) detail += ` · made ${madeLabel(Number(t.created_at))}`;
       if (t.state === 'running') detail += ` · estimated ${Number(t.progress) || 0}% · estimated ETA ${formatEta(t.eta_seconds)}`;
       else if (t.state === 'queued') detail += ` · queued${t.queue_position ? ` (#${t.queue_position})` : ''}`;
       const label = el('span', detail); row.append(label);
@@ -1732,6 +1802,17 @@ async function deleteTarget(t) {
 }
 
 function workflowEngineId(workflow) { return 'comfy_workflow:' + workflow.id; }
+// The name a person picked the engine by, not its internal id ("minimax_m3_comfy").
+function engineDisplayName(id) {
+  if (!id) return 'engine';
+  const engine = engines.find(e => e.id === id);
+  if (engine && engine.label) return engine.label;
+  const workflow = workflows.find(w => workflowEngineId(w) === id);
+  if (workflow && workflow.name) return workflow.name;
+  if (id === 'minimax_m3_comfy') return 'MiniMax Music 3';
+  if (String(id).startsWith('comfy_workflow:')) return 'ComfyUI workflow';
+  return id;
+}
 function fillWorkflowTargetSelect() {
   const select = $('workflow-target');
   if (!select) return;
@@ -3167,6 +3248,19 @@ async function testEngine(eng) {
   }
   testingServer = false;
   if (gen !== engineTestGen) return;
+  // A ComfyUI typed into the ACE-Step server form: switch the form to ComfyUI and test it as one,
+  // so its ACE-Step 1.5 shows up ready to add instead of a dead end.
+  if (data && data.problem === 'is_comfyui' && kind === 'ace_server') {
+    const form = $('server-form');
+    const picked = form && form.elements['engine-kind'];
+    if (picked) {
+      picked.value = 'comfyui';
+      await testEngine({ kind: 'comfyui', url: url });
+      const shown = $('test-result');
+      if (shown && gen + 1 === engineTestGen) shown.prepend(el('p', 'That address is a ComfyUI, so it was switched to ComfyUI and tested as one.', 'hint'));
+      return;
+    }
+  }
   lastEngineTest = { kind: kind, url: url, data: data };
   showTestResult(data);
   syncServerKind();
@@ -3217,6 +3311,7 @@ const TROUBLESHOOTING = {
   no_answer: { title: 'No answer', text: 'Nothing answered at that address. The server may be off, the port may be wrong, or a firewall may be blocking it. If a firewall is in the way, allow port 8188 or 8000 on your local network.' },
   not_comfy: { title: 'Not ComfyUI', text: 'That address answered but is not ComfyUI or ACE-Step server. Check the address.' },
   not_ace: { title: 'Not an ACE server', text: 'That address is not an ACE-Step server.' },
+  is_comfyui: { title: 'This is ComfyUI', text: 'Choose ComfyUI above. ACE-Step 1.5 on a ComfyUI is added as a ComfyUI engine.' },
   missing_files: { title: 'Missing model files', text: 'ComfyUI knows the model, and these files are not on it. Put them in that computer\'s models folder, then test again.' },
   no_gpu: { title: 'No GPU available', text: 'The graphics card that matters is on the machine running the model. This PC does not need one when the server is elsewhere.' }
 };

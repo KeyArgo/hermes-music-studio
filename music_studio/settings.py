@@ -40,10 +40,12 @@ DEFAULTS = {
     'ace_remote': {'url': '', 'model': '', 'saved_at': '', 'key_env': ''},
     # Tiled MiniMax decode. auto turns it on when ComfyUI reports under 12 GB of VRAM.
     'minimax_tiled_decode': 'auto',
+    # ComfyUI's own MiniMax Music 3 workflow uses 1.7 for both. Higher sampler guidance made takes
+    # harsh and broke them up between words (a same-seed A/B on a real server: 11% silence at 4.0, 3% at 1.7).
     'minimax': {
         'steps': 30,
-        'cfg': 4.0,
-        'cfg_scale': 1.5,
+        'cfg': 1.7,
+        'cfg_scale': 1.7,
         'top_k': 50,
         'sampler': 'euler',
         'scheduler': 'simple',
@@ -67,6 +69,10 @@ TILED_DECODE = ('auto', 'on', 'off')
 
 def settings_path(base: Path) -> Path:
     return Path(base) / SETTINGS_FILE
+
+
+#: The (cfg, cfg_scale) defaults shipped before they matched ComfyUI's MiniMax workflow.
+OLD_MINIMAX_GUIDANCE = (4.0, 1.5)
 
 
 def _merge(raw: dict) -> dict:
@@ -96,6 +102,11 @@ def _merge(raw: dict) -> dict:
         for key in DEFAULTS['minimax']:
             if key in raw_minimax:
                 out['minimax'][key] = raw_minimax[key]
+        # Settings saved before 1.7 wrote the old defaults out in full. That exact pair was never a choice,
+        # so it follows the new defaults; any other value is the person's own and stays.
+        if raw_minimax.get('cfg') == OLD_MINIMAX_GUIDANCE[0] and raw_minimax.get('cfg_scale') == OLD_MINIMAX_GUIDANCE[1]:
+            out['minimax']['cfg'] = DEFAULTS['minimax']['cfg']
+            out['minimax']['cfg_scale'] = DEFAULTS['minimax']['cfg_scale']
     return out
 
 

@@ -186,8 +186,8 @@ class MiniMaxM3ComfyEngine(Engine):
         # vram_total is known. An explicit True or False stays put.
         self._tiled_pinned = tiled_decode is not None
         self.tiled_decode = bool(tiled_decode) if self._tiled_pinned else False
-        self.cfg_scale = knobs.get('cfg_scale', 1.5) if cfg_scale is None else cfg_scale
-        self.cfg = knobs.get('cfg', 4.0) if cfg is None else cfg
+        self.cfg_scale = knobs.get('cfg_scale', 1.7) if cfg_scale is None else cfg_scale
+        self.cfg = knobs.get('cfg', 1.7) if cfg is None else cfg
         self.top_k = knobs.get('top_k', 50) if top_k is None else top_k
         self.steps = knobs.get('steps', 30) if steps is None else steps
         self.sampler = knobs.get('sampler', 'euler')

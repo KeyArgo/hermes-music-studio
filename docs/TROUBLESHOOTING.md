@@ -5,6 +5,32 @@ The failure modes the code actually handles, the sentence it gives you, and the 
 
 Applies to 1.0.0 · revised 2026-11-18 · back to [docs/README.md](README.md).
 
+## Where the logs are
+
+Three plain-text logs live in the plugin data folder (see [Where your data lives](../README.md#where-your-data-lives);
+on Windows that is `%LOCALAPPDATA%\hermes\plugin-data\hermes-music-studio\`):
+
+| File | What it holds |
+|---|---|
+| `logs/studio.log` | One line per event: render started, finished (with how long it took), failed or stopped (with the reason), engine tested (what it answered), engine added or removed. Keys, tokens and passwords are masked; lyrics and captions are never written. Grows to 1 MB, then keeps three older copies (`studio.log.1` to `.3`). |
+| `worker-logs/<take id>.log` | Everything one render printed, for a take that failed. The take id is in the take's **More** menu and in `studio.log`. |
+| `studio-host.log` | The studio page's own server: start, stop, and why it would not start. |
+
+When reporting a problem, **Copy diagnostics** (Music engines page) plus the last lines of `studio.log` is usually enough.
+
+## The ACE-Step server form says "This is ComfyUI"
+
+You typed a ComfyUI address into **ACE-Step server**. ACE-Step 1.5 on a ComfyUI is added as a ComfyUI engine:
+the form switches to **ComfyUI** and tests it for you; press **Add** next to **ACE-Step 1.5**. The
+**ACE-Step server** choice is only for the separate ACE-Step API server (`acestep-api`).
+
+## MiniMax Music 3 sounds harsh or stops between words
+
+On **Music engines → More options → Advanced settings → MiniMax Music 3**, **CFG** and **Guidance (cfg_scale)** should both be about `1.7`, the values ComfyUI's
+own MiniMax Music 3 workflow uses. Higher CFG (the old default was 4.0) over-drives the model: in a same-seed
+test on a real server, CFG 4.0 left 11% of the take silent with gaps up to 0.7 s, CFG 1.7 left 3%. Settings
+saved with the old defaults are moved to 1.7 automatically; a value you chose yourself is kept.
+
 ## No engine is ready
 
 `/status` reports each engine as available or not, with the failing check named. Common causes:

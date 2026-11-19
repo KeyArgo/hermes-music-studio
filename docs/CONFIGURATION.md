@@ -72,8 +72,8 @@ moved). It is written atomically and validated on save.
 | `ace_remote_url` | `""` | URL | ACE remote server (the hosted endpoint writes this too) |
 | `ace_remote` | `{}` | `{url, model, saved_at, key_env}` | The one hosted endpoint; `key_env` names the Hermes credential (`ACE_REMOTE_API_KEY`) |
 | `minimax.steps` | `30` | integer 1–100 | ComfyUI sampler steps |
-| `minimax.cfg` | `4.0` | number 0–20 | CFG |
-| `minimax.cfg_scale` | `1.5` | number 0–10 | MiniMax music guidance |
+| `minimax.cfg` | `1.7` | number 0–20 | CFG |
+| `minimax.cfg_scale` | `1.7` | number 0–10 | MiniMax music guidance |
 | `minimax.top_k` | `50` | integer 1–200 | Top K |
 | `minimax.sampler` | `euler` | `euler`, `euler_ancestral`, `dpmpp_2m`, `dpmpp_2m_sde`, `heun`, `lms` | Sampler |
 | `minimax.scheduler` | `simple` | `simple`, `normal`, `karras`, `exponential`, `sgm_uniform` | Scheduler |

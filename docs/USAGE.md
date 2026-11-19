@@ -86,8 +86,9 @@ Upload a PNG, JPEG or WebP up to 2 MiB. The studio only accepts images from the 
 
 ![The library with projects and takes](screenshots/library.png)
 
-Every project shows its caption and its takes. A take row carries its state, engine and seed, and the
-actions that apply to that state:
+Every project shows its caption, when it was made (and last edited), and its takes. A take row carries
+its state, engine (by the name you picked it by, for example `MiniMax Music 3`), seed and when it was made,
+and the actions that apply to that state:
 
 - **Play** streams the take in the footer player.
 - **Export** copies the newest finished audio into the export folder.
@@ -103,6 +104,11 @@ actions that apply to that state:
 - **Compare engines** renders the draft on every ready engine as separate takes.
 - **Duplicate** copies the project and every WAV with new ids.
 - **Open draft** loads the project back into Create.
+
+**Deleting many songs at once:** press **Select** at the top of the library. Each song gets a checkbox;
+tick the ones to remove, or press **Select all shown** (it follows the search box, so search first to pick
+a group). **Delete selected (N)** asks once, then deletes them. A song that is still rendering is skipped and
+named. Press **Done** to leave select mode.
 
 The change box at the top of a project takes plain words. "add a fiddle" appends `fiddle` to the one
 style caption; "go dark" expands to a small, deterministic set of descriptors; "half-time in the

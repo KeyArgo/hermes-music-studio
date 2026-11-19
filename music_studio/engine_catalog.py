@@ -307,11 +307,31 @@ def _test_comfyui(base, checks) -> dict:
             'message': message, 'models': models, 'checks': checks}
 
 
+def _answers_as_comfyui(base) -> bool:
+    """True when the address is a ComfyUI (its /system_stats is JSON with a ``system`` object)."""
+    try:
+        stats = json.loads(setup._get(f'{base}/system_stats'))
+    except Exception:  # noqa: BLE001 - any failure means "not shown to be ComfyUI"
+        return False
+    return isinstance(stats, dict) and isinstance(stats.get('system'), dict)
+
+
+def _comfyui_not_ace(base, checks) -> dict:
+    # People reach ACE-Step 1.5 through ComfyUI and pick "ACE-Step server" for it; say where it is.
+    checks.append(_check('ComfyUI', True, '/system_stats answered'))
+    return _problem(
+        'ace_server', base, 'is_comfyui',
+        'This address is a ComfyUI, not an ACE-Step server. Choose ComfyUI above: the ACE-Step 1.5 '
+        'it can run is listed there.', checks)
+
+
 def _test_ace_server(base, checks) -> dict:
     try:
         payload = json.loads(setup._get(f'{base}/health'))
     except urllib.error.HTTPError as exc:
         checks.append(_check('/health', False, f'HTTP {exc.code}'))
+        if _answers_as_comfyui(base):
+            return _comfyui_not_ace(base, checks)
         return _problem(
             'ace_server', base, 'not_ace',
             'That address answered, but it is not an ACE-Step server (its /health did not '
@@ -329,6 +349,8 @@ def _test_ace_server(base, checks) -> dict:
 
     if not isinstance(payload, dict):
         checks.append(_check('/health', False, 'unexpected /health body'))
+        if _answers_as_comfyui(base):
+            return _comfyui_not_ace(base, checks)
         return _problem(
             'ace_server', base, 'not_ace',
             'That address answered, but it did not answer like an ACE-Step server.', checks)

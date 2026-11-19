@@ -226,8 +226,8 @@ Full detail is in [CONFIGURATION.md](CONFIGURATION.md). The defaults:
 | `export_dir` | `""` → `~/Music/Hermes Music Studio` |
 | `ace_runtime_dir`, `ace_source_dir`, `ace_remote_url` | `""` |
 | `minimax.steps` | `30` |
-| `minimax.cfg` | `4.0` |
-| `minimax.cfg_scale` | `1.5` |
+| `minimax.cfg` | `1.7` |
+| `minimax.cfg_scale` | `1.7` |
 | `minimax.top_k` | `50` |
 | `minimax.sampler` | `euler` |
 | `minimax.scheduler` | `simple` |

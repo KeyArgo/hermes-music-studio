@@ -651,6 +651,10 @@ class Store:
         # `bump=False` is for bookkeeping that is not a draft edit — remembering
         # that a person liked a take must not revoke their approval of the text.
         previous = project.get('updated_at')
+        # When the song was made. A song saved before this field existed keeps no guess here; the page
+        # falls back to its first take (see songMadeAt in app.js).
+        if 'created_at' not in project and previous is None:
+            project['created_at'] = time.time()
         if bump:
             stamp = time.time()
             if type(previous) in (int, float) and stamp <= previous:

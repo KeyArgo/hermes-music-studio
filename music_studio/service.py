@@ -1077,7 +1077,7 @@ def library_info():
     return {'success': True, **_library_payload()}
 
 
-_LIBRARY_SKIP = ('engine-settings.json', 'library.json', 'studio-host.json', 'studio-host.log')
+_LIBRARY_SKIP = ('engine-settings.json', 'library.json', 'studio-host.json', 'studio-host.log', 'logs')
 
 
 def _files_identical(left, right):
@@ -1220,6 +1220,7 @@ def duplicate_project(project_id, title=None):
         base_title = (title or source.get('title') or 'Untitled').strip() or 'Untitled'
         clone['title'] = base_title + ' (copy)'
         clone['approved'] = False
+        clone['created_at'] = time.time()   # the copy is a new song, made now
         clone['takes'] = []
         for take in source.get('takes') or []:
             made = copy.deepcopy(take)

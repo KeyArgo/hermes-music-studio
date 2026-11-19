@@ -107,7 +107,7 @@
 </select></label>
 </div>
 <div id="minimax-guidance-row" hidden>
-<label><span>MiniMax music guidance <output id="minimax-guidance-value">1.5</output></span><input type="range" name="minimax_guidance" min="0.5" max="3" step="0.1" value="1.5"></label>
+<label><span>MiniMax music guidance <output id="minimax-guidance-value">1.7</output></span><input type="range" name="minimax_guidance" min="0.5" max="3" step="0.1" value="1.7"></label>
 <p class="hint">Adjusts MiniMax text guidance. ACE-Step turbo does not support adjustable guidance.</p>
 </div>
 </div>
@@ -219,6 +219,9 @@
 <label class="library-search"><span class="sr-only">Search songs</span><input id="library-search" type="search" placeholder="Search titles, styles and lyrics" autocomplete="off"></label>
 <label class="library-sort"><span class="sr-only">Sort</span><select id="library-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="takes">Most takes</option></select></label>
 <span id="library-count" class="hint" aria-live="polite"></span>
+<button id="library-select" class="button secondary" type="button" aria-pressed="false" title="Pick several songs to delete at once">Select</button>
+<button id="library-select-all" class="button secondary" type="button" hidden>Select all shown</button>
+<button id="library-delete-selected" class="button secondary danger" type="button" hidden disabled>Delete selected</button>
 </div>
 <div id="library" class="library" aria-live="polite"></div>
 <p id="library-status" class="message" role="status"></p>

@@ -814,7 +814,7 @@ function capabilityStatus(takes, engineIds = ['ace_local', 'minimax_m3_comfy', '
 }
 
 const takeRow = (doc, engineId) => [...doc.querySelectorAll('#library .take')]
-  .find(row => text(row).includes(engineId));
+  .find(row => row.dataset.engine === engineId);   // the row shows the engine's name; its id is on the row
 
 test('a take whose engine cannot repaint renders the part as a section instead', async t => {
   const { window, calls } = await boot({
