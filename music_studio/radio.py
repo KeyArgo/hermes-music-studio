@@ -29,7 +29,7 @@ from fastapi import HTTPException
 from . import activity, llm_bridge, service
 from .jobs import Jobs
 from .portalock import lock_ex, unlock
-from .store import FIELDS, replace_with_retry
+from .store import FIELDS, read_text_with_retry, replace_with_retry
 
 RADIO_FILE = 'radio.json'
 LOCK_NAME = '.radio.lock'
@@ -52,6 +52,9 @@ BUSY_SECONDS = 5.0
 _FILE_LOCK = threading.RLock()
 _THREAD = None
 _LOCK_HANDLE = None
+# Start, Resume and the restart pickup are one at a time: their checks and the thread they start
+# must not interleave with a second click or a second request.
+_START_LOCK = threading.Lock()
 
 
 def _base():
@@ -64,12 +67,58 @@ def state_path():
 
 
 def read():
-    """The station record, or None when no station has ever run here."""
+    """The station record, or None when no station has ever run here.
+
+    Read with the store's retry: on Windows a reader that arrives while ``_write`` swaps the file in
+    gets a sharing violation, and reading that as "no station" made a running station stop.
+    """
     try:
-        data = json.loads(state_path().read_text(encoding='utf-8'))
+        data = json.loads(read_text_with_retry(state_path()))
+    except FileNotFoundError:
+        return None
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+_STATE_DEPTH = threading.local()
+
+
+class _state_lock:
+    """Serialise read-modify-write of radio.json across threads AND Hermes processes.
+
+    ``_FILE_LOCK`` covers this process; a second Hermes process (a Pause from another profile's
+    window) is covered by an exclusive lock on ``.radio-state.lock``. Re-entrant within a thread.
+    """
+
+    def __enter__(self):
+        _FILE_LOCK.acquire()
+        depth = getattr(_STATE_DEPTH, 'n', 0)
+        _STATE_DEPTH.n = depth + 1
+        self.handle = None
+        if depth == 0:
+            try:
+                path = _base() / '.radio-state.lock'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self.handle = path.open('a')
+                lock_ex(self.handle)
+            except OSError:
+                if self.handle is not None:
+                    self.handle.close()
+                self.handle = None
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if self.handle is not None:
+                try:
+                    unlock(self.handle)
+                finally:
+                    self.handle.close()
+        finally:
+            _STATE_DEPTH.n -= 1
+            _FILE_LOCK.release()
+        return False
 
 
 def _write(state):
@@ -84,7 +133,7 @@ def _write(state):
 
 
 def _change(**fields):
-    with _FILE_LOCK:
+    with _state_lock():
         state = read() or {}
         state.update(fields)
         _write(state)
@@ -100,10 +149,14 @@ def _sentence(exc):
 # -- the single-flight lock -------------------------------------------------
 
 def _take_lock():
-    """Hold ``.radio.lock`` for the station's lifetime, or return None when it is taken."""
+    """Hold ``.radio.lock`` for the station's lifetime, or return None when it is taken.
+
+    Already held in this process means a station owns it: None, never a second handout, or two
+    overlapping Starts would both be told the lock is theirs.
+    """
     global _LOCK_HANDLE
     if _LOCK_HANDLE is not None:
-        return _LOCK_HANDLE
+        return None
     path = _base() / LOCK_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open('a')
@@ -193,7 +246,7 @@ def _count(value, default):
         return default
 
 
-def start(body=None):
+def _start(body=None):
     """Begin a station: one theme, one playlist, one song at a time.
 
     Starting is the person's approval for every song the station writes, so the page says so
@@ -223,7 +276,7 @@ def start(body=None):
 
     from standalone import revamp
 
-    if revamp._client_path() is None:
+    if not revamp.plugin_installed() or revamp._client_path() is None:
         raise ValueError('REVamp is not installed. Radio mode needs it to play what it writes.')
     try:
         revamp._call('GET', '/api/state')
@@ -279,7 +332,7 @@ def start(body=None):
         'started_at': now,
         'updated_at': now,
     }
-    with _FILE_LOCK:
+    with _state_lock():
         _write(state)
     activity.record(base, 'radio started', theme=theme, songs=count, playlist=playlist_name)
     _start_thread(state['station_id'])
@@ -314,7 +367,7 @@ def stop(body=None):
     return snapshot()
 
 
-def resume(body=None):
+def _resume(body=None):
     """Continue from where the station stopped, retrying any append that did not land."""
     state = read() or {}
     if not state:
@@ -329,7 +382,7 @@ def resume(body=None):
 
     from standalone import revamp
 
-    if revamp._client_path() is None:
+    if not revamp.plugin_installed() or revamp._client_path() is None:
         raise ValueError('REVamp is not installed. Radio mode needs it to play what it writes.')
 
     if _thread_alive():
@@ -343,7 +396,7 @@ def resume(body=None):
     return snapshot()
 
 
-def resume_on_load():
+def _resume_on_load():
     """Pick a running station back up after Hermes restarted.
 
     Called from ``register()``. The lock decides: if another process already holds it, this one
@@ -398,7 +451,14 @@ def snapshot():
 # -- the loop ---------------------------------------------------------------
 
 def _running(station_id):
-    state = read() or {}
+    state = read()
+    if state is None:
+        # The record could not be read this instant (a Windows swap in flight): keep going and look
+        # again, rather than stopping a station whose file says it is running.
+        time.sleep(POLL_SECONDS)
+        state = read()
+        if state is None:
+            return True
     return state.get('station_id') == station_id and state.get('state') == 'running'
 
 
@@ -437,13 +497,20 @@ def _loop(station_id):
 
 def _tick(station_id):
     """One step of the station: finish a pending append, close it out, or write another song."""
-    state = read() or {}
+    state = read()
+    if state is None:
+        time.sleep(POLL_SECONDS)   # unreadable this instant; never read as "0 of 0 done"
+        return True
     if not _revamp_present():
         _pause('REVamp is not answering; resume when it is running.')
         return False
     pending = _pending_append(state)
     if pending is not None:
         return _append_pending(state, pending)
+    if state.get('current_take_id') and state.get('current_project_id'):
+        # A take was queued before Hermes restarted: finish that song instead of writing another.
+        return _finish_song(state, state['current_project_id'], state['current_take_id'],
+                            state.get('current_title'))
     if _count(state.get('done'), 0) >= _count(state.get('target_count'), 0):
         _close('finished')
         return False
@@ -454,7 +521,7 @@ def _revamp_present():
     """True while REVamp is installed AND answering, so no song is written into a dead player."""
     from standalone import revamp
 
-    if revamp._client_path() is None:
+    if not revamp.plugin_installed() or revamp._client_path() is None:
         return False
     try:
         revamp._call('GET', '/api/state')
@@ -487,14 +554,29 @@ def _one_song(state):
 
     result = _render(project['project_id'], state.get('engine_id'), station_id,
                      project.get('title'))
+    return _after_render(state, project['project_id'], project.get('title'), result)
+
+
+def _finish_song(state, project_id, take_id, title):
+    """Wait for a take that is already queued, then export and append it like any other song."""
+    return _after_render(state, project_id, title, _wait_for_take(project_id, take_id))
+
+
+def _after_render(state, project_id, title, result):
+    station_id = state.get('station_id')
+    project = {'project_id': project_id, 'title': title}
     if result['state'] == 'succeeded':
         pass
     elif result['state'] == 'stopped':
         # Pause or stop landed before anything was queued.
         return False
-    elif result['state'] == 'cancelled' and not _running(station_id):
-        # Stop or pause landed while the take was queued; the person asked for this.
-        return False
+    elif result['state'] == 'cancelled':
+        # Stop cancelled the queued take: the person asked for that, so it is no strike. A resumed
+        # station clears it and writes the next song.
+        if not _running(station_id):
+            return False
+        _change(current_project_id=None, current_take_id=None, current_title=None)
+        return True
     else:
         return _counted_failure(result['error'] or 'The render did not finish.')
 
@@ -511,7 +593,7 @@ def _one_song(state):
             'exported_path': written['path'],
             'track_id': _track_id(written['path']),
             'appended': False}
-    with _FILE_LOCK:
+    with _state_lock():
         fresh = read() or {}
         fresh.setdefault('songs', []).append(song)
         # Persisted before the append: a REVamp that stops answering resumes from this file and
@@ -583,20 +665,31 @@ def _render(project_id, engine_id, station_id, title):
         except ValueError as exc:
             if 'GPU busy' not in str(exc):
                 return {'take_id': None, 'state': 'failed', 'error': _sentence(exc)}
-            # Another render owns the GPU. Wait for it rather than burning a strike on it.
+            # Another render owns the GPU. Wait for it rather than burning a strike on it, and let a
+            # render whose worker died release the GPU: with no page open nothing else checks.
+            _reconcile()
             time.sleep(BUSY_SECONDS)
         except Exception as exc:  # noqa: BLE001 - engine trouble is a strike, not a crash
             return {'take_id': None, 'state': 'failed', 'error': _sentence(exc)}
 
     take_id = take['take_id']
     _change(current_take_id=take_id, current_title=title)
+    return _wait_for_take(project_id, take_id)
+
+
+def _reconcile():
+    """Fail takes whose worker is gone; live workers are never touched. Best effort."""
+    try:
+        Jobs(service.store()).reconcile_dead_workers()
+    except Exception:  # noqa: BLE001 - a failed check is retried on the next poll
+        pass
+
+
+def _wait_for_take(project_id, take_id):
     while True:
         # With no page open nothing else polls status, so a worker that died would leave this take
-        # "running" for ever. The same check the status poll runs; live workers are never touched.
-        try:
-            Jobs(service.store()).reconcile_dead_workers()
-        except Exception:  # noqa: BLE001 - a failed check is retried on the next poll
-            pass
+        # "running" for ever. The same check the status poll runs.
+        _reconcile()
         row = _take(project_id, take_id)
         if not row:
             return {'take_id': take_id, 'state': 'failed',
@@ -663,7 +756,7 @@ def _already_listed(items, track_id):
 
 def _mark_appended(take_id):
     """Mark the song in the playlist, count it, and clear the song in flight."""
-    with _FILE_LOCK:
+    with _state_lock():
         state = read() or {}
         for song in state.get('songs') or []:
             if song.get('take_id') == take_id:
@@ -681,7 +774,7 @@ def _mark_appended(take_id):
 
 def _counted_failure(sentence):
     """One strike toward the three-strike pause. True means the loop may try again."""
-    with _FILE_LOCK:
+    with _state_lock():
         state = read() or {}
         count = _count(state.get('consecutive_failures'), 0) + 1
         state['consecutive_failures'] = count
@@ -700,7 +793,7 @@ def _counted_failure(sentence):
 
 
 def _pause(sentence):
-    with _FILE_LOCK:
+    with _state_lock():
         state = read() or {}
         state['state'] = 'paused'
         state['last_error'] = sentence
@@ -709,7 +802,7 @@ def _pause(sentence):
 
 
 def _close(name):
-    with _FILE_LOCK:
+    with _state_lock():
         state = read() or {}
         state['state'] = name
         state['last_error'] = None
@@ -719,3 +812,32 @@ def _close(name):
         _write(state)
     if name == 'finished':
         activity.record(_base(), 'radio finished', songs=state.get('done'))
+
+
+def _one_at_a_time(action, *args):
+    if not _START_LOCK.acquire(blocking=False):
+        raise ValueError('The station is already starting. Try again in a moment.')
+    try:
+        return action(*args)
+    finally:
+        _START_LOCK.release()
+
+
+def start(body=None):
+    """Begin a station (see ``_start``), one Start at a time."""
+    return _one_at_a_time(_start, body)
+
+
+def resume(body=None):
+    """Continue a paused or stopped station (see ``_resume``), one at a time."""
+    return _one_at_a_time(_resume, body)
+
+
+def resume_on_load():
+    """Pick a running station back up after a restart (see ``_resume_on_load``)."""
+    if not _START_LOCK.acquire(blocking=False):
+        return False
+    try:
+        return _resume_on_load()
+    finally:
+        _START_LOCK.release()

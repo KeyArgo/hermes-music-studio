@@ -153,6 +153,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr('music_studio.settings.read', lambda base: {'export_dir': str(music)})
     monkeypatch.setattr(revamp, '_call', world.revamp.call)
     monkeypatch.setattr(revamp, '_client_path', lambda: '/opt/revampctl')
+    monkeypatch.setattr(revamp, 'plugin_installed', lambda: True)
     monkeypatch.setattr(revamp, '_ensure_library_folder',
                         lambda folder: world.folders.append(folder))
     # The engine probe talks to a real server; the station's own refusal is a separate test.
@@ -474,3 +475,124 @@ def test_a_worker_that_dies_with_no_page_open_does_not_hang_the_station(world, m
     start_world(target_count=2)
     assert wait_for(lambda: (radio.read() or {}).get('consecutive_failures', 0) >= 1)
     assert 'worker died' in (radio.read() or {}).get('last_error', '')
+
+
+def test_status_says_installed_separately_from_answering(monkeypatch):
+    # The page shows REVamp's own screen only when it is installed, and a different sentence when
+    # it is installed but closed; "not installed" must not be said about a REVamp that is there.
+    # A client left in ~/.local/bin after REVamp was removed is not REVamp.
+    monkeypatch.setattr(revamp, '_client_path', lambda: '/home/me/.local/bin/revampctl')
+    monkeypatch.setattr(revamp, 'plugin_installed', lambda: False)
+    missing = revamp.status()
+    assert missing['installed'] is False and missing['available'] is False
+    assert 'not installed' in missing['reason']
+
+    monkeypatch.setattr(revamp, 'plugin_installed', lambda: True)
+
+    def down(method, path, body=None):
+        raise HTTPException(503, 'down')
+
+    monkeypatch.setattr(revamp, '_call', down)
+    closed = revamp.status()
+    assert closed['installed'] is True and closed['available'] is False
+    assert 'not answering' in closed['reason'] and 'not installed' not in closed['reason']
+
+    monkeypatch.setattr(revamp, '_call', lambda method, path, body=None: {'live': {'player_connected': True}})
+    live = revamp.status()
+    assert live == {'installed': True, 'available': True, 'player_connected': True}
+
+
+def test_plugin_installed_means_the_plugin_folder_not_a_leftover_client(tmp_path, monkeypatch):
+    monkeypatch.delenv('HERMES_MUSIC_REVAMPCTL', raising=False)
+    home = tmp_path / 'hermes'
+    monkeypatch.setattr(revamp, '_hermes_homes', lambda: [home])
+    assert revamp.plugin_installed() is False
+    (home / 'plugins' / 'revamp').mkdir(parents=True)
+    (home / 'plugins' / 'revamp' / 'plugin.yaml').write_text('name: revamp\n')
+    assert revamp.plugin_installed() is True
+
+
+# -- bug hunt round: each test failed before its fix ------------------------
+
+def test_two_overlapping_starts_run_one_station(world):
+    # Two clicks, or two requests in flight: the second must be refused, never a second loop.
+    import threading as _threading
+    gate = _threading.Event()
+    world.render.gate = gate
+    start_world(target_count=2)
+    with pytest.raises(ValueError):
+        start_world(target_count=2)
+    # The lock is not handed out twice inside one process either.
+    assert radio._take_lock() is None
+    gate.set()
+    assert wait_for(lambda: (radio.read() or {}).get('state') == 'finished')
+    assert world.render.calls == 2
+
+
+def test_a_take_in_flight_before_a_restart_is_finished_not_replaced(world):
+    # Hermes died after the take was queued: the restarted station exports that take, and does
+    # not draft and render a different song in its place.
+    from music_studio.store import Store  # noqa: F401 - the real store behind service.store()
+    store = service.store()
+    project = store.create(title='Before restart', caption='folk', lyrics='[verse]\nla')
+    store.approve(project['project_id'], base_updated_at=project['updated_at'])
+    jobs = Jobs(store)
+    take = jobs.enqueue(project['project_id'], 5, engine_id='ace_local')
+    jobs.claim(project['project_id'], take['take_id'], os.getpid())
+    jobs.succeed(project['project_id'], take['take_id'], tiny_wav())
+    world.revamp.playlists.append({'id': 'pl1', 'name': 'Drive mix', 'items': []})
+    radio._write({'station_id': 's1', 'state': 'running', 'theme': 'folk', 'instrumental': False,
+                  'engine_id': 'ace_local', 'target_count': 1, 'done': 0,
+                  'playlist_name': 'Drive mix', 'playlist_id': 'pl1',
+                  'folder': str(world.music / 'Radio - Drive mix'), 'songs': [],
+                  'current_project_id': project['project_id'], 'current_take_id': take['take_id'],
+                  'current_title': 'Before restart', 'consecutive_failures': 0})
+    (world.music / 'Radio - Drive mix').mkdir()
+    assert radio.resume_on_load() is True
+    assert wait_for(lambda: (radio.read() or {}).get('state') == 'finished')
+    state = radio.read()
+    assert [song['take_id'] for song in state['songs']] == [take['take_id']]
+    assert world.prompts == [], 'no new song was drafted in its place'
+    assert world.render.calls == 0
+
+
+def test_an_unreadable_record_does_not_finish_or_stop_the_station(world, monkeypatch):
+    # On Windows a read can lose to the os.replace of a write. That instant must not read as
+    # "0 of 0 songs done" (finished) or as "not running" (stop).
+    real = radio.read
+    misses = {'n': 0}
+
+    def flaky():
+        if misses['n'] < 3:
+            misses['n'] += 1
+            return None
+        return real()
+
+    start_world(target_count=1, theme='Flaky disk folk')
+    monkeypatch.setattr(radio, 'read', flaky)
+    assert wait_for(lambda: (real() or {}).get('state') in ('finished', 'paused'))
+    assert (real() or {}).get('state') == 'finished'
+    assert (real() or {}).get('done') == 1
+
+
+def test_a_cancelled_take_after_stop_is_no_strike_on_resume(world):
+    store = service.store()
+    project = store.create(title='Cancelled', caption='folk', lyrics='[verse]\nla')
+    store.approve(project['project_id'], base_updated_at=project['updated_at'])
+    jobs = Jobs(store)
+    take = jobs.enqueue(project['project_id'], 5, engine_id='ace_local')
+    jobs.cancel_queued(project['project_id'])
+    world.revamp.playlists.append({'id': 'pl1', 'name': 'Drive mix', 'items': []})
+    radio._write({'station_id': 's2', 'state': 'stopped', 'theme': 'folk', 'instrumental': False,
+                  'engine_id': 'ace_local', 'target_count': 1, 'done': 0,
+                  'playlist_name': 'Drive mix', 'playlist_id': 'pl1',
+                  'folder': str(world.music / 'Radio - Drive mix'), 'songs': [{'title': 'x', 'appended': True, 'take_id': 'old'}],
+                  'current_project_id': project['project_id'], 'current_take_id': take['take_id'],
+                  'current_title': 'Cancelled', 'consecutive_failures': 0})
+    (world.music / 'Radio - Drive mix').mkdir()
+    radio._change(done=0)
+    radio.resume()
+    assert wait_for(lambda: (radio.read() or {}).get('state') in ('finished', 'paused'))
+    state = radio.read()
+    assert state['last_error'] is None, state['last_error']
+    assert state['consecutive_failures'] == 0

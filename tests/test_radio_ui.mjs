@@ -109,7 +109,7 @@ test('Radio appears with REVamp and says what the station is doing', async t => 
   const doc = window.document;
   assert.equal(doc.getElementById('radio-panel').hidden, false);
   assert.match(text(doc.getElementById('radio-status')), /Song 3 of 10: Night Drive/);
-  assert.equal(doc.querySelectorAll('#radio-songs .project').length, 2, 'the songs added so far');
+  assert.equal(doc.querySelectorAll('#radio-songs .compact-row').length, 2, 'the songs added so far, one line each');
   assert.equal(doc.getElementById('radio-pause').hidden, false, 'a running station can be paused');
 });
 

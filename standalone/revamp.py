@@ -33,6 +33,19 @@ def _hermes_homes():
     return [home] if home else []
 
 
+def plugin_installed():
+    """Is the REVamp plugin itself installed in this Hermes home?
+
+    Not the same as finding ``revampctl``: on Linux and macOS the client is copied to
+    ``~/.local/bin`` and stays there after the plugin is removed, so a found client alone would keep
+    offering a REVamp screen for a player that is gone. An explicit client override still counts.
+    """
+    override = os.environ.get('HERMES_MUSIC_REVAMPCTL')
+    if override and Path(override).is_file():
+        return True
+    return any((home / 'plugins' / 'revamp' / 'plugin.yaml').is_file() for home in _hermes_homes())
+
+
 def _client_path():
     """Locate REVamp's installed ``revampctl`` client, or None.
 
@@ -123,14 +136,21 @@ def _track(track: Track):
 @router.get('/studio/revamp/status')
 def status():
     """REVamp is optional: report it plainly instead of failing the whole screen."""
+    # ``installed`` decides whether the page shows a REVamp menu at all; ``available`` whether it
+    # answers right now. A REVamp that is installed but closed is a different sentence.
+    if not plugin_installed():
+        return {'installed': False, 'available': False, 'player_connected': False,
+                'reason': 'REVamp is not installed. Music Studio works on its own — you can '
+                          'still play and export your takes.'}
     try:
         state = _call('GET', '/api/state')
     except HTTPException:
-        return {'available': False, 'player_connected': False,
-                'reason': 'REVamp is not installed. Music Studio works on its own — you can '
-                          'still play and export your takes.'}
+        return {'installed': True, 'available': False, 'player_connected': False,
+                'reason': 'REVamp is installed but not answering. Open REVamp in Hermes, then '
+                          'come back here.'}
     live = state.get('live', {}) if isinstance(state, dict) else {}
-    return {'available': True, 'player_connected': bool(live.get('player_connected'))}
+    return {'installed': True, 'available': True,
+            'player_connected': bool(live.get('player_connected'))}
 
 @router.get('/studio/revamp/tracks')
 def tracks(q: str = ''):

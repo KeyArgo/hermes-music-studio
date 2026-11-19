@@ -346,12 +346,14 @@ test('a missing REVamp is never asked for its added list', async t => {
   await new Promise(resolve => setTimeout(resolve, 40));
   assert.ok(!calls.some(c => c.path === '/api/studio/revamp/added'),
     'no list is requested from a REVamp that is not there');
-  assert.match(text(doc.getElementById('revamp-status')), /not installed/i);
-  assert.match(text(doc.getElementById('revamp-added')), /Nothing added yet/);
+  // Without REVamp the menu opens the page about getting it, never REVamp's own screen.
+  assert.equal(doc.getElementById('listen-view').hidden, true);
+  assert.equal(doc.getElementById('promo-view').hidden, false);
 });
 
 test('Add to REVamp hands the take over without a playlist picker', async t => {
-  const { window, calls } = await boot();
+  // The button exists only where REVamp is installed.
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, available: true } });
   t.after(() => window.close());
   const doc = window.document;
   const add = [...doc.querySelectorAll('button')].find(b => /Add to REVamp/.test(text(b)));

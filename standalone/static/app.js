@@ -342,10 +342,14 @@ function applyEngineLimits() {
     else if (value < min) field.value = String(min);
   }
 }
+// Set by syncRevampNav from the server's answer; false until it has answered.
+let revampInstalled = false;
 function show(view) {
   // Compute became the Music engines page; older callers still ask for 'compute'.
   if (view === 'compute') view = 'engines';
-  for (const name of ['create','library','workspaces','engines','listen']) {
+  // REVamp's screen never opens without REVamp, whoever asks for it: the page about getting it does.
+  if (view === 'listen' && !revampInstalled) { view = 'promo'; if (typeof paintPromo === 'function') paintPromo(); }
+  for (const name of ['create','library','workspaces','engines','listen','promo']) {
     const viewEl = $(name+'-view') || (name === 'engines' ? $('compute-view') : null);
     if (viewEl) viewEl.hidden = view !== name;
     const navEl = $('nav-'+name) || (name === 'engines' ? $('nav-compute') : null);
@@ -1113,7 +1117,7 @@ function library() {
       const exp=el('button','Export','button secondary');exp.type='button';
       exp.addEventListener('click', async()=>{try{const folder=(($('settings-export-dir')||{}).value||'').trim();const d=await api('/export',{project_id:p.project_id,take_id:t.take_id,title:p.title||'Music Studio take',folder:folder||undefined});libMessage(`Exported to ${d.path}`);}catch(err){libMessage(err.message,true);}});
       row.append(exp);
-      const add=el('button','Add to REVamp');add.type='button';add.onclick=async()=>{try{add.disabled=true;const chosen=(($('revamp-playlist')||{}).value||'').trim();await api('/studio/revamp/add-take',{project_id:p.project_id,take_id:t.take_id,...(chosen?{playlist_id:chosen}:{})});add.textContent='Added ✓';$('revamp-status').textContent=`${p.title || 'Untitled'} · take ${i+1} is in REVamp.`;show('listen');loadRevamp();}catch(err){add.disabled=false;$('revamp-status').textContent=err.message;show('listen');}};row.append(add); }
+      if (revampInstalled) { const add=el('button','Add to REVamp');add.type='button';add.onclick=async()=>{try{add.disabled=true;const chosen=(($('revamp-playlist')||{}).value||'').trim();await api('/studio/revamp/add-take',{project_id:p.project_id,take_id:t.take_id,...(chosen?{playlist_id:chosen}:{})});add.textContent='Added ✓';$('revamp-status').textContent=`${p.title || 'Untitled'} · take ${i+1} is in REVamp.`;show('listen');loadRevamp();}catch(err){add.disabled=false;$('revamp-status').textContent=err.message;show('listen');}};row.append(add); } }
       tidyTakeRow(row); card.append(row); }); container.append(card);
   });
   if (empty.length) {
@@ -2330,15 +2334,7 @@ async function loadRevamp(){
     const data = await api('/studio/revamp/added').catch(() => ({ items: [] }));
     const items = data.items || [];
     revampItems = items;
-    box.replaceChildren();
-    if (!items.length) {
-      box.append(el('p','Nothing added yet. Open a draft in Library and press “Add to REVamp”.'));
-      return;
-    }
-    items.forEach(item => {
-      const row = el('article', '', 'project');
-      row.append(el('h2', item.title || 'Music Studio take'));
-      row.append(el('p', item.artist || 'Hermes Music Studio', 'hint'));
+    compactList(box, items, item => {
       const playHere = el('button','▶ Play here','button secondary'); playHere.type='button';
       playHere.onclick = () => {
         const url = (item.playback && item.playback.url) || '';
@@ -2349,9 +2345,8 @@ async function loadRevamp(){
       };
       const remove = el('button','Remove','button secondary'); remove.type='button';
       remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id}); await loadRevamp(); $('revamp-status').textContent='Removed from REVamp.'; } catch (err) { $('revamp-status').textContent = err.message; } };
-      row.append(playHere, remove);
-      box.append(row);
-    });
+      return { title: item.title || 'Music Studio take', detail: item.artist || 'Hermes Music Studio', actions: [playHere, remove] };
+    }, 'Nothing added yet. Open a draft in Library and press “Add to REVamp”.');
   } catch (err) {
     box.replaceChildren(el('p', err.message, 'message error'));
   }
@@ -2373,16 +2368,13 @@ function renderRadio(data) {
   $('radio-pause').hidden = state !== 'running';
   $('radio-resume').hidden = !(state === 'paused' || (state === 'stopped' && done > 0 && (target === 0 || done < target)));
   $('radio-stop').hidden = !(state === 'running' || state === 'paused');
-  const box = $('radio-songs');
-  box.replaceChildren();
   const songs = (station.songs || []).filter(song => song && song.title);
-  if (!songs.length) { box.append(el('p', 'No songs added yet.')); return; }
-  songs.forEach(song => {
-    const row = el('article', '', 'project');
-    row.append(el('h2', song.title));
-    row.append(el('p', song.appended ? 'In the playlist' : 'Waiting for REVamp', 'hint'));
-    box.append(row);
-  });
+  const box = $('radio-songs');
+  // The filter the person is typing in survives the 3 s poll: only redraw when the list changed.
+  const key = songs.map(song => `${song.take_id}:${song.appended ? 1 : 0}`).join('|');
+  if (box.dataset.key === key && box.childElementCount) return;
+  box.dataset.key = key;
+  compactList(box, songs, song => ({ title: song.title, detail: song.appended ? 'In the playlist' : 'Waiting for REVamp', actions: [] }), 'No songs added yet.');
 }
 async function loadRadio() {
   const panel = $('radio-panel');
@@ -2438,7 +2430,114 @@ if ($('revamp-create')) $('revamp-create').addEventListener('click', async () =>
     $('revamp-status').textContent = `“${name}” created in REVamp — ${(data.files || []).length} file(s) in ${data.folder}.`;
   } catch (err) { $('revamp-status').textContent = err.message; }
 });
-$('nav-listen').onclick=()=>{show('listen');loadRevamp();};
+// One menu entry, two pages: REVamp's own screen when it is installed, and the page that says why
+// it is worth installing when it is not.
+$('nav-listen').onclick=()=>{
+  if (revampInstalled) { show('listen'); loadRevamp(); }
+  else { show('promo'); paintPromo(); }
+};
+// The REVamp menu exists only where REVamp is installed: hidden until the server says it is, and
+// hidden again if it is removed while this page is open.
+async function syncRevampNav() {
+  let status = {};
+  try { status = await api('/studio/revamp/status'); } catch { status = {}; }
+  const installed = status.installed === true || (status.installed === undefined && status.available === true);
+  const changed = revampInstalled !== installed;
+  revampInstalled = installed;
+  // The Library draws "Add to REVamp" only when REVamp is there: redraw once the answer is in.
+  if (changed && projects.length && typeof renderLibrary === 'function') renderLibrary();
+  const nav = $('nav-listen');
+  if (nav) {
+    nav.hidden = false;
+    const label = nav.querySelector('span');
+    if (label) label.textContent = installed ? 'REVamp' : 'Get REVamp';
+  }
+  // The REVamp screen is never shown without REVamp: an open one becomes the page about getting it.
+  if (!installed && $('listen-view') && !$('listen-view').hidden) { show('promo'); paintPromo(); }
+  return status;
+}
+syncRevampNav();
+
+const REVAMP_PAGE = 'https://github.com/KeyArgo/hermes-revamp';
+const REVAMP_PROMO = {
+  // Every line is a feature REVamp ships today (its README's feature list); nothing here is a promise.
+  headline: 'Your songs deserve a real player',
+  subhead: 'REVamp is a free Winamp-style music player for Hermes, from the same maker as Music Studio.',
+  together: [
+    'Press “Add to REVamp” and the song is in your player.',
+    'Send a whole playlist of your takes over in one step.',
+    'Radio mode writes new songs on your theme into a playlist that keeps playing.',
+  ],
+  features: [
+    'MilkDrop visuals that move with the songs you make.',
+    'A mini player, a side pane, a pop-out window, or full screen.',
+    'Your music, audiobooks and playlists in one searchable library.',
+    'Internet radio ranked by listener votes, by genre, country and language.',
+    'Classic Winamp skins, or one-tap Looks with an animated backdrop.',
+  ],
+  button: 'Get REVamp',
+};
+function paintPromo() {
+  $('promo-headline').textContent = REVAMP_PROMO.headline;
+  $('promo-subhead').textContent = REVAMP_PROMO.subhead;
+  $('promo-together').replaceChildren(...REVAMP_PROMO.together.map(line => el('li', line)));
+  $('promo-features').replaceChildren(...REVAMP_PROMO.features.map(line => el('li', line)));
+  $('promo-get').textContent = REVAMP_PROMO.button;
+}
+$('promo-get').onclick = () => openLink(REVAMP_PAGE);
+$('promo-copy').onclick = async () => {
+  const command = $('promo-command').textContent;
+  const copied = await copyText(command);
+  $('promo-message').textContent = copied ? 'Copied. Paste it into a terminal, then restart Hermes.' : command;
+};
+$('promo-check').onclick = async () => {
+  $('promo-message').textContent = 'Checking…';
+  await syncRevampNav();
+  if (revampInstalled) { show('listen'); loadRevamp(); $('promo-message').textContent = ''; }
+  else $('promo-message').textContent = 'Not found yet. If you just installed it, restart Hermes and check again.';
+};
+
+// Hundreds of songs must stay easy to scan: one line per song, a count, and a filter once the list
+// is long enough to need one. ``rowFor`` returns the line's text and its small buttons.
+function compactList(box, items, rowFor, emptyText) {
+  box.replaceChildren();
+  if (!items.length) { box.append(el('p', emptyText, 'hint')); return; }
+  const head = el('div', '', 'compact-head');
+  const count = el('span', '', 'hint');
+  head.append(count);
+  let filter = null;
+  if (items.length > 8) {
+    filter = document.createElement('input');
+    filter.type = 'search';
+    filter.className = 'compact-filter';
+    filter.placeholder = 'Filter songs';
+    filter.setAttribute('aria-label', 'Filter songs');
+    head.append(filter);
+  }
+  const list = el('ul', '', 'compact-list');
+  const rows = items.map(item => {
+    const { title, detail, actions } = rowFor(item);
+    const li = el('li', '', 'compact-row');
+    li.dataset.search = String(title || '').toLowerCase();
+    const text = el('span', '', 'compact-text');
+    text.append(el('span', title, 'compact-title'));
+    if (detail) text.append(el('span', detail, 'compact-detail'));
+    const buttons = el('span', '', 'compact-actions');
+    (actions || []).forEach(button => { button.classList.add('compact-button'); buttons.append(button); });
+    li.append(text, buttons);
+    list.append(li);
+    return li;
+  });
+  const paint = () => {
+    const needle = filter ? filter.value.trim().toLowerCase() : '';
+    let shown = 0;
+    rows.forEach(li => { const on = !needle || li.dataset.search.includes(needle); li.hidden = !on; if (on) shown += 1; });
+    count.textContent = needle ? `${shown} of ${items.length} songs` : `${items.length} song${items.length === 1 ? '' : 's'}`;
+  };
+  if (filter) filter.addEventListener('input', paint);
+  paint();
+  box.append(head, list);
+}
 if ($('play-sample')) $('play-sample').addEventListener('click', playDemo);
 // The old playlist picker is gone: a take goes to the studio's own REVamp list.
 $('manage-targets').onclick=async()=>{show('compute');wireEnginesPage();await loadEngines().catch(()=>{});await refreshTargets();await refreshWorkflows();await loadHardware(true);};

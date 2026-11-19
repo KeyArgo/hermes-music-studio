@@ -288,3 +288,19 @@ svg.brandmark{display:block;width:40px;height:40px;background:none;border-radius
 /* Copying the conversation: the pane is a sandboxed frame, so the page has to keep the text
    selectable itself (a right-click or drag selects it, and the menu above copies it). */
 .idea-messages,.idea-messages p{user-select:text;-webkit-user-select:text}
+
+/* Compact song lists: one line per song, so hundreds stay easy to scan. */
+.compact-head{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0}
+.compact-filter{flex:1 1 180px;max-width:280px}
+.compact-list{list-style:none;margin:0;padding:0;max-height:420px;overflow-y:auto;border:1px solid var(--line, rgba(127,127,127,.25));border-radius:8px}
+.compact-row{display:flex;align-items:center;gap:10px;padding:5px 10px;min-height:34px;border-bottom:1px solid var(--line, rgba(127,127,127,.15))}
+.compact-row:last-child{border-bottom:0}
+.compact-row[hidden]{display:none}
+.compact-text{display:flex;gap:10px;align-items:baseline;min-width:0;flex:1}
+.compact-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.compact-detail{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.7;font-size:.9em}
+.compact-actions{display:flex;gap:6px;flex:none}
+.compact-button{padding:2px 10px;font-size:.85em}
+.promo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px}
+.promo-list{margin:12px 0 0;padding-left:20px;display:grid;gap:10px;color:var(--ink);font-size:14px;line-height:1.5}
+.promo-install .about-code{white-space:pre-wrap;word-break:break-all}
