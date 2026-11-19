@@ -20,7 +20,6 @@ reviewed and verified before it was merged:
 
 | Model | Worked on |
 |---|---|
-| Claude (Anthropic) | The public-readiness audit that produced the "not ready" verdict and the silent-failure findings, the loopback studio host, the desktop pane |
 | Codex (OpenAI) | The publish-blocker audit, engine and settings plumbing, static-analysis remediation |
 | DeepSeek-V4.1-Flash | Refactors, test scaffolding and bug sweeps on the DGX Spark lanes |
 | Qwen 3.8 | Test scaffolding and small fixes on the DGX Spark lanes |
