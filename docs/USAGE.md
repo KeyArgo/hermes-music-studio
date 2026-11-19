@@ -155,7 +155,7 @@ The **Music engines** page (left menu) has three ways to get an engine. Each but
 
 #### Use a server I already have
 
-Point at any ComfyUI running MiniMax Music 3 or any ACE-Step HTTP server you already run:
+Point at any ComfyUI running MiniMax Music 3 or any ACE-Step HTTP server you already run. Not sure of the address? [GETTING-STARTED.md](GETTING-STARTED.md#finding-the-address) shows how to find it on Windows, Mac and Linux.
 
 1. Type the address, for example `http://192.168.1.50:8188` (include `http://` or `https://` and the port number).
 2. Press **Test this address**. The studio asks the server which music models it can run.
