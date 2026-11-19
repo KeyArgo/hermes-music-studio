@@ -14,6 +14,7 @@ import tempfile
 import time
 import uuid
 import wave
+from . import activity
 from .childenv import minimal_env
 from .store import (EXTEND_MAX_OVERLAP_SECONDS, EXTEND_MAX_SECONDS,
                     EXTEND_MIN_SECONDS, EXTEND_SOURCE_MIN_SECONDS, FIELDS,
@@ -622,6 +623,8 @@ class Jobs:
                 raise ValueError('invalid transition')
             take['state'] = 'running'
             take['started_at'] = take.get('started_at') or time.time()
+            activity.record(activity.data_dir(), 'render started', song=project_id, take=take_id,
+                            engine=take.get('engine_id'))
             take['progress'] = take.get('progress') or 0
             if pid is not None:
                 if type(pid) is not int or pid <= 0:
@@ -659,6 +662,8 @@ class Jobs:
             if take['state'] != 'running':
                 raise ValueError('invalid transition')
             take.update(state='failed', error=error, finished_at=time.time())
+            activity.record(activity.data_dir(), 'render failed', song=project_id, take=take_id,
+                            engine=take.get('engine_id'), error=error)
             self.store.save_take(p)
             return take
 
@@ -672,6 +677,8 @@ class Jobs:
             if take['state'] not in ('queued', 'running'):
                 raise ValueError('invalid transition')
             take.update(state='failed', error=error, audio_file=None, finished_at=time.time())
+            activity.record(activity.data_dir(), 'render stopped', song=project_id, take=take_id,
+                            engine=take.get('engine_id'), error=error)
             self.store.save_take(p)
             return take
 
@@ -746,6 +753,9 @@ class Jobs:
                 take.update(state='succeeded', audio_file=name, error=None,
                             finished_at=time.time(), progress=100,
                             metadata=copy.deepcopy(metadata))
+                activity.record(activity.data_dir(), 'render finished', song=project_id, take=take_id,
+                                engine=take.get('engine_id'),
+                                seconds=round(time.time() - (take.get('started_at') or time.time()), 1))
                 if qc_record is not None:
                     take['qc'] = qc_record
                 if edit_record is not None:
@@ -954,6 +964,8 @@ class Jobs:
                     to_reap.append(t.copy())
                     t.update(state='failed', error='worker died', audio_file=None,
                              finished_at=time.time())
+                    activity.record(activity.data_dir(), 'render failed', take=t.get('take_id'),
+                                    engine=t.get('engine_id'), error='worker died')
                     reconciled += 1
                     changed = True
                 if changed:
@@ -1025,6 +1037,8 @@ class Jobs:
                         self._reap_render(t)
                         t.update(state='failed', error='interrupted by restart',
                                  audio_file=None, finished_at=time.time())
+                        activity.record(activity.data_dir(), 'render failed', take=t.get('take_id'),
+                                        engine=t.get('engine_id'), error='interrupted by restart')
                         count += 1
                         changed = True
                 if changed:

@@ -992,6 +992,8 @@ def setup_comfy(body: dict = Depends(json_body)):
     if result.get('ok') and body.get('save', True):
         service.save_settings({'comfy_url': result['url']})
         result['saved'] = True
+        from music_studio import activity
+        activity.record(_studio_data(), 'ACE-Step server saved', url=result['url'])
     return result
 
 
@@ -1104,7 +1106,12 @@ def studio_engines_test(body: dict = Depends(json_body)):
     """Ask an address what it is. Nothing is saved."""
     from music_studio import engine_catalog
 
-    return _page_error(engine_catalog.test_server, body.get('kind'), body.get('url'))
+    result = _page_error(engine_catalog.test_server, body.get('kind'), body.get('url'))
+    if isinstance(result, dict):
+        from music_studio import activity
+        activity.record(_studio_data(), 'engine test', kind=body.get('kind'), url=body.get('url'),
+                        ok=result.get('ok'), problem=result.get('problem'), message=result.get('message'))
+    return result
 
 
 @router.post('/studio/engines')
@@ -1118,9 +1125,14 @@ def studio_engines_add(body: dict = Depends(json_body)):
     from music_studio import engine_catalog
 
     extra = {key: body[key] for key in ('kind', 'resolved') if key in body}
-    return _page_error(engine_catalog.add_engine, _studio_data(),
-                       name=body.get('name'), url=body.get('url'),
-                       models=body.get('models') or [], **extra)
+    result = _page_error(engine_catalog.add_engine, _studio_data(),
+                         name=body.get('name'), url=body.get('url'),
+                         models=body.get('models') or [], **extra)
+    from music_studio import activity
+    activity.record(_studio_data(), 'engine added', name=body.get('name'), url=body.get('url'),
+                    models=','.join(str(m) for m in body.get('models') or []) if isinstance(body.get('models'), list) else '',
+                    ok=not (isinstance(result, dict) and result.get('ok') is False))
+    return result
 
 
 @router.delete('/studio/engines/{target_id}')
@@ -1128,6 +1140,8 @@ def studio_engines_remove(target_id: str):
     """Remove a saved server and the workflows that belong to it."""
     from music_studio import engine_catalog
 
+    from music_studio import activity
+    activity.record(_studio_data(), 'engine removed', id=target_id)
     return _page_error(engine_catalog.remove_engine, _studio_data(), target_id)
 
 

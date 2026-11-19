@@ -22,7 +22,7 @@ computer only; nothing you enter is sent anywhere else, or shipped with the plug
 ## Use a server I already have (5 steps)
 
 1. Open Music Studio and click **Music engines** in the left menu.
-2. Under **Use a server I already have**, type the server's address, for example
+2. Under **Use a server I already have**, choose **ComfyUI** (also for ACE-Step 1.5 running on a ComfyUI), then type the server's address, for example
    `http://192.168.1.50:8188`. (Don't know it? See [Finding the address](#finding-the-address).)
 3. Click **Test this address**.
 4. A list of what that server can play appears, for example **ACE-Step 1.5** and **MiniMax Music 3**.
