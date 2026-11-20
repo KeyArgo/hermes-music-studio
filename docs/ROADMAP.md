@@ -46,6 +46,13 @@ listed in [CHANGELOG.md](../CHANGELOG.md).
 - True "same recording, small changes" on ComfyUI ACE-Step (source audio in, partial denoise): needs the
   node pack checked on a real server first.
 
+### REVamp feed
+- **A playlist that keeps itself up to date**: pick a rule once (every song you mark as a keeper, every
+  new take of a workspace, or the last N songs) and Music Studio adds matching songs to that REVamp
+  playlist as they finish, without pressing Add to REVamp each time. Off until turned on; one rule per
+  playlist; removing a song in Music Studio removes it from the feed.
+- Song lengths and take numbers ("Frostfire Chant · take 2") filled in when a song is handed to REVamp.
+
 ### Reliability
 - After an update, replace the running studio host automatically (through its authenticated close route)
   instead of waiting for Hermes to restart.
