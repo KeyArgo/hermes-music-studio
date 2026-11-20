@@ -196,6 +196,9 @@ h1 em{color:#e8c4a3}.revamp-grid{display:grid;grid-template-columns:minmax(0,1fr
 .take-more summary::-webkit-details-marker{display:none}
 .take-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:grid;gap:4px;min-width:190px;padding:8px;background:#211d23;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 40px #0006}
 .take-menu button{text-align:left;border-radius:7px!important}
+.take-more.up .take-menu{top:auto;bottom:calc(100% + 6px)}
+.studio-toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:6;max-width:min(560px,calc(100vw - 32px));padding:11px 16px;border-radius:10px;background:#2d3125;border:1px solid #5a6148;color:var(--ink);font-size:13px;line-height:1.45;box-shadow:0 12px 40px #0008}
+.studio-toast.error{border-color:#8a5446;color:#f0ac9b}
 .library-empties{justify-self:start}
 
 .demo-callout{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 18px}
