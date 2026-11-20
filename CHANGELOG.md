@@ -110,6 +110,14 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## 1.0.0 — in catalog review
 
+- Add to REVamp copies the take into the export folder and hands REVamp that file, so the song plays in
+  REVamp (REVamp refuses links to this computer, so the old link-based entries never played). Play here
+  plays the studio's own copy. Older entries show Fix for REVamp.
+- Deleting a song or take also removes it from REVamp's playlists; an entry whose song is already gone
+  reads "Deleted in Music Studio" instead of failing in the browser.
+- The More menu on a take closes after a choice, opens upward near the player bar, and every library
+  result shows above the player instead of only at the top of the page.
+
 ### Nous review fixes
 
 - **Drafting goes through the host's own LLM.** `standalone/hermes_worker.py` is gone: it spawned

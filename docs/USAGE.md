@@ -211,8 +211,11 @@ graph is saved per computer, so add it again on the new machine.
 
 Only takes you add appear in the REVamp screen. Create a playlist from exported takes; the studio
 exports the files, adds the folder to REVamp's library, rescans, then creates the playlist. With
-REVamp absent the screen says so, and playing and exporting still work. A take plays from the studio
-while it is running; keep the studio open for that.
+REVamp absent the screen says so, and playing and exporting still work. **Add to REVamp** copies the
+take into your export folder (Settings, or `~/Music`), adds that folder to REVamp's library and points
+the playlist at REVamp's own copy, so the song plays in REVamp even while the studio is closed. Deleting
+a song or a take in the studio also takes it out of REVamp's playlists. A song added before this
+version shows **Fix for REVamp**, which copies it in the same way.
 
 ## From a chat: the `music_studio` tool
 

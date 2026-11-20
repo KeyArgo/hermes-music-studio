@@ -57,9 +57,18 @@ class FakeRequest:
 
 
 @pytest.fixture()
-def fake(monkeypatch):
+def fake(monkeypatch, tmp_path):
     fake = FakeRevamp()
     monkeypatch.setattr(revamp, '_call', fake)
+    exported = tmp_path / 'exported'
+
+    def export_take(project_id, take_id, folder=None, title=None):
+        exported.mkdir(exist_ok=True)
+        path = exported / f'{title or "take"}.wav'
+        path.write_bytes(b'RIFF')
+        return {'success': True, 'path': str(path), 'folder': str(exported), 'title': title}
+    monkeypatch.setattr('music_studio.service.export_take', export_take)
+    fake.exported = exported
     return fake
 
 
@@ -80,12 +89,12 @@ def test_an_audiobook_in_revamp_never_reaches_the_studio_screen(fake):
     assert [item['id'] for item in revamp._studio_items(current)] == []
 
 
-def test_adding_a_take_uses_the_loopback_host_under_the_plugin(monkeypatch, fake, tmp_path):
-    monkeypatch.setattr('music_studio.host_launcher.ensure_host',
-                        lambda port=None: {'url': 'http://127.0.0.1:8775', 'port': 8775})
-
+def test_adding_a_take_hands_revamp_a_file_in_its_own_library(monkeypatch, fake, tmp_path):
+    # REVamp plays a web address only through its station relay, which refuses this computer's own
+    # addresses: a link to the studio never played there (seen on Windows). The take is exported into
+    # a REVamp library folder and the item points at REVamp's own media route.
     class Store:
-        root = tmp_path  # the signing key for REVamp links lives beside the library
+        root = tmp_path
 
         def get(self, project_id):
             return {'title': 'Afterglow', 'takes': [{'take_id': '22222222-2222-2222-2222-222222222222', 'state': 'succeeded'}]}
@@ -95,10 +104,33 @@ def test_adding_a_take_uses_the_loopback_host_under_the_plugin(monkeypatch, fake
     result = revamp.add_take_to_playlist(body, FakeRequest('/api/plugins/hermes-music-studio/host/close'))
     item = result['item']
     assert item['source'] == 'studio'
-    assert item['playback']['url'].startswith('http://127.0.0.1:8775/api/projects/')
-    # REVamp's page never holds the studio token, so the link carries a signature for this take.
-    assert '/audio?sig=' in item['playback']['url']
+    assert item['id'] == 'studio:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222'
+    track_id = revamp._track_id(str(fake.exported / 'Afterglow.wav'))
+    assert item['track_id'] == track_id
+    assert item['playback']['url'] == '/api/media/' + track_id
+    assert not item['playback']['url'].startswith('http')
     assert item['title'] == 'Afterglow'
+    assert result['requires_studio_running'] is False
+    assert str(fake.exported) in [row['path'] for row in fake.folders], 'REVamp indexes the export folder'
+    assert ('POST', '/api/library/rescan', {}) in fake.calls
+
+
+def test_an_entry_added_the_old_way_is_flagged_for_a_fix(monkeypatch, fake, tmp_path):
+    class Store:
+        root = tmp_path
+
+        def get(self, project_id):
+            return {'title': 'Old', 'takes': [{'take_id': 't', 'state': 'succeeded'},
+                                              {'take_id': 'u', 'state': 'succeeded'}]}
+
+    monkeypatch.setattr('music_studio.service.store', lambda: Store())
+    playlist = revamp.studio_playlist()
+    fake('PUT', '/api/playlists/' + playlist['id'], {'items': [
+        {'id': 'studio:p:t', 'source': 'studio', 'title': 'Old',
+         'playback': {'url': '/api/radio/stream?url=http%3A%2F%2F127.0.0.1%3A8775%2Fapi%2Fprojects%2Fp'}},
+        {'id': 'studio:p:u', 'source': 'studio', 'title': 'New', 'playback': {'url': '/api/media/0123456789abcdef'}}]})
+    listed = revamp.added(FakeRequest('/api/studio/revamp/added'))
+    assert {item['id']: bool(item.get('relink')) for item in listed['items']} == {'studio:p:t': True, 'studio:p:u': False}
 
 
 def test_adding_the_same_take_twice_keeps_one_copy(monkeypatch, fake, tmp_path):

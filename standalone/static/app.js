@@ -532,7 +532,9 @@ function play(url, title, detail, editId) {
   audio.play().catch(error => playerProblem(
     error && error.name === 'NotAllowedError'
       ? 'Press play once — the browser will not start audio on its own.'
-      : 'Could not start playback: ' + (error && error.message ? error.message : 'unknown reason')
+      : error && error.name === 'NotSupportedError'
+        ? 'Could not play this song: its audio was not found. It may have been deleted.'
+        : 'Could not start playback: ' + (error && error.message ? error.message : 'unknown reason')
   ));
 }
 function wirePlayer() {
@@ -2357,9 +2359,21 @@ async function loadRevamp(){
     items.forEach(item => {
       const row = el('article', '', 'project');
       row.append(el('h2', item.title || 'Music Studio take'));
-      row.append(el('p', item.artist || 'Hermes Music Studio', 'hint'));
-      const playHere = el('button','▶ Play here','button secondary'); playHere.type='button';
+      row.append(el('p', item.missing ? 'Deleted in Music Studio'
+        : item.relink ? 'Needs a fix to play in REVamp' : (item.artist || 'Hermes Music Studio'), 'hint'));
+      const parts = String(item.id || '').split(':');
+      const playHere = el('button', item.missing ? 'Deleted' : '▶ Play here','button secondary'); playHere.type='button';
+      if (item.missing) {
+        playHere.disabled = true;
+        playHere.title = 'This song was deleted in Music Studio. Press Remove to take it off the list.';
+      }
       playHere.onclick = () => {
+        // The studio plays its own copy of the take; the playlist's link belongs to REVamp.
+        if (parts.length === 3 && parts[0] === 'studio') {
+          play(STUDIO.api + `/projects/${encodeURIComponent(parts[1])}/takes/${encodeURIComponent(parts[2])}/audio`,
+               item.title || 'Music Studio take', 'From your studio library');
+          return;
+        }
         const url = (item.playback && item.playback.url) || '';
         if (url) { play(url, item.title || 'Music Studio take', 'From your studio library'); return; }
         // A rendered button that does nothing is the failure mode this product keeps being
@@ -2368,7 +2382,19 @@ async function loadRevamp(){
       };
       const remove = el('button','Remove','button secondary'); remove.type='button';
       remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id}); await loadRevamp(); $('revamp-status').textContent='Removed from REVamp.'; } catch (err) { $('revamp-status').textContent = err.message; } };
-      row.append(playHere, remove);
+      row.append(playHere);
+      if (item.relink && !item.missing && parts.length === 3) {
+        // Added the old way: a link REVamp refuses. Adding it again hands REVamp the file.
+        const fix = el('button', 'Fix for REVamp', 'button secondary'); fix.type = 'button';
+        fix.title = 'This song was added before songs were copied into REVamp, so REVamp cannot play it. This copies it in.';
+        fix.onclick = async () => {
+          fix.disabled = true;
+          try { await api('/studio/revamp/add-take', {project_id: parts[1], take_id: parts[2]}); await loadRevamp(); $('revamp-status').textContent = `${item.title || 'Song'} now plays in REVamp.`; }
+          catch (err) { fix.disabled = false; $('revamp-status').textContent = err.message; }
+        };
+        row.append(fix);
+      }
+      row.append(remove);
       box.append(row);
     });
   } catch (err) {
