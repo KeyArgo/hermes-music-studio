@@ -265,12 +265,14 @@ def _ensure_library_folder(folder: str) -> None:
     payload = _call('GET', '/api/library/folders')
     rows = payload.get('folders') if isinstance(payload, dict) else payload
     rows = [row for row in (rows or []) if isinstance(row, dict) and row.get('path')]
-    paths = [os.path.normpath(str(row['path'])) for row in rows]
+    # normcase: on Windows c:\users\me\music and C:\Users\Me\Music are one folder (a no-op elsewhere).
+    paths = [os.path.normcase(os.path.normpath(str(row['path']))) for row in rows]
     wanted = os.path.normpath(folder)
+    wanted_key = os.path.normcase(wanted)
     # A folder inside a library folder is already covered by that folder's scan; adding it
     # again would nest two roots and confuse the library.
     for path in paths:
-        if wanted == path or wanted.startswith(path.rstrip(os.sep) + os.sep):
+        if wanted_key == path or wanted_key.startswith(path.rstrip(os.sep) + os.sep):
             return
     cleaned = [{'path': row['path'], 'kind': row.get('kind') or 'music'} for row in rows]
     cleaned.append({'path': wanted, 'kind': 'music'})
@@ -306,6 +308,8 @@ def playlist_from_takes(body: PlaylistFromTakes):
             written = service.export_take(project_id, take_id, folder=folder or None)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+        except (FileNotFoundError, KeyError):
+            raise HTTPException(400, 'a song in this list was deleted in Music Studio; remove it and try again') from None
         files.append(written)
     destination = files[0]['folder']
     _ensure_library_folder(destination)
@@ -384,7 +388,10 @@ def remove_from_playlist(body: RemoveStudioTake):
         raise HTTPException(502, 'REVamp returned an invalid playlist')
     path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
     current = _call('GET', path)
-    items = [row for row in (current.get('items') if isinstance(current, dict) else []) or []
+    # A reply without an items list must not be read as an empty playlist: saving that would wipe it.
+    if not isinstance(current, dict) or not isinstance(current.get('items'), list):
+        raise HTTPException(502, 'REVamp returned an invalid playlist')
+    items = [row for row in current['items']
              if not (isinstance(row, dict) and row.get('id') == body.item_id)]
     result = _call('PUT', path, {'items': items})
     return {'success': True, 'playlist': result, 'items': _studio_items(result)}

@@ -2408,6 +2408,7 @@ if ($('revamp-create')) $('revamp-create').addEventListener('click', async () =>
   // The takes are exported to the person's folder FIRST; the playlist then points at those
   // files. A playlist that points at nothing is worse than no playlist.
   const takes = revampItems
+    .filter(item => !item.missing)   // a song deleted in Music Studio has nothing left to export
     .map(item => String(item.id || ''))
     .filter(id => id.startsWith('studio:'))
     .map(id => { const parts = id.split(':'); return { project_id: parts[1], take_id: parts[2] }; })
@@ -2986,7 +2987,7 @@ if ($('setup-panel')) {
       if (box) renderSetupChecks(box, result.checks);
       if (result.ok) {
         await setupMessage(`${kind} is ready${result.saved ? ' and saved' : ''}. ${result.detail || ''}`);
-        if (typeof loadStatus === 'function') loadStatus();
+        await refreshNow();   // the engine list and the "ready" line pick up what was just saved
       } else {
         await setupMessage(result.detail || 'That address did not answer as a renderer.', true);
       }

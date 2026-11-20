@@ -138,3 +138,35 @@ test('an entry added the old way offers Fix for REVamp, which hands the take ove
   const sent = calls.find(c => c.path === '/api/studio/revamp/add-take');
   assert.equal(sent.body.project_id, 'a'); assert.equal(sent.body.take_id, 't1');
 });
+
+test('Create playlist leaves out songs that were deleted in Music Studio', async t => {
+  const { window, calls } = await openRevamp(t, [
+    { id: 'studio:a:t1', title: 'Gone', missing: true, playback: { url: '/api/media/0123456789abcdef' } },
+    { id: 'studio:b:t2', title: 'Here', playback: { url: '/api/media/fedcba9876543210' } }]);
+  const doc = window.document;
+  doc.getElementById('revamp-new-name').value = 'Drive';
+  doc.getElementById('revamp-create').click();
+  await pause(150);
+  const sent = calls.find(c => c.path === '/api/studio/revamp/playlist');
+  assert.deepEqual(JSON.parse(JSON.stringify(sent.body.takes)), [{ project_id: 'b', take_id: 't2' }]);
+});
+
+test('a server that passes the Setup test refreshes the engine list right away', async t => {
+  const { window, calls } = await boot({ projects: [song('a')] });
+  t.after(() => window.close());
+  const doc = window.document;
+  const realFetch = window.fetch;
+  window.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/api/studio/setup/comfy')) {
+      calls.push({ path: '/api/studio/setup/comfy', method: 'POST' });
+      return { ok: true, status: 200, json: async () => ({ ok: true, saved: true, detail: 'ACE-Step 1.5 is ready.', checks: [] }) };
+    }
+    return realFetch(url, opts);
+  };
+  const before = calls.filter(c => c.path === '/api/status').length;
+  doc.getElementById('setup-server-url').value = 'http://192.168.1.50:8188';
+  doc.getElementById('setup-server-test').click();
+  await pause(250);
+  assert.ok(calls.some(c => c.path === '/api/studio/setup/comfy'));
+  assert.ok(calls.filter(c => c.path === '/api/status').length > before, 'status was asked for again');
+});
