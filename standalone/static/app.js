@@ -2400,16 +2400,38 @@ async function loadRevamp(){
         playHere.title = 'This song was deleted in Music Studio. Press Remove to take it off the list.';
       }
       playHere.onclick = () => {
+        // The studio plays its own copy of the take; the playlist's link belongs to REVamp.
+        const parts = String(item.id || '').split(':');
+        if (parts.length === 3 && parts[0] === 'studio') {
+          play(STUDIO.api + `/projects/${encodeURIComponent(parts[1])}/takes/${encodeURIComponent(parts[2])}/audio`,
+               item.title || 'Music Studio take', 'From your studio library');
+          return;
+        }
         const url = (item.playback && item.playback.url) || '';
         if (url) { play(url, item.title || 'Music Studio take', 'From your studio library'); return; }
         // A rendered button that does nothing is the failure mode this product keeps being
         // judged on, so it explains itself instead of sitting there inert.
         $('revamp-status').textContent = 'REVamp has no playable file for this item yet; export the take and refresh.';
       };
+      const actions = [playHere];
+      const parts = String(item.id || '').split(':');
+      if (item.relink && !item.missing && parts.length === 3) {
+        // Added the old way: a link REVamp refuses. Adding it again hands REVamp the file.
+        const fix = el('button', 'Fix for REVamp', 'button secondary'); fix.type = 'button';
+        fix.title = 'This song was added before songs were copied into REVamp, so REVamp cannot play it. This copies it in.';
+        fix.onclick = async () => {
+          fix.disabled = true;
+          try { await api('/studio/revamp/add-take', {project_id: parts[1], take_id: parts[2], ...(data.playlist ? {playlist_id: data.playlist} : {})}); await loadRevamp(); $('revamp-status').textContent = `${item.title || 'Song'} now plays in REVamp.`; }
+          catch (err) { fix.disabled = false; $('revamp-status').textContent = err.message; }
+        };
+        actions.push(fix);
+      }
       const remove = el('button','Remove','button secondary'); remove.type='button';
       remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id}); await loadRevamp(); $('revamp-status').textContent='Removed from REVamp.'; } catch (err) { $('revamp-status').textContent = err.message; } };
       return { title: item.title || 'Music Studio take',
-        detail: item.missing ? 'Deleted in Music Studio' : (item.artist || 'Hermes Music Studio'), actions: [playHere, remove] };
+        detail: item.missing ? 'Deleted in Music Studio'
+          : item.relink ? 'Needs a fix to play in REVamp' : (item.artist || 'Hermes Music Studio'),
+        actions: [...actions, remove] };
     }, 'Nothing added yet. Open a draft in Library and press “Add to REVamp”.');
   } catch (err) {
     box.replaceChildren(el('p', err.message, 'message error'));

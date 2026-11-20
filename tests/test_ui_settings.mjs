@@ -466,7 +466,7 @@ test('Play here says why it cannot play an item with no file', async t => {
   const { window } = await boot({
     '/api/studio/revamp/status': { available: true, player_connected: false },
     '/api/studio/revamp/added': { success: true, playlist: 'pl01', name: 'Music Studio',
-      items: [{ id: 'studio:p9:t9', source: 'studio', title: 'No file yet',
+      items: [{ id: 'other:p9', source: 'studio', title: 'No file yet',
         artist: 'Hermes Music Studio', playback: {} }] }
   });
   t.after(() => window.close());

@@ -154,8 +154,12 @@ def test_revamp_can_reference_finished_studio_take(tmp_path, monkeypatch):
     calls=[]
     def fake_call(method,path,body=None):
         calls.append((method,path,body))
+        if path=='/api/library/folders': return {'folders':[]}
+        if path=='/api/library/rescan': return {'started':True}
         return {'id':'favorites','items':[] if body is None else body['items']}
     monkeypatch.setattr(revamp,'_call',fake_call)
+    monkeypatch.setattr('music_studio.service.export_take', lambda p,t,folder=None,title=None:
+                        {'path':str(tmp_path/'out'/'My song.wav'),'folder':str(tmp_path/'out'),'title':title})
     store=service.store(); project=store.create(title='My song',caption='sound',lyrics='words')
     take_id=str(uuid.uuid4()); project['takes']=[{'take_id':take_id,'state':'succeeded'}]
     with store.locked(): store._save(project)
@@ -163,10 +167,9 @@ def test_revamp_can_reference_finished_studio_take(tmp_path, monkeypatch):
     c=studio_client(app,'http://127.0.0.1:8765')
     response=c.post('/api/studio/revamp/add-take',json={'playlist_id':'favorites','project_id':project['project_id'],'take_id':take_id})
     assert response.status_code==200, response.text
-    assert response.json()['requires_studio_running'] is True
+    # A file in REVamp's own library: it plays even while the studio is closed.
+    assert response.json()['requires_studio_running'] is False
     item=calls[-1][2]['items'][0]
-    # Signed for this one take: REVamp's player never holds the studio token (tests/test_signed_audio.py).
-    assert item['playback']['url'].split('?', 1)[0].endswith('/takes/'+take_id+'/audio')
-    assert '?sig=' in item['playback']['url']
+    assert item['playback']['url']=='/api/media/'+revamp._track_id(str(tmp_path/'out'/'My song.wav'))
     audio=c.get('/api/projects/'+project['project_id']+'/takes/'+take_id+'/audio',headers={'origin':'http://127.0.0.1:8114'})
     assert audio.headers['access-control-allow-origin']=='http://127.0.0.1:8114'

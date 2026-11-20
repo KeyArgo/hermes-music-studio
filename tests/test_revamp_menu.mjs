@@ -206,3 +206,34 @@ test('a song deleted in Music Studio shows as Deleted, not as a Play button that
   assert.ok(buttons.some(b => text(b) === '▶ Play here' && !b.disabled), 'the other song still plays');
   assert.match(text(doc.getElementById('revamp-added')), /Deleted in Music Studio/);
 });
+
+test('Play here plays the studio\'s own copy, never REVamp\'s link (REVamp\'s link 404s here)', async t => {
+  const { window } = await boot({ projects: [song('a')], revamp: { installed: true, available: true },
+    added: [{ id: 'studio:a:t1', title: 'Frostfire Chant',
+      playback: { url: '/api/radio/stream?url=http%3A%2F%2F127.0.0.1%3A8775%2Fapi%2Fprojects%2Fa' } }] });
+  t.after(() => window.close());
+  const doc = window.document;
+  nav(doc).click();
+  await pause(150);
+  [...doc.querySelectorAll('#revamp-added button')].find(b => text(b) === '▶ Play here').click();
+  const src = doc.getElementById('player').getAttribute('src') || doc.getElementById('player').src;
+  assert.match(src, /\/api\/projects\/a\/takes\/t1\/audio/);
+  assert.doesNotMatch(src, /radio\/stream/);
+});
+
+test('an entry added the old way offers Fix for REVamp, which hands the take over again', async t => {
+  const { window, calls } = await boot({ projects: [song('a')], revamp: { installed: true, available: true },
+    added: [{ id: 'studio:a:t1', title: 'Frostfire Chant', relink: true, playback: { url: '/api/radio/stream?url=x' } }] });
+  t.after(() => window.close());
+  const doc = window.document;
+  nav(doc).click();
+  await pause(150);
+  assert.match(text(doc.getElementById('revamp-added')), /Needs a fix to play in REVamp/);
+  const fix = [...doc.querySelectorAll('#revamp-added button')].find(b => text(b) === 'Fix for REVamp');
+  assert.ok(fix);
+  fix.click();
+  await pause(150);
+  const sent = calls.find(c => c.path === '/api/studio/revamp/add-take');
+  assert.equal(sent.body.project_id, 'a');
+  assert.equal(sent.body.take_id, 't1');
+});

@@ -225,17 +225,26 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
     current = _call('GET', path)
     if not isinstance(current, dict) or not isinstance(current.get('items'), list):
         raise HTTPException(502, 'REVamp returned an invalid playlist')
+    # REVamp plays a web address only through its station relay, which refuses this computer's own
+    # addresses, so a link to the studio never plays there. Hand REVamp a file in its own library
+    # instead, the way Radio does: it then plays even while the studio is closed.
+    title = project.get('title') or 'Music Studio take'
+    try:
+        written = service.export_take(body.project_id, body.take_id, title=title)
+    except (ValueError, FileNotFoundError, KeyError) as exc:
+        raise HTTPException(400, f'could not export the take for REVamp: {exc}') from None
+    _ensure_library_folder(written['folder'])
+    _call('POST', '/api/library/rescan', {})
+    track_id = _track_id(written['path'])
     item = {'id': 'studio:' + body.project_id + ':' + body.take_id, 'source': 'studio',
-            'kind': 'music', 'title': project.get('title') or 'Music Studio take',
-            'artist': 'Hermes Music Studio',
-            # Signed for this one take: REVamp's page never holds the studio token (review item 3).
-            'playback': {'backend': 'webamp', 'url': media_sign.audio_url(
-                _audio_base(request), service.store().root, body.project_id, body.take_id)},
+            'kind': 'track', 'track_id': track_id, 'url': '/api/media/' + track_id,
+            'title': written.get('title') or title, 'artist': 'Hermes Music Studio',
+            'playback': {'backend': 'webamp', 'url': '/api/media/' + track_id},
             'capabilities': ['seek']}
     items = [row for row in current['items']
              if not (isinstance(row, dict) and row.get('id') == item['id'])]
     result = _call('PUT', path, {'items': [*items, item]})
-    return {'success': True, 'playlist': result, 'item': item, 'requires_studio_running': True}
+    return {'success': True, 'playlist': result, 'item': item, 'requires_studio_running': False}
 
 
 def _audio_base(request: Request) -> str:
@@ -267,6 +276,9 @@ def added(request: Request):
         if len(parts) == 3 and not _take_exists(store, parts[1], parts[2]):
             # Deleted in Music Studio: say so, instead of a link that fails in the browser.
             item['missing'] = True
+        elif not str((item.get('playback') or {}).get('url') or '').startswith('/api/media/'):
+            # Added before songs were handed over as files: REVamp cannot play the old link.
+            item['relink'] = True
         playback = item.get('playback') or {}
         url = str(playback.get('url') or '')
         marker = '/api/projects/'
