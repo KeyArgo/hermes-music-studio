@@ -678,7 +678,26 @@ setInterval(() => { if (!document.hidden) showVersion(); }, 60000);
 
 if ($('player-play')) wirePlayer();
 showVersion();
-function libMessage(text, bad = false) { const node = $('library-status'); if (!node) return; node.textContent = text; node.classList.toggle('error', bad); }
+function libMessage(text, bad = false) {
+  const node = $('library-status');
+  if (node) { node.textContent = text; node.classList.toggle('error', bad); }
+  studioToast(text, bad);
+}
+// The library status line sits at the top of the page, out of sight once the person scrolls to a
+// song further down, so every result is also shown just above the player for a few seconds.
+function studioToast(text, bad = false) {
+  let toast = $('studio-toast');
+  if (!toast) {
+    toast = el('div', '', 'studio-toast'); toast.id = 'studio-toast';
+    toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
+    document.body.append(toast);
+  }
+  toast.textContent = text || '';
+  toast.classList.toggle('error', bad);
+  toast.hidden = !text;
+  clearTimeout(studioToast.timer);
+  if (text) studioToast.timer = window.setTimeout(() => { toast.hidden = true; }, bad ? 9000 : 6000);
+}
 function el(tag, text, className) { const node = document.createElement(tag); if(text) node.textContent = text; if(className) node.className = className; return node; }
 function belongsTo(p,id) { const w=workspaces.find(x=>x.id===id);return !!w && (w.project_ids.includes(p.project_id) || (id==='default' && !workspaces.some(x=>x.project_ids.includes(p.project_id)))); }
 
@@ -1051,7 +1070,7 @@ function library() {
             if (!last) { libMessage('No saved spot yet — press Save spot first.', true); return; }
             const res = await api('/checkpoint/restore', {project_id: p.project_id,
                                                           checkpoint_id: last.checkpoint_id});
-            libMessage(`Back to ${res.restored}. The approval was revoked — review the draft.`);
+            libMessage(`Back to your saved spot${last.label ? ` (${last.label})` : ''}. The approval was revoked — review the draft.`);
             await refresh(); library();
           } catch (err) { libMessage(err.message, true); } finally { backSpot.disabled = false; }
         });
@@ -1074,7 +1093,9 @@ function library() {
             const res = await api('/take-check', {project_id: p.project_id, take_id: t.take_id, retry: true});
             libMessage(res.retried
               ? `Re-rendering with seed ${res.seed}, because: ${(res.because || []).join(', ')}.`
-              : `Nothing measurable failed: ${res.reason}.`);
+              : (/^nothing measurable failed/i.test(res.reason || '') || !res.reason
+                ? 'Nothing measurable failed, so there is nothing to fix.'
+                : `Nothing measurable failed: ${res.reason}.`));
             if (res.retried) { await refresh(); library(); }
           } catch (err) { libMessage(err.message, true); } finally { fix.disabled = false; }
         });
@@ -1146,6 +1167,16 @@ function tidyTakeRow(row) {
   if (extra.length < 2) return;
   const more = el('details', '', 'take-more'), summary = el('summary', 'More ▾'), menu = el('div', '', 'take-menu');
   menu.append(...extra); more.append(summary, menu); row.append(more);
+  // A choice closes the menu, so it never covers the box the choice opened (Extend, Change this part).
+  menu.addEventListener('click', event => { if (event.target.closest('button')) more.open = false; });
+  // Near the bottom of the window the menu opens upward, clear of the player bar.
+  more.addEventListener('toggle', () => {
+    if (!more.open) return;
+    more.classList.remove('up');
+    const player = document.querySelector('.player');
+    const floor = player ? player.getBoundingClientRect().top : window.innerHeight;
+    if (menu.getBoundingClientRect().bottom > floor - 8) more.classList.add('up');
+  });
 }
 function formatEta(seconds) {
   if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return 'estimating';
