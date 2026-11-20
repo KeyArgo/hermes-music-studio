@@ -190,3 +190,19 @@ test('the Library offers Add to REVamp only when REVamp is installed', async t =
     window.close();
   }
 });
+
+test('a song deleted in Music Studio shows as Deleted, not as a Play button that fails', async t => {
+  const { window } = await boot({ projects: [song('a')], revamp: { installed: true, available: true },
+    added: [{ id: 'studio:a:t1', title: 'Gone song', missing: true, playback: { url: 'http://127.0.0.1:8794/api/projects/a/takes/t1/audio' } },
+            { id: 'studio:b:t2', title: 'Here song', playback: { url: 'http://127.0.0.1:8794/api/projects/b/takes/t2/audio' } }] });
+  t.after(() => window.close());
+  const doc = window.document;
+  nav(doc).click();
+  await pause(150);
+  const buttons = [...doc.querySelectorAll('#revamp-added button')];
+  const deleted = buttons.find(b => text(b) === 'Deleted');
+  assert.ok(deleted, 'the deleted song says Deleted');
+  assert.equal(deleted.disabled, true);
+  assert.ok(buttons.some(b => text(b) === '▶ Play here' && !b.disabled), 'the other song still plays');
+  assert.match(text(doc.getElementById('revamp-added')), /Deleted in Music Studio/);
+});

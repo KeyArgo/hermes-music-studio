@@ -536,7 +536,9 @@ function play(url, title, detail, editId) {
   audio.play().catch(error => playerProblem(
     error && error.name === 'NotAllowedError'
       ? 'Press play once — the browser will not start audio on its own.'
-      : 'Could not start playback: ' + (error && error.message ? error.message : 'unknown reason')
+      : error && error.name === 'NotSupportedError'
+        ? 'Could not play this song: its audio was not found. It may have been deleted.'
+        : 'Could not start playback: ' + (error && error.message ? error.message : 'unknown reason')
   ));
 }
 function wirePlayer() {
@@ -2392,7 +2394,11 @@ async function loadRevamp(){
     const items = data.items || [];
     revampItems = items;
     compactList(box, items, item => {
-      const playHere = el('button','▶ Play here','button secondary'); playHere.type='button';
+      const playHere = el('button', item.missing ? 'Deleted' : '▶ Play here','button secondary'); playHere.type='button';
+      if (item.missing) {
+        playHere.disabled = true;
+        playHere.title = 'This song was deleted in Music Studio. Press Remove to take it off the list.';
+      }
       playHere.onclick = () => {
         const url = (item.playback && item.playback.url) || '';
         if (url) { play(url, item.title || 'Music Studio take', 'From your studio library'); return; }
@@ -2402,7 +2408,8 @@ async function loadRevamp(){
       };
       const remove = el('button','Remove','button secondary'); remove.type='button';
       remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id}); await loadRevamp(); $('revamp-status').textContent='Removed from REVamp.'; } catch (err) { $('revamp-status').textContent = err.message; } };
-      return { title: item.title || 'Music Studio take', detail: item.artist || 'Hermes Music Studio', actions: [playHere, remove] };
+      return { title: item.title || 'Music Studio take',
+        detail: item.missing ? 'Deleted in Music Studio' : (item.artist || 'Hermes Music Studio'), actions: [playHere, remove] };
     }, 'Nothing added yet. Open a draft in Library and press “Add to REVamp”.');
   } catch (err) {
     box.replaceChildren(el('p', err.message, 'message error'));

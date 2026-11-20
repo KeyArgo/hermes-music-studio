@@ -261,7 +261,12 @@ def added(request: Request):
     items = _studio_items(current)
     from music_studio import service
     base = _audio_base(request)
+    store = service.store()
     for item in items:
+        parts = str(item.get('id') or '').split(':')
+        if len(parts) == 3 and not _take_exists(store, parts[1], parts[2]):
+            # Deleted in Music Studio: say so, instead of a link that fails in the browser.
+            item['missing'] = True
         playback = item.get('playback') or {}
         url = str(playback.get('url') or '')
         marker = '/api/projects/'
@@ -351,6 +356,49 @@ def playlist_from_takes(body: PlaylistFromTakes):
         result = _call('POST', '/api/playlists', {'name': name, 'items': items})
     return {'success': True, 'playlist': result, 'files': [row['path'] for row in files],
             'folder': destination}
+
+
+def forget_deleted(project_id, take_id=None):
+    """Take a deleted song (or one deleted take) out of every REVamp playlist it was added to.
+
+    A take handed to REVamp stays there after the song is deleted in Music Studio, and its link then
+    points at nothing: REVamp and Play here fail with a browser error. Best effort: REVamp may be
+    missing or closed, and the delete itself has already succeeded.
+    """
+    if not project_id or not plugin_installed() or _client_path() is None:
+        return 0
+    prefix = 'studio:' + str(project_id) + ':'
+    wanted = (lambda item_id: item_id == prefix + str(take_id)) if take_id else (
+        lambda item_id: item_id.startswith(prefix))
+    removed = 0
+    try:
+        listing = _call('GET', '/api/playlists')
+        rows = listing.get('playlists') if isinstance(listing, dict) else listing
+        for row in rows or []:
+            playlist_id = str(row.get('id') or '') if isinstance(row, dict) else ''
+            if not PLAYLIST_ID.fullmatch(playlist_id):
+                continue
+            path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
+            current = _call('GET', path)
+            items = current.get('items') if isinstance(current, dict) else None
+            if not isinstance(items, list):
+                continue
+            kept = [item for item in items
+                    if not (isinstance(item, dict) and wanted(str(item.get('id') or '')))]
+            if len(kept) != len(items):
+                _call('PUT', path, {'items': kept})
+                removed += len(items) - len(kept)
+    except Exception:  # noqa: BLE001 - REVamp closed or refusing: the song is still deleted
+        return removed
+    return removed
+
+
+def _take_exists(store, project_id, take_id):
+    try:
+        project = store.get(project_id)
+    except Exception:  # noqa: BLE001 - a deleted song reads as missing, whatever the store raises
+        return False
+    return any(isinstance(t, dict) and t.get('take_id') == take_id for t in project.get('takes') or [])
 
 
 @router.post('/studio/revamp/remove')

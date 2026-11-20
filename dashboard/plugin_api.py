@@ -397,7 +397,10 @@ def rename(body: dict = Depends(json_body)):
 @router.post('/delete')
 def delete_project(body: dict = Depends(json_body)):
     """Delete a project and the WAVs it produced; refused while it is rendering."""
-    return invoke(service.delete, body.get('project_id'))
+    result = invoke(service.delete, body.get('project_id'))
+    from standalone import revamp
+    revamp.forget_deleted(body.get('project_id'))
+    return result
 
 
 @router.get('/presets')
@@ -778,7 +781,11 @@ def duplicate_project(body: dict = Depends(json_body)):
 
 @router.post('/take/delete')
 def delete_take(body: dict = Depends(json_body)):
-    return invoke(service.delete_take, body.get('project_id'), body.get('take_id'))
+    result = invoke(service.delete_take, body.get('project_id'), body.get('take_id'))
+    if body.get('take_id'):
+        from standalone import revamp
+        revamp.forget_deleted(body.get('project_id'), body.get('take_id'))
+    return result
 
 
 @router.post('/versions')
