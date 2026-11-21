@@ -25,7 +25,7 @@ The legacy `hewn` names are kept on purpose: renaming them would orphan every ex
 | Variable | Default | Read by | Meaning |
 |---|---|---|---|
 | `HEWN_STUDIO_HOST` | `127.0.0.1` | `music_studio/host.py` | Bind address for the loopback host |
-| `HEWN_STUDIO_HOST_PORT` | `8775` | `music_studio/host.py`, `host_launcher.py` | First port to try; the launcher searches the next 50 free ports |
+| `HEWN_STUDIO_HOST_PORT` | `8775` | `music_studio/host.py`, `host_launcher.py` | Port for the studio host. When set, only that port is tried; when unset, the launcher searches 50 ports from 8775 |
 | `HEWN_STUDIO_HOST_PYTHON` | unset | `music_studio/host_launcher.py` | Interpreter used for the host; otherwise the current interpreter, the Hermes sibling, `py -3` on Windows, `python3.13`/`python3.12`/`python3`/`python` on `PATH`, Homebrew on macOS, and `/usr/bin/python3.13` last |
 | `HEWN_STUDIO_IDLE_EXIT_S` | `300` | `music_studio/lifecycle.py` | Seconds without a request before the host exits; `0` disables |
 | `HEWN_STUDIO_PARENT_PID` | unset | `music_studio/lifecycle.py` | The launcher's pid; the host exits when that process is gone |
@@ -55,7 +55,7 @@ Saved engine paths are injected into the host process by `music_studio/host_laun
 | `HERMES_MUSIC_REVAMPCTL` | `revampctl` on `PATH`, then `~/.local/bin/revampctl` | `standalone/revamp.py` | REVamp client executable |
 | `REVAMP_PORT` | `8114` | `standalone/app.py` | Origin allowed to read take audio for REVamp |
 
-`ffmpeg` and `nvidia-smi` are found on `PATH`; there is no environment variable for either.
+`ffmpeg` is taken from `HEWN_FFMPEG` when set, then `PATH`, then the usual install folders. `nvidia-smi` is found on `PATH`.
 
 ## Saved settings
 

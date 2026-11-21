@@ -16,7 +16,7 @@ The tool and `/song` need Hermes, but the window does not.
 
 **Does it generate audio by itself?**
 No. There is no bundled model, no mock engine and no cloud audio service. You need ACE-Step 1.5
-locally or a ComfyUI server running MiniMax Music 3. The studio opens without either and says what is
+locally, an ACE-Step server you run, or a ComfyUI server running MiniMax Music 3. The studio opens without either and says what is
 missing.
 
 **Is it cloud-free?**
@@ -77,8 +77,8 @@ Linux, and local ACE-Step rendering on Windows or macOS is untested. See
 The DOM tests use `jsdom` and the React testing library. The studio itself has no build step and no
 runtime JavaScript dependency.
 
-**Why is the test count in the README 1070?**
-903 Python tests and 167 browser-side tests passed on this commit; two Python tests are skipped (a
+**Why is the test count in the README 1351?**
+1097 Python tests and 254 browser-side tests passed on this commit; two Python tests are skipped (a
 case-insensitive-filesystem case and the opt-in live GPU render). The commands and exact summary
 lines are in [../TESTING.md](../TESTING.md).
 

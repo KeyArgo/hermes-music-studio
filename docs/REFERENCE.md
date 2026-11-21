@@ -188,7 +188,7 @@ return JSON unless noted. POST bodies are capped at 256 KiB.
 | POST | `/discover` | Find a renderer |
 | POST | `/export` | `{project_id, take_id, folder?, title?}` |
 | GET | `/library`; POST `/library/relocate`, `/library/reset` | Library folder info, move/copy, reset |
-| POST | `/studio/setup/comfy`, `/studio/setup/ace` | Test and save an engine server. ACE-Step is accepted only when `/health` answers 2xx or `/` returns JSON that names ACE-Step; a 404 from another server is reported, never saved |
+| POST | `/studio/setup/comfy`, `/studio/setup/ace` | Test and save an engine server. ACE-Step is accepted only when `/health` or `/` answers with JSON that names ACE-Step, or `/health` refuses with 401/403 (a server that wants its key); a 404 from another server is reported, never saved |
 | POST | `/studio/setup/ace/remove` | Forget the saved ACE-Step address (the hosted endpoint shares that one slot); refused while a take renders on it |
 | GET/POST | `/studio/setup/hf`; POST `/studio/setup/hf/copy` | Hugging Face weight plan/download/copy |
 | GET/POST | `/studio/setup/cloud`; POST `/studio/setup/cloud/test` | Hosted provider entry and test |

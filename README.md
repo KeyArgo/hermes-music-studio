@@ -1,41 +1,39 @@
-<p align="center"><img src="assets/brand/banner.png" alt="Music Studio: describe a song, Hermes drafts it with you, then renders it on your own machine" width="100%"></p>
+![Music Studio: describe a song, Hermes drafts it with you, then renders it on your own machine](assets/brand/banner.png)
 
-<h1 align="center">Hermes Music Studio</h1>
+# Hermes Music Studio
 
-<p align="center"><em>Describe a song. Approve the draft. Render it on your own machine.</em></p>
+[![CI](https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml)
+[![Tests](https://img.shields.io/badge/tests-1351%20passing-2ea44f?style=flat-square)](TESTING.md)
+[![Hermes plugin catalog: in review](https://img.shields.io/badge/plugin%20catalog-in%20review-f59e0b?style=flat-square)](https://github.com/NousResearch/hermes-agent/pull/154029)
+[![Licence](https://img.shields.io/badge/license-MIT-2f6bff?style=flat-square)](LICENSE)
+[![Hermes Agent](https://img.shields.io/badge/Hermes%20Agent-plugin-7c3aed?style=flat-square)](https://github.com/NousResearch/hermes-agent)
+[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-555?style=flat-square)](#install)
+[![Python](https://img.shields.io/badge/python-3.13-3776ab?style=flat-square)](requirements-dev.txt)
+[![Node](https://img.shields.io/badge/node-20%2B-5fa04e?style=flat-square)](package.json)
+[![Stars](https://img.shields.io/github/stars/KeyArgo/hermes-music-studio?style=flat-square&color=f5b301)](https://github.com/KeyArgo/hermes-music-studio/stargazers)
 
-<p align="center">
-  <a href="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/KeyArgo/hermes-music-studio/actions/workflows/tests.yml/badge.svg?branch=main"></a>
-  <a href="TESTING.md"><img alt="Tests" src="https://img.shields.io/badge/tests-1070%20passing-2ea44f?style=flat-square"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/pull/154029"><img alt="Hermes plugin catalog: in review" src="https://img.shields.io/badge/plugin%20catalog-in%20review-f59e0b?style=flat-square"></a>
-  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/license-MIT-2f6bff?style=flat-square"></a>
-  <a href="https://github.com/NousResearch/hermes-agent"><img alt="Hermes Agent" src="https://img.shields.io/badge/Hermes%20Agent-plugin-7c3aed?style=flat-square"></a>
-  <a href="#install"><img alt="Platforms" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-555?style=flat-square"></a>
-  <a href="requirements-dev.txt"><img alt="Python" src="https://img.shields.io/badge/python-3.13-3776ab?style=flat-square"></a>
-  <a href="package.json"><img alt="Node" src="https://img.shields.io/badge/node-20%2B-5fa04e?style=flat-square"></a>
-  <a href="https://github.com/KeyArgo/hermes-music-studio/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KeyArgo/hermes-music-studio?style=flat-square&color=f5b301"></a>
-</p>
+**Describe a song, approve the draft, and hear it rendered on your own machine.**
 
+![Music Studio: the create screen with a draft ready for approval](docs/screenshots/hero.png)
 
-![The create screen with an approved draft loaded](docs/screenshots/create-form.png)
+*The draft is the gate: nothing renders until a person approves this exact version.*
 
-<p align="center"><sub>The draft is the gate: nothing renders until a person approves this exact version.</sub></p>
+1. **Describe.** Tell the agent the song you want; it drafts the title, style, lyrics and engine.
+2. **Approve.** Read the draft and approve that exact version. Nothing renders before you do.
+3. **Hear.** A worker renders the take on your machine; play it, then export a normal .wav.
 
-<p align="center"><img src="docs/media/music-studio-demo.gif" alt="Music Studio in Hermes: a song idea becomes a draft, the draft is approved, and the take plays" width="100%"/></p>
+![Music Studio in Hermes: a song idea becomes a draft, the draft is approved, and the take plays](docs/media/music-studio-demo.gif)
 
-<p align="center"><sub><b>Describe a song, approve the draft, hear it.</b> <a href="https://x.com/MHArgonaut/status/2120635407113339039">Watch the full demo ▶</a></sub></p>
+**Describe a song, approve the draft, hear it.** [Watch the full demo ▶](https://x.com/MHArgonaut/status/2120635407113339039)
 
-<p align="center"><img src="docs/media/music-create.gif" alt="Music Studio: drafting a song, approving the draft, then rendering it" width="100%"/>
-<br/><sub><b>Write, approve, render.</b> Draft the song, approve it, then render the take.</sub></p>
-
-<p align="center"><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#documentation">Documentation</a> · <a href="#testing">Testing</a> · <a href="#contributing">Contributing</a></p>
+[Install](#install) · [Features](#features) · [How it works](#how-it-works) · [Documentation](#documentation) · [Testing](#testing) · [Contributing](#contributing)
 
 ## What it is
 
-A studio inside Hermes. You describe a feeling; the agent turns it into a draft with a title, style,
-lyrics and an engine; nothing is rendered until you approve that draft. Every take keeps the draft it
-came from, its seed, its engine and its lineage, so a take is reproducible rather than a lucky
-accident. The library, the worker and the audio stay on your machine.
+A studio inside Hermes. Describe a feeling and the agent drafts a song: title, style, lyrics and an
+engine. Nothing renders until you approve that draft. Every take keeps its draft, seed, engine and
+lineage, so it can be re-made rather than lost to a lucky accident. The library, the worker and the
+audio stay on your machine.
 
 ## Why it's different
 
@@ -43,11 +41,10 @@ accident. The library, the worker and the audio stay on your machine.
   and an approval is bound to the exact `updated_at` version you read.
 - **A take can be re-made.** Draft, seed and engine travel with the take. A seed is a replay handle
   on the same runtime and hardware.
-- **The build says which build it is.** The header reads `v1.0.0-dev.N · a8310ba7 · 2026-11-16` —
-  version, commit, date — filled from the running server, never from a constant in the page.
+- **The build says which build it is.** The header shows `v1.0.0-dev.N · a8310ba7 · 2026-11-16`,
+  the version, commit and date filled from the running server, never from a constant in the page.
 - **The product proves itself.** `GET /api/verify` measures, at request time, that the sample is real
-  audio, that the library reads, that a finished take is scrubbable because its response declares its
-  length, and that REVamp's absence is a state rather than an error.
+  audio, that the library reads, that a finished take's file is a real WAV on disk, and that REVamp's absence is a state rather than an error.
 
 ## Features
 
@@ -85,20 +82,29 @@ accident. The library, the worker and the audio stay on your machine.
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/library.png" alt="The library with projects and takes"><br><sub><b>Library</b> — every project and take, with seed and state.</sub></td>
-    <td width="50%"><img src="docs/screenshots/player.png" alt="A take playing in the footer player"><br><sub><b>Player</b> — a take streaming with a real length.</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/workspaces.png" alt="Workspaces grouping songs"><br><sub><b>Workspaces</b> — keep a session in one place.</sub></td>
-    <td width="50%"><img src="docs/screenshots/compute.png" alt="Music engines page and library folder"><br><sub><b>Music engines</b> — endpoints, sampler knobs, library folder.</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/verify.png" alt="The verify page reporting measured checks"><br><sub><b>Verify</b> — what this build can prove on this machine.</sub></td>
-    <td width="50%"><img src="docs/screenshots/create-form.png" alt="The create screen with an approved draft"><br><sub><b>Create</b> — the draft and the approval gate.</sub></td>
-  </tr>
-</table>
+**Create**: the draft and your creative partner.
+
+![The create screen with a draft and the creative partner](docs/screenshots/create.png)
+
+**Library**: songs, takes and the More menu.
+
+![The library listing songs and takes with the More menu open](docs/screenshots/library.png)
+
+**Player**: a take playing.
+
+![A take playing in the footer player](docs/screenshots/player.png)
+
+**Music engines**: add a server, Test and save.
+
+![The Music engines page adding a server with Test and save](docs/screenshots/engines.png)
+
+**REVamp**: add takes to a playlist.
+
+![Adding exported takes to a REVamp playlist](docs/screenshots/revamp.png)
+
+**Compare**: engines and versions, side by side.
+
+![Comparing engines and versions side by side](docs/screenshots/compare.png)
 
 ## Install
 
@@ -265,8 +271,9 @@ Providers you have set up in Hermes are marked ready. The studio connects throug
   Desktop is installed by you and may update itself.
 - **Background processes.** A detached render worker per render (or batch), an ACE-Step subprocess in
   the runtime's own venv, a loopback studio host (`127.0.0.1`, a free port near 8775), `ffmpeg` for
-  MiniMax's FLAC → WAV transcode, and read-only `nvidia-smi` probes for GPU attribution. Cover
-  generation and the creative partner run the Hermes CLI; REVamp actions run `revampctl`.
+  MiniMax's FLAC → WAV transcode, and read-only `nvidia-smi` probes for GPU attribution. The
+  creative partner drafts through Hermes' plugin LLM interface (`ctx.llm`), cover art is made by the
+  agent's own image tool and handed over as a file, and REVamp actions run `revampctl`.
 - **Shell commands.** `git` is read for the version stamp. The studio never runs a shell string from
   user text and never changes a password. The only credential it writes is the hosted API key you
   enter, saved through Hermes' own credential store.
@@ -289,9 +296,9 @@ node --test tests/*.mjs
 
 | Suite | Command | Measured result |
 |---|---|---|
-| Python | `env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q` | **903 passed, 2 skipped, 139 subtests passed** |
-| Browser-side | `node --test tests/*.mjs` | **167 passed** |
-| Total | both suites | **1070 passed, 2 skipped** |
+| Python | `env -u PYTHONPATH TMPDIR=/tmp python3 -m pytest --rootdir=tests tests -q` | **1097 passed, 2 skipped, 139 subtests passed** |
+| Browser-side | `node --test tests/*.mjs` | **254 passed** |
+| Total | both suites | **1351 passed, 2 skipped** |
 
 `env -u PYTHONPATH` matters: a Hermes checkout on the path ships its own `tests` package, which wins
 over this repo's folder and makes collection fail. The full breakdown, CI commands and the exact
@@ -336,4 +343,4 @@ MIT. See [LICENSE](LICENSE). Models and services carry their own licences, recor
 
 Special thanks to sovthpaw. A passionate advocate, a dedicated community member, and someone who genuinely gives a damn about open AI. Respect doesn't require agreement.
 
-<p align="center">Built by <a href="https://github.com/KeyArgo">KeyArgo</a> · InovinLabs</p>
+Built by [KeyArgo](https://github.com/KeyArgo) · InovinLabs

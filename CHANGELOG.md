@@ -117,6 +117,10 @@ All notable changes to Music Studio are recorded here. The format follows
   reads "Deleted in Music Studio" instead of failing in the browser.
 - The More menu on a take closes after a choice, opens upward near the player bar, and every library
   result shows above the player instead of only at the top of the page.
+- The README is plain Markdown so it renders on the Hermes Marketplace, with new screenshots taken in
+  Hermes Desktop; the test counts in README, TESTING, VERIFY and the FAQ match the current suites; seven
+  doc statements that no longer matched the code are corrected.
+- `plugin.yaml` declares `requires_hermes: ">=0.23.0"`, the release it has been run on.
 
 ### Nous review fixes
 

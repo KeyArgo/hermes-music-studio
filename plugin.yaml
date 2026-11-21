@@ -5,6 +5,7 @@ dashboard: dashboard
 version: "1.0.0"
 manifest_version: 2
 api_version: 1
+requires_hermes: ">=0.23.0"
 author: InovinLabs
 license: MIT
 description: >
