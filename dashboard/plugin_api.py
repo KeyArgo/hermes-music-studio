@@ -830,9 +830,8 @@ def _failed(exc: BaseException) -> str:
 def studio_draft(body: dict = Depends(json_body)):
     """Draft a song with the agent's own model, from the process that owns it.
 
-    The framed pane cannot reach Hermes' model facade directly (it is a sandboxed page talking to a
-    separate loopback host), so the pane forwards a draft request here over its plugin route and
-    posts the answer back. One model path, one place it lives.
+    The pane can use this route on older hosts; newer hosts use the plugin RPC in the process
+    that owns the model. The standalone loopback host has no model facade of its own.
 
     Nothing may escape as a bare 500: Hermes' default handler turns that into "hermes.api error 500:
     Internal Server Error", which names neither the failure nor the fix. Every path below either
@@ -855,62 +854,19 @@ def studio_draft(body: dict = Depends(json_body)):
 
 
 def _draft_song(body):
-    """The draft itself; ``studio_draft`` owns the mapping from failures to answers."""
     from music_studio import llm_bridge
-    from standalone.ideas import (MAX_REPLY_CHARS, build_request, parse_draft,
-                                  trust_error_response)
+    from music_studio.drafting import DraftError, draft_song
+    from fastapi.responses import JSONResponse
 
-    prompt = str(body.get('prompt') or '').strip()
-    if not prompt:
-        raise HTTPException(400, 'prompt is required')
-    if not llm_bridge.available():
-        raise HTTPException(503, llm_bridge.MISSING)
-    # The frame asks for 'chat' from "Discuss idea" and 'draft' from "Fill my draft"; the pane
-    # forwards the choice. Anything else keeps the draft behaviour this route always had.
-    action = 'chat' if body.get('action') == 'chat' else 'draft'
     try:
-        # int() on a container or a word is the caller's mistake, not a crash: it raised TypeError
-        # out of int({}) and escaped the ValueError branch below as a 500.
-        style = int(body.get('style') or 50)
-    except (TypeError, ValueError, OverflowError):
-        raise HTTPException(422, 'style must be a whole number between 0 and 100') from None
-    try:
-        request = build_request(body.get('provider'), body.get('model'),
-                                [{'role': 'user', 'content': prompt}], action,
-                                body.get('tone'), style)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
-    try:
-        content = llm_bridge.complete(request['messages'], provider=request['provider'],
-                                      model=request['model'], max_tokens=request['max_tokens'],
-                                      temperature=request['temperature'])
-    except llm_bridge.LlmUnavailable as exc:
-        raise HTTPException(503, str(exc)) from None
-    except llm_bridge.LlmTrustError as exc:
-        return trust_error_response(exc)
-    except llm_bridge.LlmFailed as exc:
-        # The bridge wrote the sentence (a timeout, or the provider's own error), so it is the detail.
-        raise HTTPException(502, str(exc)) from None
-    except RuntimeError as exc:
-        # An empty or unusable host reply is an upstream failure, not a crash.
-        raise HTTPException(502, str(exc)) from None
-    if action == 'chat':
-        # The shape the standalone /studio/ideas route answers with: app.js reads `content` as
-        # the chat reply and never expects a draft from it.
-        if not content.strip():
-            raise HTTPException(502, 'Hermes returned no content')
-        if len(content) > MAX_REPLY_CHARS:
-            raise HTTPException(502, 'Hermes returned an oversized response')
-        return {'success': True, 'action': 'chat', 'content': content, 'written_by': 'ctx.llm'}
-    try:
-        draft = parse_draft(content)
-    except ValueError:
-        raise HTTPException(502, 'Model returned an invalid draft') from None
-    project = None
-    if body.get('create'):
-        from music_studio import service
-        project = service.store().create(**draft)
-    return {'success': True, 'draft': draft, 'written_by': 'ctx.llm', 'project': project}
+        if str(body.get('prompt') or '').strip() and not llm_bridge.available():
+            raise DraftError(503, llm_bridge.MISSING)
+        return draft_song(body, llm_bridge.complete)
+    except DraftError as exc:
+        if exc.commands is not None:
+            return JSONResponse(status_code=exc.status, content={
+                'error': exc.detail, 'commands': exc.commands})
+        raise HTTPException(exc.status, exc.detail) from None
 
 
 @router.get('/verify.json')

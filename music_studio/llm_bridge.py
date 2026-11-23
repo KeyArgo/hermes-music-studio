@@ -36,8 +36,8 @@ TIMEOUT_SECONDS = 120
 _LOG = logging.getLogger(__name__)
 
 MISSING = (
-    "Drafting needs Hermes' model. Use the Music Studio pane in Hermes Desktop (it forwards the request "
-    "to the plugin route that owns ctx.llm), ask in a chat, or call the music_studio tool with "
+    "Drafting needs Hermes' model. Use the Music Studio pane in Hermes Desktop, ask in a chat, "
+    "or call the music_studio tool with "
     "action='draft'. A standalone browser tab has no host model to borrow."
 )
 
@@ -166,9 +166,10 @@ def _ask(llm: Any, kwargs: dict[str, Any], overrides: dict[str, Any]) -> Any:
 
 
 def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: str | None,
-          max_tokens: int, temperature: float) -> str:
-    with _lock:
-        llm = _llm
+          max_tokens: int, temperature: float, llm: Any = None) -> str:
+    if llm is None:
+        with _lock:
+            llm = _llm
     if llm is None:
         raise LlmUnavailable(MISSING)
 
@@ -199,10 +200,11 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
 
 
 def complete(messages: Sequence[dict[str, str]], *, provider: str | None = None,
-             model: str | None = None, max_tokens: int = 1200, temperature: float = 0.7) -> str:
+             model: str | None = None, max_tokens: int = 1200, temperature: float = 0.7,
+             llm: Any = None) -> str:
     """Synchronous completion — the shape the FastAPI routes and the tool handler both use."""
     return _call(messages, provider=provider, model=model, max_tokens=max_tokens,
-                 temperature=temperature)
+                 temperature=temperature, llm=llm)
 
 
 async def acomplete(messages: Sequence[dict[str, str]], *, provider: str | None = None,
