@@ -1131,6 +1131,7 @@ function library() {
         splice.addEventListener('click', async () => { try { await api('/section/splice',{project_id:p.project_id,take_id:t.section_of.take_id,candidate_take_id:t.take_id}); libMessage('Spliced: a new take of the whole song, with only that part replaced.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } });
         row.append(splice);
       }
+      if (t.state === 'running' || t.state === 'queued') { const stop = el('button','Stop','button secondary'); stop.type='button'; stop.setAttribute('aria-label', `Stop take ${i+1}`); stop.addEventListener('click', () => stopTake(p.project_id, t.take_id)); row.append(stop); }
       const killTake = el('button','Delete take','button secondary'); killTake.type='button'; killTake.addEventListener('click', async () => { if(!(await askConfirm(`Delete take ${i+1} and its audio?`, {confirmLabel:'Delete', danger:true}))) return; try { await api('/take/delete',{project_id:p.project_id,take_id:t.take_id}); libMessage('Take deleted.'); await refresh(); library(); } catch(err){ libMessage(err.message, true); } }); row.append(killTake);
       if (t.state === 'succeeded') { const button = el('button','▶ Play'); button.type='button'; button.addEventListener('click',() => play(STUDIO.api+`/projects/${encodeURIComponent(p.project_id)}/takes/${encodeURIComponent(t.take_id)}/audio`,p.title || 'Untitled',`Take ${i+1}`,t.playable_edit_id)); row.append(button);
       const exp=el('button','Export','button secondary');exp.type='button';
@@ -1281,12 +1282,19 @@ function gpuForTake(take) {
   }
   return null;
 }
+async function stopTake(projectId, takeId) {
+  if (!(await askConfirm('Stop this render? The partial take is discarded.', {confirmLabel:'Stop', danger:true}))) return;
+  try { await api('/take/stop', {project_id:projectId, take_id:takeId}); await refresh(); library(); }
+  catch (err) { message(err.message, true); }
+}
 function paintActive(project, take) {
   const panel = $('active-take'), running = take.state === 'running';
   const playback = $('active-playback');
   if (playback) playback.hidden = true;
   const progress = running ? Math.max(0, Math.min(99, Number(take.progress) || 0)) : 0;
   panel.hidden = false;
+  $('active-stop').hidden = false;
+  $('active-stop').onclick = () => stopTake(project.project_id, take.take_id);
   $('active-title').textContent = (project.title || 'Untitled') + ' · Take ' + ((project.takes || []).findIndex(t => t.take_id === take.take_id) + 1);
   $('active-state').textContent = running ? 'Rendering' : 'Queued';
   $('active-progress-bar').style.width = progress + '%';
@@ -1316,6 +1324,7 @@ function showFinishedTake(project, takes) {
   panel.hidden = false;
   $('active-title').textContent = `${project.title || 'Untitled'} · Take ${index}`;
   $('active-state').textContent = 'Ready';
+  $('active-stop').hidden = true;
   $('active-progress-bar').style.width = '100%';
   $('active-progress-bar').parentElement.setAttribute('aria-valuenow', '100');
   $('active-progress').textContent = succeeded.length > 1 ? `${succeeded.length} takes are ready to play.` : 'Finished. Play it here.';
@@ -1349,6 +1358,7 @@ function showFailedTake(takes) {
   if (box) box.hidden = true;
   $('active-state').textContent = 'Failed';
   $('active-title').textContent = 'Render failed';
+  $('active-stop').hidden = true;
   $('active-progress-bar').style.width = '0%';
   $('active-progress').textContent = (take && take.error) || 'The render failed.';
   $('active-detail').textContent = '';

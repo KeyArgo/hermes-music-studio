@@ -199,6 +199,35 @@ def terminate_render(pid, start_time=None):
         return False
 
 
+def cancel_remote(remote):
+    """Cancel a take's ComfyUI prompt on its server. Returns None, or a sentence saying what failed.
+
+    A pending prompt is deleted from the queue. A running one is interrupted only when it is ours:
+    ``/interrupt`` stops whatever the server is running, and on a shared server that can be someone
+    else's job, so a prompt that is in neither list is left alone.
+    """
+    if not isinstance(remote, dict) or remote.get('kind') != 'comfyui':
+        return None
+    try:
+        from .engines.minimax_m3_comfy import MiniMaxM3ComfyEngine
+        from .network import validate_base_url
+        engine = MiniMaxM3ComfyEngine(base_url=validate_base_url(remote['url']), timeout=4)
+        prompt_id = remote['prompt_id']
+        queue = engine._get('/queue')
+
+        def contains(entries):
+            return any(isinstance(item, (list, tuple)) and len(item) > 1 and item[1] == prompt_id
+                       for item in entries or [])
+
+        if contains(queue.get('queue_pending')):
+            engine._post('/queue', {'delete': [prompt_id]})
+        elif contains(queue.get('queue_running')):
+            engine._post('/interrupt', {'prompt_id': prompt_id})
+    except Exception as exc:  # noqa: BLE001 - a stop is reported, never raised
+        return f'{type(exc).__name__}: {str(exc)[:200]}'
+    return None
+
+
 class Jobs:
     def __init__(self, store):
         self.store = store
@@ -544,6 +573,56 @@ class Jobs:
             if cancelled:
                 self.store.save_take(p)
             return cancelled
+
+    def attach_remote(self, project_id, take_id, info):
+        if (not isinstance(info, dict) or any(
+                not isinstance(info.get(key), str) or not info[key].strip() or len(info[key]) > 2048
+                for key in ('kind', 'url', 'prompt_id'))):
+            raise ValueError('invalid remote job')
+        from .network import validate_base_url
+        info = {key: info[key] for key in ('kind', 'url', 'prompt_id')}
+        info['url'] = validate_base_url(info['url'])
+        with self.store.locked():
+            project = self.store.get(project_id)
+            take = self._take(project, take_id)
+            if take['state'] != 'running':
+                raise ValueError('invalid transition')
+            take['remote_job'] = info
+            self.store.save_take(project)
+
+    def stop(self, project_id, take_id):
+        """Stop one take: a queued take is cancelled, a running one is killed where it runs.
+
+        A running take's worker serves its whole batch, so the batch's queued takes are cancelled
+        with it; left queued they would only be reported later as "worker died". The ComfyUI prompt
+        is cancelled on the server too (see ``cancel_remote``). Returns ``{stopped, state, detail}``.
+        """
+        with self.store.locked():
+            project = self.store.get(project_id)
+            take = self._take(project, take_id)
+            state = take['state']
+            if state not in ('queued', 'running'):
+                return {'stopped': False, 'state': state, 'detail': 'already finished'}
+            now = time.time()
+            take.update(state='cancelled', error='Stopped by you', finished_at=now, audio_file=None)
+            batch_id = take.get('batch_id')
+            if state == 'running' and batch_id:
+                for sibling in project['takes']:
+                    if sibling.get('batch_id') == batch_id and sibling['state'] == 'queued':
+                        sibling.update(state='cancelled', error='Stopped with the rest of its batch',
+                                       finished_at=now)
+            saved = copy.deepcopy(take)
+            self.store.save_take(project)
+        activity.record(activity.data_dir(), 'render stopped', song=project_id, take=take_id,
+                        engine=saved.get('engine_id'))
+        detail = 'Stopped by you'
+        if state == 'running':
+            terminate_render(saved.get('pid'), saved.get('pid_start'))
+            terminate_render(saved.get('ace_pid'), saved.get('ace_pid_start'))
+            problem = cancel_remote(saved.get('remote_job'))
+            if problem:
+                detail = f'Stopped here; the server did not confirm: {problem}'
+        return {'stopped': True, 'state': 'cancelled', 'detail': detail}
 
     def _take(self, project, take_id):
         valid_id(take_id)

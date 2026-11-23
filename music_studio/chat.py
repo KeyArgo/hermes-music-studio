@@ -23,6 +23,7 @@ USAGE = ('/song                     what is in the library\n'
          '/song go [project]        show the draft, then confirm before anything renders\n'
          '/song go [project] now    approve the draft you were shown and queue one take\n'
          '/song takes [project]     the takes and their states\n'
+         '/song stop <project> <take> stop a queued or running take\n'
          '/song play [project]      the newest finished take, ready to play in the studio\n'
          '/song export [project]    copy the newest finished take into your music folder')
 
@@ -139,6 +140,14 @@ def handle(text, client, *, now=None):
     if project is None:
         return (f"No song matches {project_token!r}. {library(client.status())}" if project_token
                 else library(client.status()))
+
+    if verb == 'stop':
+        wanted = rest[0] if rest else ''
+        matches = [t for t in project.get('takes', []) if t.get('take_id', '').startswith(wanted)] if wanted else []
+        if len(matches) != 1:
+            return 'Name one take: /song stop <project> <take>'
+        result = client.stop(project['project_id'], matches[0]['take_id'])
+        return result.get('detail', 'Stopped')
 
     if verb == 'takes':
         return takes_text(project)

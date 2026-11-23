@@ -272,7 +272,8 @@ class Registry:
     def render(self, request: RenderRequest, engine_id: str | None = None,
                preferred: str | None = None,
                on_progress: Callable[[int], None] | None = None,
-               on_process: Callable[[int], None] | None = None) -> RenderResult:
+               on_process: Callable[[int], None] | None = None,
+               on_remote: Callable[[dict], None] | None = None) -> RenderResult:
         """Render on the selected engine, recording the selection in metadata.
 
         ``engine_id`` is an explicit user choice: if unavailable it raises. No
@@ -297,7 +298,11 @@ class Registry:
             engine = selection.engine
             requested, fell_back, reason = selection.requested_id, selection.fell_back, selection.reason
 
-        result = engine.render(request, on_progress=on_progress, on_process=on_process)
+        import inspect
+        kwargs = {'on_progress': on_progress, 'on_process': on_process}
+        if 'on_remote' in inspect.signature(engine.render).parameters:
+            kwargs['on_remote'] = on_remote
+        result = engine.render(request, **kwargs)
         result.metadata.update({
             'requested_engine': requested,
             'engine_id': engine.id,

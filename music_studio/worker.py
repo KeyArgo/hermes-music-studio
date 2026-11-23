@@ -215,6 +215,17 @@ def _render_take(jobs, store, project_id, take_id, release_lease=None):
         # is killed before its own cleanup can run.
         jobs.attach_render(project_id, take_id, pid)
 
+    def on_remote(info):
+        try:
+            jobs.attach_remote(project_id, take_id, info)
+        except ValueError as exc:
+            # Stopped between the server accepting the prompt and this record: nobody else knows
+            # the prompt id, so cancel it here before giving up the take.
+            if str(exc) == 'invalid transition':
+                from music_studio.jobs import cancel_remote
+                cancel_remote(info)
+            raise
+
     try:
         try:
             jobs.progress(project_id, take_id, started_at=time.time(), progress=0)
@@ -228,7 +239,7 @@ def _render_take(jobs, store, project_id, take_id, release_lease=None):
             _enforce_capability(reg, take, request.mode)
             result = reg.render(
                 request, engine_id=take.get('engine_id'),
-                on_progress=on_progress, on_process=on_process)
+                on_progress=on_progress, on_process=on_process, on_remote=on_remote)
             data = result.wav
             # Settle QC from the exact bytes being committed, so success and
             # its edit are one observable state.
@@ -242,10 +253,22 @@ def _render_take(jobs, store, project_id, take_id, release_lease=None):
             terminal = True
             return EXIT_OK, batch_id
         except Exception as exc:
+            if isinstance(exc, ValueError) and str(exc) == 'invalid transition':
+                if release_lease is not None:
+                    release_lease()
+                terminal = True
+                return EXIT_NOT_CLAIMABLE, batch_id
             message = (str(exc).strip() or type(exc).__name__)[:MAX_ERROR_CHARS]
             try:
                 jobs.fail(project_id, take_id, message)
                 terminal = True
+            except ValueError as transition:
+                if str(transition) == 'invalid transition':
+                    if release_lease is not None:
+                        release_lease()
+                    terminal = True
+                    return EXIT_NOT_CLAIMABLE, batch_id
+                logging.exception('worker could not record take failure')
             except Exception:
                 logging.exception('worker could not record take failure')
             print(f'music-studio worker failed: {message}', file=sys.stderr)
@@ -265,6 +288,9 @@ def _render_take(jobs, store, project_id, take_id, release_lease=None):
             try:
                 jobs.abort(project_id, take_id,
                            'worker exited without committing the take')
+            except ValueError as exc:
+                if str(exc) != 'invalid transition':
+                    logging.exception('worker could not record abandoned take')
             except Exception:
                 logging.exception('worker could not record abandoned take')
 
