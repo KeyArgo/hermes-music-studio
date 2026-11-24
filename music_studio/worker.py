@@ -346,13 +346,12 @@ def main(argv=None):
         while take_id:
             code, batch_id = _render_take(jobs, store, args.project, take_id, release_lease)
             if code == EXIT_NOT_CLAIMABLE:
-                if first:
-                    print('music-studio worker: take not claimable', file=sys.stderr)
-                    return EXIT_NOT_CLAIMABLE
                 # Cancelled or already handled: look for what is still queued.
                 batch_id = _batch_of(store, args.project, take_id)
-            first = False
             nxt = jobs.next_queued(args.project, batch_id)
+            if first and code == EXIT_NOT_CLAIMABLE and not nxt:
+                return EXIT_NOT_CLAIMABLE
+            first = False
             take_id = nxt['take_id'] if nxt else None
         return EXIT_FAILED if code == EXIT_FAILED else EXIT_OK
     finally:

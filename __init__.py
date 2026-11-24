@@ -407,12 +407,10 @@ def register(ctx):
         import threading
         import uuid
         from functools import partial
-        from music_studio.drafting import DraftError, draft_song
+        from music_studio.drafting import (DraftError, draft_song, rpc_jobs as jobs,
+                                          rpc_jobs_lock as jobs_lock, rpc_slots as slots)
 
         model = getattr(ctx, 'llm', None)
-        jobs = {}
-        jobs_lock = threading.Lock()
-        slots = threading.BoundedSemaphore(2)
 
         def prune():
             now = time.monotonic()
@@ -471,7 +469,8 @@ def register(ctx):
                 for key, entry in list(jobs.items()):
                     if entry['result']['state'] != 'running' and now - entry['time'] >= 600:
                         del jobs[key]
-                entry = jobs.get(params.get('job')) if isinstance(params, dict) else None
+                job = params.get('job') if isinstance(params, dict) else None
+                entry = jobs.get(job) if isinstance(job, str) else None
                 return dict(entry['result']) if entry else {'state': 'unknown'}
 
         ctx.register_rpc('studio.draft', start_draft)

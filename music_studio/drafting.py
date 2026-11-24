@@ -1,6 +1,14 @@
 """Shared validation and model response handling for studio drafts."""
 
+import threading
+
 from music_studio import llm_bridge
+
+
+# Handler registration can be repeated while background drafts are still running.
+rpc_jobs = {}
+rpc_jobs_lock = threading.Lock()
+rpc_slots = threading.BoundedSemaphore(2)
 
 
 class DraftError(Exception):
@@ -29,7 +37,7 @@ def draft_song(body, llm_complete):
     try:
         # int() on a container or a word is the caller's mistake, not a crash: it raised TypeError
         # out of int({}) and escaped the ValueError branch below as a 500.
-        style = int(body.get('style') or 50)
+        style = int(body.get('style', 50))
     except (TypeError, ValueError, OverflowError):
         raise DraftError(422, 'style must be a whole number between 0 and 100') from None
     try:

@@ -72,8 +72,16 @@ async function requestDraft(ctx, body) {
     await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(0, deadline - Date.now()))))
     const remaining = deadline - Date.now()
     if (remaining <= 0) break
-    const result = await rpcHost.request('plugin.hermes-music-studio.studio.draft_result',
-      { job: started.job }, Math.min(15000, remaining))
+    let result
+    try {
+      result = await rpcHost.request('plugin.hermes-music-studio.studio.draft_result',
+        { job: started.job }, Math.min(15000, remaining))
+    } catch (err) {
+      // One slow or dropped poll is not a failed draft: the job keeps running in the plugin, so ask
+      // again until the deadline. A method that is gone (plugin unloaded) will not come back.
+      if (err?.code === -32601 || err?.error?.code === -32601) throw err
+      continue
+    }
     if (result.state === 'done') return result
     if (result.state === 'failed') {
       const failure = { ok: false, error: result.error }

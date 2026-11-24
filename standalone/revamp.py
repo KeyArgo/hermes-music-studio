@@ -10,10 +10,11 @@ import time
 import urllib.error
 import urllib.parse
 import uuid
+import weakref
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from music_studio import media_sign
 
@@ -30,6 +31,13 @@ INSTALL = 'hermes plugins install KeyArgo/hermes-revamp'
 # Leave room for revampctl's listener proof (2s) and request (5s) on the last poll.
 INDEX_WAIT = 12.0
 _playlist_create_lock = threading.Lock()
+_playlist_locks = weakref.WeakValueDictionary()
+
+
+def _playlist_lock(playlist_id):
+    # Studio serialises its own edits. Edits made inside REVamp itself can still race.
+    with _playlist_create_lock:
+        return _playlist_locks.setdefault(playlist_id, threading.Lock())
 
 
 def _hermes_homes():
@@ -132,6 +140,13 @@ class RemoveStudioTake(BaseModel):
     playlist_id: str | None = Field(default=None, max_length=128)
     item_id: str = Field(min_length=3, max_length=200)
 
+    @field_validator('playlist_id', mode='before')
+    @classmethod
+    def validate_playlist_id(cls, value):
+        if value is not None and (not isinstance(value, str) or not PLAYLIST_ID.fullmatch(value)):
+            raise HTTPException(400, 'invalid playlist id')
+        return value
+
 
 def studio_playlist():
     """The studio's own playlist, created on first use."""
@@ -216,10 +231,11 @@ def play(body: Track):
 def add_to_playlist(body: AddTrack):
     if not PLAYLIST_ID.fullmatch(body.playlist_id): raise HTTPException(400, 'invalid playlist id')
     path='/api/playlists/'+urllib.parse.quote(body.playlist_id, safe='')
-    playlist=_call('GET', path)
-    if not isinstance(playlist,dict) or not isinstance(playlist.get('items'),list):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
-    result=_call('PUT', path, {'items':[*playlist['items'], _track(body)]})
+    with _playlist_lock(body.playlist_id):
+        playlist=_call('GET', path)
+        if not isinstance(playlist,dict) or not isinstance(playlist.get('items'),list):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
+        result=_call('PUT', path, {'items':[*playlist['items'], _track(body)]})
     return {'success':True,'playlist':result}
 
 @router.post('/studio/revamp/add-take')
@@ -228,12 +244,16 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
     try:
         uuid.UUID(body.project_id); uuid.UUID(body.take_id)
         from music_studio import service
-        project = service.store().get(body.project_id)
+        store = service.store()
+        project = store.get(body.project_id)
         take = next(t for t in project.get('takes', []) if t.get('take_id') == body.take_id)
         if take.get('state') != 'succeeded':
             raise ValueError('take is not finished')
     except (ValueError, FileNotFoundError, KeyError, StopIteration):
         raise HTTPException(404, 'finished take not found') from None
+    from music_studio import settings
+    if getattr(store, 'root', None) is not None:
+        _check_export_folder(settings.read(store.root).get('export_dir'))
     if body.playlist_id:
         if not PLAYLIST_ID.fullmatch(body.playlist_id):
             raise HTTPException(400, 'invalid playlist id')
@@ -254,12 +274,13 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
         raise HTTPException(400, f'could not export the take for REVamp: {exc}') from None
     indexing = _index_exports(written['folder'], [written])
     item = _studio_item(body.project_id, body.take_id, written)
-    current = _call('GET', path)
-    if not isinstance(current, dict) or not isinstance(current.get('items'), list):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
-    items = [row for row in current['items']
-             if not (isinstance(row, dict) and row.get('id') == item['id'])]
-    result = _call('PUT', path, {'items': [*items, item]})
+    with _playlist_lock(playlist_id):
+        current = _call('GET', path)
+        if not isinstance(current, dict) or not isinstance(current.get('items'), list):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
+        items = [row for row in current['items']
+                 if not (isinstance(row, dict) and row.get('id') == item['id'])]
+        result = _call('PUT', path, {'items': [*items, item]})
     stored_items = result.get('items') if isinstance(result, dict) else None
     stored = next((row for row in stored_items or [] if isinstance(row, dict) and row.get('id') == item['id']), None)
     if stored is None:
@@ -324,9 +345,19 @@ def _track_id(path: str) -> str:
     return hashlib.sha1(os.path.abspath(path).encode('utf-8')).hexdigest()[:16]
 
 
+def _check_export_folder(folder):
+    if not folder:
+        return
+    path = Path(folder).expanduser()
+    if any(part.startswith('.') and part != '..' for part in (*path.parts, *path.resolve().parts)):
+        raise HTTPException(400, f'REVamp skips hidden folders in {folder}. '
+                                 'In Settings → export folder, pick a folder without a hidden part.')
+
+
 def _ensure_library_folder(folder: str) -> bool:
     """REVamp can only play what it has indexed, so the folder it writes into must be one
     of its library folders."""
+    _check_export_folder(folder)
     payload = _call('GET', '/api/library/folders')
     rows = payload.get('folders') if isinstance(payload, dict) else payload
     rows = [row for row in (rows or []) if isinstance(row, dict) and row.get('path')]
@@ -392,6 +423,7 @@ def playlist_from_takes(body: PlaylistFromTakes):
         return match
     base = service.default_data_dir(service.PLUGIN_ID)
     folder = (body.folder or st.read(base).get('export_dir') or '').strip()
+    _check_export_folder(folder)
     files = []
     items = []
     for row in body.takes:
@@ -435,15 +467,16 @@ def forget_deleted(project_id, take_id=None):
             if not PLAYLIST_ID.fullmatch(playlist_id):
                 continue
             path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
-            current = _call('GET', path)
-            items = current.get('items') if isinstance(current, dict) else None
-            if not isinstance(items, list):
-                continue
-            kept = [item for item in items
-                    if not (isinstance(item, dict) and wanted(str(item.get('id') or '')))]
-            if len(kept) != len(items):
-                _call('PUT', path, {'items': kept})
-                removed += len(items) - len(kept)
+            with _playlist_lock(playlist_id):
+                current = _call('GET', path)
+                items = current.get('items') if isinstance(current, dict) else None
+                if not isinstance(items, list):
+                    continue
+                kept = [item for item in items
+                        if not (isinstance(item, dict) and wanted(str(item.get('id') or '')))]
+                if len(kept) != len(items):
+                    _call('PUT', path, {'items': kept})
+                    removed += len(items) - len(kept)
     except Exception:  # noqa: BLE001 - REVamp closed or refusing: the song is still deleted
         return removed
     return removed
@@ -460,15 +493,19 @@ def _take_exists(store, project_id, take_id):
 @router.post('/studio/revamp/remove')
 def remove_from_playlist(body: RemoveStudioTake):
     """Take one item back out of the studio's REVamp playlist."""
-    playlist_id = body.playlist_id if body.playlist_id is not None else str((studio_playlist() or {}).get('id') or '')
-    if not PLAYLIST_ID.fullmatch(playlist_id):
-        raise HTTPException(400, 'REVamp returned an invalid playlist')
+    playlist_id = body.playlist_id
+    if playlist_id is None:
+        playlist = studio_playlist()
+        playlist_id = playlist.get('id') if isinstance(playlist, dict) else None
+        if not isinstance(playlist_id, str) or not PLAYLIST_ID.fullmatch(playlist_id):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
     path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
-    current = _call('GET', path)
-    # A reply without an items list must not be read as an empty playlist: saving that would wipe it.
-    if not isinstance(current, dict) or not isinstance(current.get('items'), list):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
-    items = [row for row in current['items']
-             if not (isinstance(row, dict) and row.get('id') == body.item_id)]
-    result = _call('PUT', path, {'items': items})
+    with _playlist_lock(playlist_id):
+        current = _call('GET', path)
+        # A reply without an items list must not be read as an empty playlist: saving that would wipe it.
+        if not isinstance(current, dict) or not isinstance(current.get('items'), list):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
+        items = [row for row in current['items']
+                 if not (isinstance(row, dict) and row.get('id') == body.item_id)]
+        result = _call('PUT', path, {'items': items})
     return {'success': True, 'playlist': result, 'items': _studio_items(result)}

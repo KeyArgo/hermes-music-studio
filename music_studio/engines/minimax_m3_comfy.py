@@ -364,13 +364,27 @@ class MiniMaxM3ComfyEngine(Engine):
         queue/history/download/transcode path has exactly one implementation.
         """
         self._emit(on_progress, 2)
-        created = self._post('/prompt', {'prompt': graph, 'client_id': uuid.uuid4().hex})
+        requested_id = str(uuid.uuid4())
+        client_id = uuid.uuid4().hex
+        remote = {'kind': 'comfyui', 'url': self.base_url, 'prompt_id': requested_id,
+                  'client_id': client_id}
+        if on_remote is not None:
+            on_remote(remote)
+        submission = {'prompt': graph, 'client_id': client_id, 'prompt_id': requested_id}
+        try:
+            created = self._post('/prompt', submission)
+        except EngineError as exc:
+            # Only retry an explicit rejection of this field. A lost reply may already be queued.
+            if getattr(exc.__cause__, 'code', None) != 400 or 'prompt_id' not in str(exc):
+                raise
+            del submission['prompt_id']
+            created = self._post('/prompt', submission)
         prompt_id = created.get('prompt_id') if isinstance(created, dict) else None
         if not prompt_id:
             raise EngineError(_clean(f'ComfyUI rejected the workflow: {created}'),
                               engine_id=self.id)
-        if on_remote is not None:
-            on_remote({'kind': 'comfyui', 'url': self.base_url, 'prompt_id': prompt_id})
+        if on_remote is not None and prompt_id != requested_id:
+            on_remote({**remote, 'prompt_id': prompt_id})
         self._emit(on_progress, 5)
 
         deadline = time.monotonic() + request.timeout_seconds
@@ -598,6 +612,8 @@ class MiniMaxM3ComfyEngine(Engine):
             reason = getattr(exc, 'reason', exc)
             raise _ComfyTransportError(f'ComfyUI unreachable at {self.base_url}: {reason}',
                                        engine_id=self.id) from exc
+        if method == 'POST' and path in ('/queue', '/interrupt') and not payload:
+            return {}
         if raw:
             return payload
         try:

@@ -1297,9 +1297,18 @@ function gpuForTake(take) {
   return null;
 }
 async function stopTake(projectId, takeId) {
-  if (!(await askConfirm('Stop this render? The partial take is discarded.', {confirmLabel:'Stop', danger:true}))) return;
-  try { await api('/take/stop', {project_id:projectId, take_id:takeId}); await refresh(); library(); }
-  catch (err) { message(err.message, true); }
+  const takes = projects.find(p => p.project_id === projectId)?.takes || [];
+  const take = takes.find(t => t.take_id === takeId);
+  const siblings = take?.state === 'running' && take.batch_id
+    ? takes.filter(t => t.batch_id === take.batch_id && t.state === 'queued').length : 0;
+  const warning = siblings ? ` This also cancels ${siblings} queued ${siblings === 1 ? 'take' : 'takes'}.` : '';
+  if (!(await askConfirm('Stop this render? The partial take is discarded.' + warning, {confirmLabel:'Stop', danger:true}))) return;
+  try {
+    const result = await api('/take/stop', {project_id:projectId, take_id:takeId});
+    await refresh();
+    library();
+    libMessage(result.detail);
+  } catch (err) { libMessage(err.message, true); }
 }
 function paintActive(project, take) {
   const panel = $('active-take'), running = take.state === 'running';
@@ -1370,16 +1379,17 @@ function showFailedTake(takes) {
   panel.hidden = false;
   const box = $('active-playback');
   if (box) box.hidden = true;
-  $('active-state').textContent = 'Failed';
-  $('active-title').textContent = 'Render failed';
+  const stopped = take?.state === 'cancelled';
+  $('active-state').textContent = stopped ? 'Stopped' : 'Failed';
+  $('active-title').textContent = stopped ? 'Render stopped' : 'Render failed';
   $('active-stop').hidden = true;
   $('active-progress-bar').style.width = '0%';
-  $('active-progress').textContent = (take && take.error) || 'The render failed.';
+  $('active-progress').textContent = (take && take.error) || (stopped ? 'Stopped by you' : 'The render failed.');
   $('active-detail').textContent = '';
   $('active-gpu').hidden = true;
   if (followed && !followed.failed) {
     followed.failed = true;
-    message($('active-progress').textContent, true);
+    message($('active-progress').textContent, !stopped);
   }
 }
 function renderActiveTake() {
@@ -1390,7 +1400,7 @@ function renderActiveTake() {
     const mine = project ? (project.takes || []).filter(t => followed.ids.includes(t.take_id)) : [];
     const live = mine.find(t => t.state === 'running') || mine.find(t => t.state === 'queued');
     if (live && project) { paintActive(project, live); return; }
-    if (mine.length && mine.every(t => t.state === 'succeeded' || t.state === 'failed')) {
+    if (mine.length && mine.every(t => ['succeeded', 'failed', 'cancelled'].includes(t.state))) {
       if (mine.some(t => t.state === 'succeeded')) { showFinishedTake(project, mine); return; }
       showFailedTake(mine);
       return;

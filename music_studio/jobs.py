@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import uuid
 import wave
 from . import activity
@@ -185,47 +186,76 @@ def terminate_render(pid, start_time=None):
     check makes pid reuse safe: a recycled pid is never signalled.
     """
     if type(pid) is not int or pid <= 0:
-        return False
-    if start_time is not None:
-        actual = _stat_start_time(pid)
-        if actual is not None and actual != start_time:
-            return False
-    if not process_alive(pid, start_time):
-        return False
+        return 'unconfirmed'
+    if not process_alive(pid):
+        return 'already exited'
+    if start_time is None or _stat_start_time(pid) != start_time:
+        return 'unconfirmed'
     try:
         from .procs import kill_tree
-        return kill_tree(pid)
+        return 'confirmed' if kill_tree(pid) else 'unconfirmed'
     except OSError:
-        return False
+        return 'unconfirmed'
 
 
 def cancel_remote(remote):
-    """Cancel a take's ComfyUI prompt on its server. Returns None, or a sentence saying what failed.
-
-    A pending prompt is deleted from the queue. A running one is interrupted only when it is ours:
-    ``/interrupt`` stops whatever the server is running, and on a shared server that can be someone
-    else's job, so a prompt that is in neither list is left alone.
-    """
+    """Return None for a confirmed cancellation, or a detail for the Stop response."""
     if not isinstance(remote, dict) or remote.get('kind') != 'comfyui':
         return None
+    from .engines.minimax_m3_comfy import MiniMaxM3ComfyEngine
+    from .network import validate_base_url
+
+    def matching_id(entries):
+        for entry in entries or ():
+            if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                continue
+            if entry[1] == prompt_id:
+                return prompt_id
+            if (client_id and len(entry) > 3 and isinstance(entry[3], dict)
+                    and entry[3].get('client_id') == client_id):
+                return entry[1]
+        return None
+
     try:
-        from .engines.minimax_m3_comfy import MiniMaxM3ComfyEngine
-        from .network import validate_base_url
-        engine = MiniMaxM3ComfyEngine(base_url=validate_base_url(remote['url']), timeout=4)
+        engine = MiniMaxM3ComfyEngine(base_url=validate_base_url(remote['url']), timeout=2)
         prompt_id = remote['prompt_id']
-        queue = engine._get('/queue')
-
-        def contains(entries):
-            return any(isinstance(item, (list, tuple)) and len(item) > 1 and item[1] == prompt_id
-                       for item in entries or [])
-
-        if contains(queue.get('queue_pending')):
-            engine._post('/queue', {'delete': [prompt_id]})
-        elif contains(queue.get('queue_running')):
-            engine._post('/interrupt', {'prompt_id': prompt_id})
+        client_id = remote.get('client_id')
+        deadline = time.monotonic() + 3
+        per_job = True
+        dispatched = None
+        while True:
+            if per_job:
+                path = '/api/jobs/' + urllib.parse.quote(prompt_id, safe='') + '/cancel'
+                try:
+                    if engine._post(path, {}).get('cancelled') is True:
+                        return None
+                except Exception as exc:
+                    if getattr(exc.__cause__ or exc, 'code', None) not in (404, 405):
+                        raise
+                    per_job = False
+            if not per_job or client_id:
+                queue = engine._get('/queue')
+                running = matching_id(queue['queue_running'])
+                pending = matching_id(queue['queue_pending'])
+                if per_job:
+                    # Older prompt submission handlers may mint their own id.
+                    prompt_id = running or pending or prompt_id
+                elif running and dispatched != 'interrupt':
+                    engine._post('/interrupt', {'prompt_id': running})
+                    dispatched = 'interrupt'
+                    continue
+                elif pending and not dispatched:
+                    engine._post('/queue', {'delete': [pending]})
+                    dispatched = 'delete'
+                    # Read again immediately: the job may have started during deletion.
+                    continue
+                elif dispatched and not (running or pending):
+                    return None
+            if time.monotonic() >= deadline:
+                return 'the prompt could not be confirmed as cancelled'
+            time.sleep(0.2)
     except Exception as exc:  # noqa: BLE001 - a stop is reported, never raised
         return f'{type(exc).__name__}: {str(exc)[:200]}'
-    return None
 
 
 class Jobs:
@@ -580,7 +610,9 @@ class Jobs:
                 for key in ('kind', 'url', 'prompt_id'))):
             raise ValueError('invalid remote job')
         from .network import validate_base_url
-        info = {key: info[key] for key in ('kind', 'url', 'prompt_id')}
+        info = {key: info[key] for key in ('kind', 'url', 'prompt_id', 'client_id') if key in info}
+        if 'client_id' in info and (not isinstance(info['client_id'], str) or len(info['client_id']) > 128):
+            raise ValueError('invalid remote client id')
         info['url'] = validate_base_url(info['url'])
         with self.store.locked():
             project = self.store.get(project_id)
@@ -617,11 +649,21 @@ class Jobs:
                         engine=saved.get('engine_id'))
         detail = 'Stopped by you'
         if state == 'running':
-            terminate_render(saved.get('pid'), saved.get('pid_start'))
-            terminate_render(saved.get('ace_pid'), saved.get('ace_pid_start'))
+            outcomes = [terminate_render(saved.get('pid'), saved.get('pid_start'))]
+            if saved.get('ace_pid'):
+                outcomes.append(terminate_render(saved['ace_pid'], saved.get('ace_pid_start')))
+            if all(status == 'already exited' for status in outcomes):
+                outcome = 'already exited'
+            elif all(status in ('already exited', 'confirmed') for status in outcomes):
+                outcome = 'confirmed'
+            else:
+                outcome = 'unconfirmed'
+            detail = f'Local stop {outcome}.'
+            if saved.get('engine_id') == 'ace_remote':
+                detail += ' Tracking stopped here; the ACE server may finish the job.'
             problem = cancel_remote(saved.get('remote_job'))
             if problem:
-                detail = f'Stopped here; the server did not confirm: {problem}'
+                detail += f' Stopped here; the server did not confirm: {problem}'
         return {'stopped': True, 'state': 'cancelled', 'detail': detail}
 
     def _take(self, project, take_id):
@@ -673,7 +715,7 @@ class Jobs:
             take = self._take(self.store.get(project_id), take_id)
         except (OSError, ValueError, KeyError, TypeError):
             return False
-        return terminate_render(take.get('ace_pid'), take.get('ace_pid_start'))
+        return terminate_render(take.get('ace_pid'), take.get('ace_pid_start')) == 'confirmed'
 
     def claim(self, project_id, take_id, pid):
         """Atomically take ownership of a queued take for this worker process.

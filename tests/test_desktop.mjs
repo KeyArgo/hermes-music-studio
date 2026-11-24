@@ -331,3 +331,21 @@ test('Open REVamp navigates only for the mounted studio frame', async () => {
   window.dispatchEvent(new dom.window.MessageEvent('message', {data, source: frame.contentWindow}));
   assert.deepEqual(routes, ['/revamp']);
 });
+
+test('one failed draft poll is retried, not reported as a failed draft', async () => {
+  // Found in review: a single poll that timed out used to fail the whole draft although the job
+  // was still running in the plugin.
+  let polls = 0;
+  globalThis.__draftRpcHost.request = async method => {
+    if (method.endsWith('studio.draft')) return { job: 'slow' };
+    polls += 1;
+    if (polls === 1) throw new Error('Timed out connecting to Hermes backend after 15000ms');
+    return { state: 'done', draft: { title: 'After retry' } };
+  };
+  try {
+    const posted = await rpcDraftMessage();
+    assert.equal(posted.ok, true);
+    assert.equal(posted.draft.title, 'After retry');
+    assert.equal(polls, 2);
+  } finally { delete globalThis.__draftRpcHost.request; }
+});
