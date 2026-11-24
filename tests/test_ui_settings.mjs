@@ -68,7 +68,7 @@ async function boot(overrides = {}, options = {}) {
       '/api/studio/workspaces': { success: true, workspaces: [] },
       '/api/studio/hardware': { success: true, devices: [], pid_to_gpu: {} },
       '/api/studio/models': { success: true, providers: [], provider: 'nous', model: 'm' },
-      '/api/studio/revamp/status': { detail: 'REVamp is unavailable.' },
+      '/api/studio/revamp/status': { installed: false, reachable: false, reason: 'REVamp is not installed.' },
       '/api/about': { success: true, version: '0.2.5', visibility: 'private',
         build: { version: '0.2.5-dev.17', commit: 'abcdef1234567890', commit_short: 'abcdef12',
                  commit_date: '2026-11-09T19:00:00-07:00', built_at: '2026-11-09T19:04:11-07:00',
@@ -115,8 +115,9 @@ async function boot(overrides = {}, options = {}) {
       items: [{ id: 'studio:p1:t1', source: 'studio', title: 'Afterglow', artist: 'Hermes Music Studio',
         playback: { backend: 'webamp', url: 'http://127.0.0.1:8775/api/projects/p1/takes/t1/audio' } }] };
     if (path === '/api/studio/revamp/add-take') payload = { success: true, item: { id: 'studio:p1:t1' } };
-    if (path === '/api/studio/revamp/playlist') payload = { success: true, folder: '/home/alex/Music/Hermes Music Studio',
-      files: ['/home/alex/Music/Hermes Music Studio/Afterglow.wav'], playlist: { id: 'pl02', name: body.name } };
+    if (path === '/api/studio/revamp/playlists') payload = body
+      ? { playlist: { id: 'pl02', name: body.name, items: [] } }
+      : { playlists: [{ id: 'pl02', name: 'Drive mix' }] };
     if (path === '/api/compare/engines') payload = { success: true, engines: [
       { engine_id: 'ace_local', label: 'ACE-Step 1.5 (local GPU)', ready: true, detail: '' },
       { engine_id: 'minimax_m3_comfy', label: 'MiniMax Music 3 (ComfyUI)', ready: true, detail: '' },
@@ -324,7 +325,7 @@ test('closing the studio posts the close and says the studio stopped', async t =
 });
 
 test('the REVamp screen lists only the takes Music Studio added', async t => {
-  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -337,8 +338,7 @@ test('the REVamp screen lists only the takes Music Studio added', async t => {
 });
 
 test('a missing REVamp is never asked for its added list', async t => {
-  // The status answers { detail: 'REVamp is unavailable.' } here. Asking for the list anyway is a
-  // guaranteed 503 on every visit, and a red error in the console for a plugin that is optional.
+  // A missing installation has setup directions even before any playlist exists.
   const { window, calls } = await boot();
   t.after(() => window.close());
   const doc = window.document;
@@ -347,11 +347,15 @@ test('a missing REVamp is never asked for its added list', async t => {
   assert.ok(!calls.some(c => c.path === '/api/studio/revamp/added'),
     'no list is requested from a REVamp that is not there');
   assert.match(text(doc.getElementById('revamp-status')), /not installed/i);
-  assert.match(text(doc.getElementById('revamp-added')), /Nothing added yet/);
+  assert.equal(doc.getElementById('revamp-install-help').hidden, false);
+  assert.equal(text(doc.getElementById('revamp-install-command')), 'hermes plugins install KeyArgo/hermes-revamp');
+  assert.equal(doc.getElementById('open-revamp').hidden, true);
+  assert.ok(doc.getElementById('revamp-create').closest('[hidden]'));
+  assert.ok(![...doc.querySelectorAll('button')].some(b => text(b) === 'Add to REVamp'));
 });
 
 test('Add to REVamp hands the take over without a playlist picker', async t => {
-  const { window, calls } = await boot();
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true } });
   t.after(() => window.close());
   const doc = window.document;
   const add = [...doc.querySelectorAll('button')].find(b => /Add to REVamp/.test(text(b)));
@@ -376,8 +380,8 @@ test('closing the studio tells the Hermes pane, so the frame goes away', async t
   assert.ok(calls.some(c => c.path === '/api/host/close'));
 });
 
-test('a new REVamp playlist is built from the exported takes, not from the live stream', async t => {
-  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
+test('a name alone creates and selects an empty REVamp playlist', async t => {
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -385,10 +389,11 @@ test('a new REVamp playlist is built from the exported takes, not from the live 
   doc.getElementById('revamp-new-name').value = 'Drive mix';
   doc.getElementById('revamp-create').click();
   await new Promise(resolve => setTimeout(resolve, 40));
-  const posted = calls.filter(c => c.path === '/api/studio/revamp/playlist').pop();
-  assert.ok(posted, 'the playlist is built through the export route');
+  const posted = calls.filter(c => c.path === '/api/studio/revamp/playlists' && c.method === 'POST').pop();
+  assert.ok(posted, 'Create uses the empty-playlist route');
   assert.equal(posted.body.name, 'Drive mix');
-  assert.deepEqual(posted.body.takes, [{ project_id: 'p1', take_id: 't1' }]);
+  assert.deepEqual(posted.body, { name: 'Drive mix' });
+  assert.equal(doc.getElementById('revamp-playlist').value, 'pl02');
   assert.match(text(doc.getElementById('revamp-status')), /created in REVamp/);
 });
 
@@ -443,7 +448,7 @@ test('the chip shows the line the server built when it sends one', async t => {
 });
 
 test('Play here puts the take in the footer player, not on a mystery page', async t => {
-  const { window, calls } = await boot({ '/api/studio/revamp/status': { available: true, player_connected: false } });
+  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true, player_connected: false } });
   t.after(() => window.close());
   const doc = window.document;
   doc.getElementById('nav-listen').click();
@@ -462,7 +467,7 @@ test('Play here says why it cannot play an item with no file', async t => {
   // REVamp can hold an item whose audio it never indexed. The button must explain that instead of
   // looking alive and doing nothing — the failure this product keeps being judged on.
   const { window } = await boot({
-    '/api/studio/revamp/status': { available: true, player_connected: false },
+    '/api/studio/revamp/status': { installed: true, reachable: true, player_connected: false },
     '/api/studio/revamp/added': { success: true, playlist: 'pl01', name: 'Music Studio',
       items: [{ id: 'other:p9', source: 'studio', title: 'No file yet',
         artist: 'Hermes Music Studio', playback: {} }] }
@@ -1157,4 +1162,20 @@ test('a saved draft keeps a workflow engine that arrived before the workflow lis
   await new Promise(resolve => setTimeout(resolve, 25));
   assert.equal(doc.getElementById('engine-select').value, 'comfy_workflow:w1',
     'opening the draft did not silently switch it to a built-in engine');
+});
+
+test('Open REVamp asks the Desktop pane to navigate', async t => {
+  const {window} = await boot({ '/api/studio/revamp/status': {installed: true, reachable: false,
+    reason: 'REVamp is installed but not running. Open REVamp in Hermes.'} });
+  t.after(() => window.close());
+  const sent = [];
+  Object.defineProperty(window, 'parent', {value: {postMessage: msg => sent.push(msg)}, configurable: true});
+  const doc = window.document;
+  doc.getElementById('nav-listen').click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok(doc.getElementById('revamp-controls').hidden);
+  assert.match(text(doc.getElementById('revamp-status')), /not running/i);
+  assert.equal(doc.getElementById('open-revamp').hidden, false);
+  doc.getElementById('open-revamp').click();
+  assert.equal(sent[0].type, 'hermes-music-studio:open-revamp');
 });

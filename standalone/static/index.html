@@ -605,16 +605,15 @@
 <section id="listen-view" class="page" hidden>
 <div class="eyebrow">05 / REVAMP</div>
 <h1>Your takes,<br><em>in REVamp.</em></h1>
-<p class="intro">Only what you add here appears in this list. REVamp's own library — audiobooks, albums, everything — stays in REVamp.</p>
-<div class="revamp-grid">
+<p id="revamp-status" class="hint" role="status"></p>
+<div id="revamp-install-help" hidden>
+<code id="revamp-install-command">hermes plugins install KeyArgo/hermes-revamp</code>
+<button id="revamp-copy-command" class="button secondary" type="button">Copy</button>
+<p>Under Capabilities → Plugins, enable REVamp in both General and Desktop, then restart Hermes.</p>
+</div>
+<button id="open-revamp" class="button secondary" type="button" hidden>Open REVamp</button>
+<div id="revamp-controls" class="revamp-grid" hidden>
 <div class="panel">
-<div class="panel-title">
-<div>
-<span class="kicker">ADDED FROM MUSIC STUDIO</span>
-<h2>Takes handed over</h2>
-</div>
-</div>
-<p id="revamp-status" class="hint" role="status">Open REVamp in Hermes to hear playback.</p>
 <div class="workspace-form">
 <label>Add to playlist<select id="revamp-playlist"><option value="">Music Studio</option></select></label>
 <label>New playlist<input id="revamp-new-name" maxlength="80" placeholder="Drive mix"></label>
@@ -624,10 +623,8 @@
 </div>
 <aside class="card">
 <span class="kicker">HOW IT WORKS</span>
-<h3>One list, yours.</h3>
-<p class="hint">Music Studio keeps a single playlist in REVamp called <b>Music Studio</b>. A take you add lands there and nowhere else, so this screen shows exactly what you added — never your audiobooks or the rest of your collection.</p>
+<p class="hint">Choose a destination playlist, then use Add to REVamp on a finished Library take. This list shows your studio takes across all playlists.</p>
 <p class="hint">A take you add is copied into your export folder, so REVamp plays it even with the studio closed. Press Play here to hear it in the studio, or open REVamp to hear it there.</p>
-<button id="open-revamp" class="button secondary" type="button">Open REVamp</button>
 </aside>
 </div>
 </section>

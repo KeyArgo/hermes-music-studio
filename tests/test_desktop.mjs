@@ -148,12 +148,13 @@ test('an empty reply is an error, not a broken frame', async () => {
   assert.match(document.body.textContent, /returned no host url/);
 });
 
-function mountWithOs(rest) {
+function mountWithOs(rest, extra = {}) {
   const opened = [];
   const contributions = [];
   plugin.register({
     register: c => contributions.push(c),
     rest,
+    ...extra,
     os: { openExternal: async url => { opened.push(url); } }
   });
   render(contributions.find(c => c.area === 'routes').render());
@@ -269,4 +270,20 @@ test('a refused model override reaches the frame with the two commands', async (
   assert.equal(posted[0].ok, false);
   assert.match(posted[0].error, /then restart Hermes/);
   assert.deepEqual(posted[0].commands, commands);
+});
+
+test('Open REVamp navigates only for the mounted studio frame', async () => {
+  const routes = [];
+  mountWithOs(async () => ({ url: 'http://127.0.0.1:8775', token: 'tok' }),
+    { navigate: route => routes.push(route) });
+  const frame = await waitFor(() => {
+    const iframe = document.querySelector('iframe');
+    assert.ok(iframe);
+    return iframe;
+  });
+  const data = { type: 'hermes-music-studio:open-revamp' };
+  window.dispatchEvent(new dom.window.MessageEvent('message', {data, source: window}));
+  assert.deepEqual(routes, []);
+  window.dispatchEvent(new dom.window.MessageEvent('message', {data, source: frame.contentWindow}));
+  assert.deepEqual(routes, ['/revamp']);
 });

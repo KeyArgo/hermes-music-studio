@@ -137,6 +137,11 @@ export function Studio({ ctx }) {
       if (!frame || !frame.contentWindow || event.source !== frame.contentWindow) return
       const data = event && event.data
       if (!data || typeof data.type !== 'string') return
+      if (data.type === 'hermes-music-studio:open-revamp') {
+        if (typeof ctx?.navigate === 'function') ctx.navigate('/revamp')
+        else ctx.notify?.({ kind: 'error', message: 'Open REVamp from the Hermes sidebar.' })
+        return
+      }
       if (data.type === 'hermes-music-studio:open-external') {
         openExternal(data.url)
         return

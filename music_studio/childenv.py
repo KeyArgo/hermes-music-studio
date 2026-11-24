@@ -113,6 +113,7 @@ STUDIO_KEEP = (
     "HERMES_MUSIC_REVAMPCTL",
     "HEWN_FFMPEG",
     "REVAMP_PORT",
+    "REVAMP_HOME",
     "XDG_DATA_HOME",
     "PROGRAMFILES",
     "ProgramFiles",

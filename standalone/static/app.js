@@ -1136,7 +1136,21 @@ function library() {
       const exp=el('button','Export','button secondary');exp.type='button';
       exp.addEventListener('click', async()=>{try{const folder=(($('settings-export-dir')||{}).value||'').trim();const d=await api('/export',{project_id:p.project_id,take_id:t.take_id,title:p.title||'Music Studio take',folder:folder||undefined});libMessage(`Exported to ${d.path}`);}catch(err){libMessage(err.message,true);}});
       row.append(exp);
-      const add=el('button','Add to REVamp');add.type='button';add.onclick=async()=>{try{add.disabled=true;const chosen=(($('revamp-playlist')||{}).value||'').trim();await api('/studio/revamp/add-take',{project_id:p.project_id,take_id:t.take_id,...(chosen?{playlist_id:chosen}:{})});add.textContent='Added ✓';$('revamp-status').textContent=`${p.title || 'Untitled'} · take ${i+1} is in REVamp.`;show('listen');loadRevamp();}catch(err){add.disabled=false;$('revamp-status').textContent=err.message;show('listen');}};row.append(add); }
+      if (revampStatus?.reachable) {
+        const add = el('button', 'Add to REVamp'); add.type = 'button';
+        add.onclick = async () => {
+          add.disabled = true;
+          try {
+            const chosen = $('revamp-playlist').value;
+            const result = await api('/studio/revamp/add-take', {project_id: p.project_id, take_id: t.take_id,
+              ...(chosen ? {playlist_id: chosen} : {})});
+            show('listen');
+            await loadRevamp(result.indexing ? indexingMessage : `${p.title || 'Untitled'} · take ${i+1} is ready in REVamp.`);
+          } catch (err) { libMessage(err.message, true); }
+          finally { add.disabled = false; }
+        };
+        row.append(add);
+      } }
       tidyTakeRow(row); card.append(row); }); container.append(card);
   });
   if (empty.length) {
@@ -2313,44 +2327,51 @@ async function fillRevampPlaylists() {
   const select = $('revamp-playlist');
   if (!select) return;
   const keep = select.value;
-  try {
-    const data = await api('/studio/revamp/playlists');
-    // The route wraps REVamp's own reply, so the rows are data.playlists.playlists.
-    const raw = data.playlists;
-    const rows = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.playlists) ? raw.playlists : []);
-    select.replaceChildren();
-    const mine = el('option', 'Music Studio');
-    mine.value = '';
-    select.append(mine);
-    rows.forEach(row => {
-      const name = row && (row.name || row.id);
-      if (!name || name === 'Music Studio') return;
-      const option = el('option', name);
-      option.value = row.id || name;
-      select.append(option);
-    });
-    if ([...select.options].some(o => o.value === keep)) select.value = keep;
-  } catch (err) { /* REVamp is optional; the list simply stays on the studio playlist */ }
+  const data = await api('/studio/revamp/playlists');
+  const raw = data.playlists;
+  const rows = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.playlists) ? raw.playlists : []);
+  select.replaceChildren();
+  const mine = el('option', 'Music Studio');
+  mine.value = '';
+  select.append(mine);
+  rows.forEach(row => {
+    const name = row && (row.name || row.id);
+    if (!name) return;
+    if (name === 'Music Studio') { mine.value = row.id; return; }
+    const option = el('option', name);
+    option.value = row.id || name;
+    select.append(option);
+  });
+  if ([...select.options].some(o => o.value === keep)) select.value = keep;
 }
 
-let revampItems = [];
-async function loadRevamp(){
+let revampStatus;
+const indexingMessage = 'REVamp is still indexing; it will play in a moment.';
+async function probeRevamp() {
+  const status = await api('/studio/revamp/status');
+  const changed = Boolean(status.reachable) !== Boolean(revampStatus?.reachable);
+  revampStatus = status;
+  $('revamp-install-help').hidden = status.installed !== false;
+  $('open-revamp').hidden = !status.installed;
+  $('revamp-controls').hidden = !status.reachable;
+  if (changed) library();
+  return status;
+}
+async function loadRevamp(message) {
   const box = $('revamp-added');
+  box.replaceChildren();
   try {
-    const status = await api('/studio/revamp/status').catch(() => ({}));
-    if (status.available !== true) {
-      $('revamp-status').textContent = status.reason || 'REVamp is not installed. Your takes still play and export from here.';
-      revampItems = [];
-      box.replaceChildren(el('p','Nothing added yet. Open a draft in Library and press “Add to REVamp”.'));
+    const status = await probeRevamp();
+    if (!status.reachable) {
+      $('revamp-status').textContent = status.reason || 'Open REVamp in Hermes.';
       return;
     }
-    $('revamp-status').textContent = status.player_connected
+    $('revamp-status').textContent = message || (status.player_connected
       ? 'REVamp connected. Press Play here, or open REVamp to hear it there.'
-      : 'REVamp is available. Open its player in Hermes to hear playback.';
-    fillRevampPlaylists();
-    const data = await api('/studio/revamp/added').catch(() => ({ items: [] }));
-    const items = data.items || [];
-    revampItems = items;
+      : 'Open REVamp’s player in Hermes to hear playback.');
+    await fillRevampPlaylists();
+    const data = await api('/studio/revamp/added');
+    const items = data.items;
     box.replaceChildren();
     if (!items.length) {
       box.append(el('p','Nothing added yet. Open a draft in Library and press “Add to REVamp”.'));
@@ -2361,6 +2382,7 @@ async function loadRevamp(){
       row.append(el('h2', item.title || 'Music Studio take'));
       row.append(el('p', item.missing ? 'Deleted in Music Studio'
         : item.relink ? 'Needs a fix to play in REVamp' : (item.artist || 'Hermes Music Studio'), 'hint'));
+      row.append(el('p', item.playlist_name, 'hint'));
       const parts = String(item.id || '').split(':');
       const playHere = el('button', item.missing ? 'Deleted' : '▶ Play here','button secondary'); playHere.type='button';
       if (item.missing) {
@@ -2381,7 +2403,7 @@ async function loadRevamp(){
         $('revamp-status').textContent = 'REVamp has no playable file for this item yet; export the take and refresh.';
       };
       const remove = el('button','Remove','button secondary'); remove.type='button';
-      remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id}); await loadRevamp(); $('revamp-status').textContent='Removed from REVamp.'; } catch (err) { $('revamp-status').textContent = err.message; } };
+      remove.onclick = async () => { try { await api('/studio/revamp/remove',{item_id:item.id, playlist_id:item.playlist_id}); await loadRevamp('Removed from REVamp.'); } catch (err) { $('revamp-status').textContent = err.message; } };
       row.append(playHere);
       if (item.relink && !item.missing && parts.length === 3) {
         // Added the old way: a link REVamp refuses. Adding it again hands REVamp the file.
@@ -2389,7 +2411,10 @@ async function loadRevamp(){
         fix.title = 'This song was added before songs were copied into REVamp, so REVamp cannot play it. This copies it in.';
         fix.onclick = async () => {
           fix.disabled = true;
-          try { await api('/studio/revamp/add-take', {project_id: parts[1], take_id: parts[2]}); await loadRevamp(); $('revamp-status').textContent = `${item.title || 'Song'} now plays in REVamp.`; }
+          try {
+            const result = await api('/studio/revamp/add-take', {project_id: parts[1], take_id: parts[2], playlist_id: item.playlist_id});
+            await loadRevamp(result.indexing ? indexingMessage : `${item.title || 'Song'} now plays in REVamp.`);
+          }
           catch (err) { fix.disabled = false; $('revamp-status').textContent = err.message; }
         };
         row.append(fix);
@@ -2398,36 +2423,25 @@ async function loadRevamp(){
       box.append(row);
     });
   } catch (err) {
-    box.replaceChildren(el('p', err.message, 'message error'));
+    $('revamp-status').textContent = err.message;
+    box.replaceChildren();
   }
 }
 
 if ($('revamp-create')) $('revamp-create').addEventListener('click', async () => {
   const name = ($('revamp-new-name').value || '').trim();
   if (!name) { $('revamp-status').textContent = 'Give the playlist a name first.'; return; }
-  // The takes are exported to the person's folder FIRST; the playlist then points at those
-  // files. A playlist that points at nothing is worse than no playlist.
-  const takes = revampItems
-    .filter(item => !item.missing)   // a song deleted in Music Studio has nothing left to export
-    .map(item => String(item.id || ''))
-    .filter(id => id.startsWith('studio:'))
-    .map(id => { const parts = id.split(':'); return { project_id: parts[1], take_id: parts[2] }; })
-    .filter(t => t.project_id && t.take_id);
-  if (!takes.length) { $('revamp-status').textContent = 'Add a take first — the playlist is built from the takes you added.'; return; }
-  $('revamp-status').textContent = `Exporting ${takes.length} take(s), then building “${name}”…`;
   try {
-    const folder = (($('settings-export-dir') || {}).value || '').trim();
-    const data = await api('/studio/revamp/playlist', { name, folder: folder || undefined, takes });
+    const data = await api('/studio/revamp/playlists', {name});
     await fillRevampPlaylists();
     const created = data.playlist || {};
     if (created.id) $('revamp-playlist').value = created.id;
     $('revamp-new-name').value = '';
-    $('revamp-status').textContent = `“${name}” created in REVamp — ${(data.files || []).length} file(s) in ${data.folder}.`;
+    $('revamp-status').textContent = data.message || `“${name}” created in REVamp.`;
   } catch (err) { $('revamp-status').textContent = err.message; }
 });
 $('nav-listen').onclick=()=>{show('listen');loadRevamp();};
 if ($('play-sample')) $('play-sample').addEventListener('click', playDemo);
-// The old playlist picker is gone: a take goes to the studio's own REVamp list.
 $('manage-targets').onclick=async()=>{show('compute');wireEnginesPage();await loadEngines().catch(()=>{});await refreshTargets();await refreshWorkflows();await loadHardware(true);};
 $('target-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -2468,6 +2482,7 @@ $('workflow-form').addEventListener('submit', async e => {
   }
 });
 $('hardware-refresh').onclick=refreshHardware;
+probeRevamp().catch(err => { $('revamp-status').textContent = err.message; });
 refreshTargets(); refreshWorkflows(); refresh(); refreshWorkspaces(); loadModels(); loadPresets();
 
 
@@ -2935,7 +2950,25 @@ async function closeStudio() {
 }
 if ($('close-studio')) $('close-studio').addEventListener('click', closeStudio);
 
-if ($('open-revamp')) $('open-revamp').addEventListener('click', () => openLink('http://127.0.0.1:8114/'));
+$('revamp-copy-command').onclick = async () => {
+  const copied = await copyText($('revamp-install-command').textContent);
+  $('revamp-status').textContent = copied ? 'Install command copied.' : 'Select the install command and copy it.';
+};
+$('open-revamp').onclick = () => {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({type: 'hermes-music-studio:open-revamp'}, '*');
+      return;
+    }
+    if (!revampStatus?.reachable || !revampStatus.url) throw new Error();
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) throw new Error();
+    tab.opener = null;
+    tab.location.replace(revampStatus.url);
+  } catch {
+    $('revamp-status').textContent = 'Could not open REVamp. Open its player in Hermes.';
+  }
+};
 
 // ---------------------------------------------------------------- set up an engine
 // Three paths on one screen, each of which tests before it saves. A setup step that cannot work
