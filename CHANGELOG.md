@@ -110,6 +110,15 @@ All notable changes to Music Studio are recorded here. The format follows
 
 ## 1.0.0 — in catalog review
 
+- Drafting works as soon as the Music Studio pane opens. On Hermes 0.23.1 and later the pane drafts
+  through plugin RPC, which runs where Hermes' model is connected; before, the draft route could answer
+  "Drafting needs Hermes' model" while the plugin was loaded. Older Hermes keeps the route.
+- Stop a render: a queued or running take can be stopped from its card, the render bar, the tool
+  (`stop`) or `/song stop`. A ComfyUI render is cancelled on the server too, and only ever our own job.
+- REVamp: Add to REVamp, playlists and the added list work again (the library folder was registered
+  with the wrong request, so every add failed behind "REVamp is unavailable"). Create makes an empty
+  playlist and never overwrites one, errors say what REVamp answered, the screen shows install
+  directions when REVamp is missing, and Open REVamp opens REVamp's page in Hermes.
 - Add to REVamp copies the take into the export folder and hands REVamp that file, so the song plays in
   REVamp (REVamp refuses links to this computer, so the old link-based entries never played). Play here
   plays the studio's own copy. Older entries show Fix for REVamp.
