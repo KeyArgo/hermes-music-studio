@@ -473,3 +473,21 @@ def test_playlist_rows_without_a_name_or_id_are_skipped(monkeypatch, tmp_path):
     answer = revamp.added(object())
     assert [(row['playlist_id'], row['title']) for row in answer['items']] == [('ok', 'Song')]
     assert revamp._existing_playlist('drive')['playlist']['id'] == 'ok'
+
+
+def test_one_playlist_with_an_odd_id_does_not_hide_the_others(monkeypatch, tmp_path):
+    # Found in review: a single playlist id outside the safe pattern used to turn the whole added
+    # list into a 502, so no studio song showed at all.
+    monkeypatch.setenv('HEWN_STUDIO_DATA_DIR', str(tmp_path))
+    def call(method, path, body=None):
+        if path == '/api/playlists':
+            return [{'id': 'odd.id/with..dots', 'name': 'Odd'}, {'id': 'ok', 'name': 'Drive'}]
+        if path == '/api/playlists/ok':
+            return {'id': 'ok', 'name': 'Drive', 'items': [
+                {'id': 'studio:p:t', 'source': 'studio', 'title': 'Song'}]}
+        raise AssertionError(f'unexpected {method} {path}')
+    monkeypatch.setattr(revamp, '_call', call)
+    monkeypatch.setattr(revamp, '_audio_base', lambda request: 'http://127.0.0.1:8775')
+    monkeypatch.setattr(revamp, '_take_exists', lambda store, project, take: True)
+    answer = revamp.added(object())
+    assert [row['title'] for row in answer['items']] == ['Song']

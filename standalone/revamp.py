@@ -287,7 +287,9 @@ def added(request: Request):
     for playlist in _rows(_call('GET', '/api/playlists')):
         playlist_id = playlist['id']
         if not PLAYLIST_ID.fullmatch(playlist_id):
-            raise HTTPException(502, 'REVamp returned an invalid playlist')
+            # One playlist with an id this route will not put in a URL must not hide every other
+            # playlist's songs: skip it.
+            continue
         current = _call('GET', '/api/playlists/' + playlist_id)
         if not isinstance(current, dict) or not isinstance(current.get('items'), list):
             raise HTTPException(502, 'REVamp returned an invalid playlist')
