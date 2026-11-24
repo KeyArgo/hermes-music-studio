@@ -49,8 +49,9 @@ const { render, screen, fireEvent, waitFor, cleanup } = testingLibrary;
 // the pane threw "does not provide an export named 'SandboxedFrame'" and every test in this file
 // failed at load — the pane's frame contract was not covered at all.
 const reactUrl = pathToFileURL(require.resolve('react')).href;
+globalThis.__draftRpcHost = {};
 const sdk = `import { createElement } from ${JSON.stringify(reactUrl)};
-export const ROUTES_AREA="routes", SIDEBAR_NAV_AREA="sidebar.nav"; export const host={};
+export const ROUTES_AREA="routes", SIDEBAR_NAV_AREA="sidebar.nav"; export const host=globalThis.__draftRpcHost || {};
 export function SandboxedFrame(props) { return createElement('iframe', props); }`;;
 let source = await readFile(new URL('../desktop/plugin.js', import.meta.url), 'utf8');
 source = source.replaceAll("'@hermes/plugin-sdk'", JSON.stringify('data:text/javascript,' + encodeURIComponent(sdk)))
@@ -270,3 +271,46 @@ test('a refused model override reaches the frame with the two commands', async (
   assert.match(posted[0].error, /then restart Hermes/);
   assert.deepEqual(posted[0].commands, commands);
 });
+
+
+test('draft RPC polls a running job to completion', async () => {
+  const calls = [];
+  globalThis.__draftRpcHost.request = async (method, body, timeout) => {
+    calls.push({ method, body, timeout });
+    if (calls.length === 1) return { job: 'abc' };
+    return calls.length === 2 ? { state: 'running' } : { state: 'done', draft: { title: 'Night' } };
+  };
+  try {
+    const posted = await rpcDraftMessage();
+    assert.equal(posted.ok, true);
+    assert.equal(posted.draft.title, 'Night');
+    assert.deepEqual(calls.map(c => c.method), [
+      'plugin.hermes-music-studio.studio.draft',
+      'plugin.hermes-music-studio.studio.draft_result',
+      'plugin.hermes-music-studio.studio.draft_result'
+    ]);
+    assert.equal(calls[0].timeout, 15000);
+    assert.deepEqual(calls[1].body, { job: 'abc' });
+  } finally { delete globalThis.__draftRpcHost.request; }
+});
+
+test('unknown draft RPC falls back to the REST route', async () => {
+  globalThis.__draftRpcHost.request = async () => { throw Object.assign(new Error('Method not found'), { code: -32601 }); };
+  try {
+    const posted = await rpcDraftMessage();
+    assert.equal(posted.ok, true);
+    assert.equal(posted.draft.title, 'REST');
+  } finally { delete globalThis.__draftRpcHost.request; }
+});
+
+async function rpcDraftMessage() {
+  mount(async path => path === '/studio/host' ? { url: 'http://127.0.0.1:8775' } : { draft: { title: 'REST' } });
+  const frame = await waitFor(() => { const f = document.querySelector('iframe'); assert.ok(f); return f; });
+  const posted = [];
+  frame.contentWindow.postMessage = value => posted.push(value);
+  window.dispatchEvent(new dom.window.MessageEvent('message', {
+    data: { type: 'hermes-music-studio:draft', id: 'rpc', prompt: 'night' }, source: frame.contentWindow
+  }));
+  await waitFor(() => assert.ok(posted.length), { timeout: 5000 });
+  return posted[0];
+}

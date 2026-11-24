@@ -11,8 +11,12 @@
 // profile-aware. An earlier version also read the launcher's state file through
 // the desktop app's private bridge, which is not a plugin API — the route is the public seam, and a 404
 // there means the gateway predates the route, not that the answer is missing.
-import { ROUTES_AREA, SIDEBAR_NAV_AREA, SandboxedFrame } from '@hermes/plugin-sdk'
+import * as sdk from '@hermes/plugin-sdk'
 import { createElement as h, useCallback, useEffect, useRef, useState } from 'react'
+
+// A namespace import, not a named one: Desktop builds the SDK module from the names it has, so naming
+// `host` would stop the whole pane loading on a Desktop that predates it. Read it as `sdk.host`.
+const { ROUTES_AREA, SIDEBAR_NAV_AREA, SandboxedFrame } = sdk
 
 const PLUGIN_ID = 'hermes-music-studio'
 const PATH = '/music-studio'
@@ -47,6 +51,38 @@ function draftFailure(err) {
     } catch { /* the host answered in prose */ }
   }
   return { ok: false, error: raw }
+}
+
+// Hermes 0.23.1+ serves plugin RPC from the process where register(ctx) ran, so the model is always
+// there. The route stays for older hosts: it can be mounted before register(ctx) runs, and then it
+// has no model to offer.
+async function requestDraft(ctx, body) {
+  const rpcHost = sdk.host
+  const rest = () => ctx.rest('/studio/draft', { method: 'POST', body, timeoutMs: DRAFT_TIMEOUT_MS })
+  if (!rpcHost || typeof rpcHost.request !== 'function') return rest()
+  const deadline = Date.now() + DRAFT_TIMEOUT_MS
+  let started
+  try {
+    started = await rpcHost.request('plugin.hermes-music-studio.studio.draft', body, 15000)
+  } catch (err) {
+    if (err?.code === -32601 || err?.error?.code === -32601 || /(?:^|\D)-32601(?:\D|$)/.test(String(err?.message || ''))) return rest()
+    throw err
+  }
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(0, deadline - Date.now()))))
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) break
+    const result = await rpcHost.request('plugin.hermes-music-studio.studio.draft_result',
+      { job: started.job }, Math.min(15000, remaining))
+    if (result.state === 'done') return result
+    if (result.state === 'failed') {
+      const failure = { ok: false, error: result.error }
+      if (Array.isArray(result.commands)) failure.commands = result.commands
+      return failure
+    }
+    if (result.state !== 'running') throw new Error('The draft job is no longer available.')
+  }
+  throw new Error('The draft timed out. Try again.')
 }
 
 async function answering(url) {
@@ -155,15 +191,9 @@ export function Studio({ ctx }) {
           action: data.action === 'chat' ? 'chat' : 'draft' }
         if (data.provider) body.provider = data.provider
         if (data.model) body.model = data.model
-        // Desktop gives a plugin request 30 s unless told otherwise, and the plugin lets the model take
-        // up to 120 s (llm_bridge.TIMEOUT_SECONDS): a slow but healthy draft failed as "Timed out
-        // connecting to Hermes backend after 30000ms". Wait past the model's own limit instead.
-        Promise.resolve(ctx.rest('/studio/draft', {
-          method: 'POST',
-          body,
-          timeoutMs: DRAFT_TIMEOUT_MS
-        }))
-          .then(reply => answer({ ok: true, draft: reply && reply.draft, content: reply && reply.content }))
+        Promise.resolve().then(() => requestDraft(ctx, body))
+          .then(reply => answer(reply && reply.ok === false ? reply
+            : { ok: true, draft: reply && reply.draft, content: reply && reply.content }))
           .catch(err => answer(draftFailure(err)))
         return
       }

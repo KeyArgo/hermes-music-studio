@@ -389,13 +389,88 @@ def register(ctx):
             return json.dumps({'success': False, 'error': 'studio operation failed'})
 
     # Drafting goes through the host's public LLM facade (review item 1). `ctx.llm` exists only in the
-    # plugin process, which is exactly where the dashboard routes run; the standalone loopback host has
+    # plugin process; dashboard routes may run separately. The standalone loopback host has
     # no ctx and answers 503 with a sentence that says where to draft instead.
     try:
         llm_bridge.bind(ctx.llm)
     except Exception:  # noqa: BLE001 - an older host may not expose ctx.llm yet
         import logging
         logging.getLogger(__name__).warning('ctx.llm is unavailable; drafting will report that')
+
+    if callable(getattr(ctx, 'register_rpc', None)):
+        import contextvars
+        import threading
+        import uuid
+        from functools import partial
+        from music_studio.drafting import DraftError, draft_song
+
+        model = getattr(ctx, 'llm', None)
+        jobs = {}
+        jobs_lock = threading.Lock()
+        slots = threading.BoundedSemaphore(2)
+
+        def prune():
+            now = time.monotonic()
+            for key, entry in list(jobs.items()):
+                if entry['result']['state'] != 'running' and now - entry['time'] >= 600:
+                    del jobs[key]
+            while len(jobs) >= 20:
+                finished = next((key for key, entry in jobs.items()
+                                 if entry['result']['state'] != 'running'), None)
+                if finished is None:
+                    break
+                del jobs[finished]
+
+        def start_draft(params, *, session_id=None, **kwargs):
+            if not isinstance(params, dict):
+                raise ValueError('studio.draft takes a JSON object')
+            if not slots.acquire(blocking=False):
+                raise RuntimeError('Two drafts are already running. Try again when one finishes.')
+            job = uuid.uuid4().hex
+            with jobs_lock:
+                prune()
+                jobs[job] = {'time': time.monotonic(), 'result': {'state': 'running'}}
+
+            def work():
+                try:
+                    if model is None:
+                        def complete(*args, **kw):
+                            raise llm_bridge.LlmUnavailable(llm_bridge.MISSING)
+                    else:
+                        complete = partial(llm_bridge.complete, llm=model)
+                    result = {'state': 'done', **draft_song(params, complete)}
+                except DraftError as exc:
+                    result = {'state': 'failed', 'error': exc.detail}
+                    if exc.commands is not None:
+                        result['commands'] = exc.commands
+                except Exception as exc:
+                    result = {'state': 'failed', 'error': f'Music Studio failed: {type(exc).__name__}: {str(exc)[:300]}'}
+                finally:
+                    with jobs_lock:
+                        jobs[job] = {'time': time.monotonic(), 'result': result}
+                    slots.release()
+
+            try:
+                threading.Thread(target=contextvars.copy_context().run, args=(work,), daemon=True).start()
+            except Exception:
+                with jobs_lock:
+                    jobs.pop(job, None)
+                slots.release()
+                raise
+            return {'job': job}
+
+        def draft_result(params, *, session_id=None, **kwargs):
+            with jobs_lock:
+                # Expired results are removed on reads as well as starts.
+                now = time.monotonic()
+                for key, entry in list(jobs.items()):
+                    if entry['result']['state'] != 'running' and now - entry['time'] >= 600:
+                        del jobs[key]
+                entry = jobs.get(params.get('job')) if isinstance(params, dict) else None
+                return dict(entry['result']) if entry else {'state': 'unknown'}
+
+        ctx.register_rpc('studio.draft', start_draft)
+        ctx.register_rpc('studio.draft_result', draft_result)
 
     ctx.register_tool(name='music_studio', toolset='music_studio',
                       schema=SCHEMA, handler=handler)
