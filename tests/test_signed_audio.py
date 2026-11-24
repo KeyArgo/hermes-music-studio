@@ -108,11 +108,11 @@ def test_revamp_is_handed_a_signed_link(monkeypatch, tmp_path):
     assert media_sign.verify(root, f'/api/projects/{P}/takes/{T}/audio', url.split('sig=', 1)[1])
 
     # The studio's own REVamp page re-signs what REVamp stored, including a pre-signing link.
-    monkeypatch.setattr(revamp, 'studio_playlist', lambda: {'id': 'pl1'})
     stored = {'items': [{'id': f'studio:{P}:{T}', 'source': 'studio', 'kind': 'music',
                          'playback': {'backend': 'webamp',
                                       'url': f'http://old:1/api/projects/{P}/takes/{T}/audio'}}]}
-    monkeypatch.setattr(revamp, '_call', lambda method, path, body=None: stored)
+    monkeypatch.setattr(revamp, '_call', lambda method, path, body=None:
+                        [{'id': 'pl1', 'name': 'Mix'}] if path == '/api/playlists' else stored)
     monkeypatch.setattr(revamp, '_studio_items', lambda current: current['items'])
     monkeypatch.setattr(revamp, '_audio_base', lambda request: 'http://127.0.0.1:9999')
     result = revamp.added(request=None)

@@ -130,7 +130,7 @@ def test_revamp_playlist_and_play_routes(tmp_path, monkeypatch):
         calls.append((method,path,body))
         if method == 'GET' and path == '/api/playlists/a-list': return {'id':'a-list','items':[]}
         if method == 'POST' and path == '/api/playlists': return {'id':'a-list','name':body['name']}
-        if method == 'POST' and path == '/api/command': return {'delivered':1}
+        if method == 'POST' and path == '/api/command': return {'accepted':True,'delivered':1}
         if method == 'PUT': return {'id':'a-list','items':body['items']}
         return []
     monkeypatch.setattr(revamp, '_call', fake_call)
@@ -154,7 +154,8 @@ def test_revamp_can_reference_finished_studio_take(tmp_path, monkeypatch):
     calls=[]
     def fake_call(method,path,body=None):
         calls.append((method,path,body))
-        if path=='/api/library/folders': return {'folders':[]}
+        if method in ('GET', 'PUT') and path=='/api/library/folders': return {'folders':[]}
+        if path.startswith('/api/sources/local/item/'): return {'id':path.rsplit('/',1)[1]}
         if path=='/api/library/rescan': return {'started':True}
         return {'id':'favorites','items':[] if body is None else body['items']}
     monkeypatch.setattr(revamp,'_call',fake_call)

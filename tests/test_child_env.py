@@ -150,13 +150,15 @@ def test_neither_site_copies_the_whole_environment():
         assert "os.environ.copy()" not in text, f"{path} still hands children the whole environment"
 
 
-def test_the_studio_host_is_spawned_without_provider_keys(parent, monkeypatch, tmp_path):
+def test_the_studio_host_preserves_revamp_settings_without_provider_keys(parent, monkeypatch, tmp_path):
     """11-14 review pass: the launcher handed the host the whole environment minus five Python-path
     variables, so every provider key reached it. Only the studio's own settings and its one declared
     key (read through the scoped secret store) may cross."""
     from music_studio import host_launcher
 
     monkeypatch.setenv("COMFYUI_URL", "http://10.0.0.52:8188")
+    monkeypatch.setattr(host_launcher, "_port_free", lambda port: True)
+    monkeypatch.setenv("REVAMP_HOME", str(tmp_path / "player"))
     monkeypatch.setenv("REVAMP_PORT", "8114")
     monkeypatch.setattr(host_launcher, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(host_launcher, "_python", lambda: ["python3"])
@@ -181,6 +183,7 @@ def test_the_studio_host_is_spawned_without_provider_keys(parent, monkeypatch, t
     for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"):
         assert name not in env, f"{name} reached the studio host"
     assert env["COMFYUI_URL"] == "http://10.0.0.52:8188"
+    assert env["REVAMP_HOME"] == str(tmp_path / "player")
     assert env["REVAMP_PORT"] == "8114"
     assert env["HEWN_STUDIO_TOKEN"] and env["HEWN_STUDIO_DATA_DIR"]
     # The remote engine's own key, from the scoped store, not from the parent's bare environment.

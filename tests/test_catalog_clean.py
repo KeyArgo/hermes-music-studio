@@ -28,7 +28,10 @@ def test_plugin_code_imports_no_private_hermes_surfaces():
     offenders = []
     for path in ROOT.rglob('*.py'):
         relative = path.relative_to(ROOT)
-        if relative.parts[0] in ('tests', 'docs') or '__pycache__' in relative.parts:
+        # Hidden top-level folders are never shipped: a virtualenv, or a copy of another plugin that
+        # the contract tests run against (.contract/revamp is REVamp's code, not this plugin's).
+        if relative.parts[0] in ('tests', 'docs') or relative.parts[0].startswith('.') \
+                or '__pycache__' in relative.parts:
             continue
         text = path.read_text(encoding='utf-8', errors='replace')
         for token in FORBIDDEN:

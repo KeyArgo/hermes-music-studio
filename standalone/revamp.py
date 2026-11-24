@@ -1,9 +1,13 @@
 """Optional REVamp integration through its installed local client."""
 import hashlib
+import json
 import os
 import re
 import runpy
 import shutil
+import threading
+import time
+import urllib.error
 import urllib.parse
 import uuid
 from pathlib import Path
@@ -14,8 +18,6 @@ from pydantic import BaseModel, Field
 from music_studio import media_sign
 
 router = APIRouter()
-# Music Studio keeps exactly one playlist in REVamp. Everything the studio hands over lands
-# here, so its own screen can list those items and nothing else — no audiobooks, no albums.
 STUDIO_PLAYLIST = 'Music Studio'
 TRACK_ID = re.compile(r'^[0-9a-f]{16}$')
 PLAYLIST_ID = re.compile(r'^[a-zA-Z0-9_-]{1,128}$')
@@ -23,7 +25,11 @@ PLAYLIST_ID = re.compile(r'^[a-zA-Z0-9_-]{1,128}$')
 REVAMPCTL_NAME = 'revampctl'
 # The client is a Python script, not an executable: on Windows it has no
 # extension and never lands on PATH, so shutil.which('revampctl') misses it.
-REVAMPCTL_VARIANTS = ('', '.exe', '.cmd', '.bat', '.py')
+REVAMPCTL_VARIANTS = ('', '.py')
+INSTALL = 'hermes plugins install KeyArgo/hermes-revamp'
+# Leave room for revampctl's listener proof (2s) and request (5s) on the last poll.
+INDEX_WAIT = 12.0
+_playlist_create_lock = threading.Lock()
 
 
 def _hermes_homes():
@@ -31,6 +37,19 @@ def _hermes_homes():
     from music_studio.hermes_home import active_home
     home = active_home()
     return [home] if home else []
+
+
+def _python_client(path):
+    if not path or Path(path).suffix.lower() not in REVAMPCTL_VARIANTS:
+        return False
+    if not Path(path).is_file():
+        return False
+    try:
+        source = Path(path).read_bytes()
+        compile(source, str(path), 'exec')
+    except (OSError, ValueError, SyntaxError):
+        return False
+    return True
 
 
 def _client_path():
@@ -41,12 +60,12 @@ def _client_path():
     own ``bin/`` inside the Hermes home, which is where a Windows install puts it.
     """
     override = os.environ.get('HERMES_MUSIC_REVAMPCTL')
-    if override and Path(override).is_file():
+    if _python_client(override):
         return override
 
     for name in REVAMPCTL_VARIANTS:
         found = shutil.which(REVAMPCTL_NAME + name)
-        if found:
+        if _python_client(found):
             return found
 
     roots = [Path.home() / '.local' / 'bin']
@@ -55,7 +74,7 @@ def _client_path():
     for root in roots:
         for name in REVAMPCTL_VARIANTS:
             candidate = root / (REVAMPCTL_NAME + name)
-            if candidate.is_file():
+            if _python_client(candidate):
                 return str(candidate)
     return None
 
@@ -63,14 +82,27 @@ def _client_path():
 def _call(method, path, body=None):
     executable = _client_path()
     if not executable:
-        raise HTTPException(503, 'REVAMP is not installed: add its revampctl client or set '
+        raise HTTPException(503, 'REVamp is not installed: add its revampctl client or set '
                                  'HERMES_MUSIC_REVAMPCTL.')
     try:
         # The installed REVamp client handles its own local authentication.
         client = runpy.run_path(executable)
         return client['call'](method, path, body=body, timeout=5.0)
+    except urllib.error.HTTPError as exc:
+        with exc:
+            try:
+                payload = json.loads(exc.read(8192))
+                detail = payload.get('error') if isinstance(payload, dict) else None
+            except (ValueError, OSError):
+                detail = None
+        message = ' '.join(str(detail or exc.reason).split())
+        message = ''.join(c for c in message if c.isprintable())
+        raise HTTPException(exc.code, f'REVamp refused {method} {path}: {exc.code} {message}'[:300]) from None
+    except (urllib.error.URLError, ConnectionError, TimeoutError):
+        raise HTTPException(503, 'REVamp is installed but not running. Open REVamp in Hermes.') from None
     except Exception:
-        raise HTTPException(503, 'REVamp is unavailable. Open REVamp in Hermes and try again.') from None
+        raise HTTPException(502, 'The installed REVamp client could not complete the request.') from None
+
 
 class Name(BaseModel):
     name: str = Field(min_length=1, max_length=80)
@@ -97,17 +129,13 @@ class PlaylistFromTakes(BaseModel):
 
 
 class RemoveStudioTake(BaseModel):
+    playlist_id: str | None = Field(default=None, max_length=128)
     item_id: str = Field(min_length=3, max_length=200)
 
 
 def studio_playlist():
     """The studio's own playlist, created on first use."""
-    lists = _call('GET', '/api/playlists')
-    rows = lists.get('playlists') if isinstance(lists, dict) else lists
-    for row in rows or []:
-        if isinstance(row, dict) and row.get('name') == STUDIO_PLAYLIST:
-            return row
-    return _call('POST', '/api/playlists', {'name': STUDIO_PLAYLIST, 'items': []})
+    return _create_or_select(STUDIO_PLAYLIST, [])['playlist']
 
 
 def _studio_items(playlist):
@@ -123,14 +151,20 @@ def _track(track: Track):
 @router.get('/studio/revamp/status')
 def status():
     """REVamp is optional: report it plainly instead of failing the whole screen."""
-    try:
-        state = _call('GET', '/api/state')
-    except HTTPException:
-        return {'available': False, 'player_connected': False,
-                'reason': 'REVamp is not installed. Music Studio works on its own — you can '
-                          'still play and export your takes.'}
-    live = state.get('live', {}) if isinstance(state, dict) else {}
-    return {'available': True, 'player_connected': bool(live.get('player_connected'))}
+    installed = bool(_client_path())
+    port = os.environ.get('REVAMP_PORT', '8114')
+    url = f'http://127.0.0.1:{int(port)}/' if re.fullmatch(r'[0-9]{1,5}', port) and 0 < int(port) < 65536 else None
+    result = {'installed': installed, 'reachable': False, 'available': False, 'player_connected': False,
+              'install': INSTALL, 'url': url, 'reason': 'REVamp is not installed.'}
+    if installed:
+        try:
+            state = _call('GET', '/api/state')
+            result.update(reachable=True, available=True, reason='',
+                          player_connected=bool(((state if isinstance(state, dict) else {}).get('live') or {})
+                                                .get('player_connected')))
+        except HTTPException as exc:
+            result['reason'] = exc.detail
+    return result
 
 @router.get('/studio/revamp/tracks')
 def tracks(q: str = ''):
@@ -145,12 +179,38 @@ def playlists():
 def create_playlist(body: Name):
     name=body.name.strip()
     if not name: raise HTTPException(400, 'name is required')
-    return {'playlist': _call('POST', '/api/playlists', {'name':name, 'items':[]})}
+    return _create_or_select(name, [])
+
+def _rows(value):
+    """REVamp's playlist summaries: a bare list of dicts. Anything else is read as no rows, never a crash."""
+    rows = value.get('playlists') if isinstance(value, dict) else value
+    return [row for row in rows or [] if isinstance(row, dict)
+            and isinstance(row.get('id'), str) and isinstance(row.get('name'), str)]
+
+
+def _existing_playlist(name):
+    for row in _rows(_call('GET', '/api/playlists')):
+        if row['name'].casefold() == name.casefold():
+            return {'success': True, 'existing': True, 'playlist': row,
+                    'message': f"A playlist named {row['name']} already exists — it is selected"}
+
+
+def _create_or_select(name, items):
+    with _playlist_create_lock:
+        match = _existing_playlist(name)
+        if match:
+            return match
+        return {'playlist': _call('POST', '/api/playlists', {'name': name, 'items': items})}
+
 
 @router.post('/studio/revamp/play')
 def play(body: Track):
     result = _call('POST', '/api/command', {'action':'load','mode':'replace','play':True,'items':[_track(body)]})
-    return {'success':True, 'delivered':result.get('delivered', 0)}
+    # An older REVamp answers without these fields; read them as "not confirmed", not a crash.
+    result = result if isinstance(result, dict) else {}
+    accepted, delivered = bool(result.get('accepted', True)), int(result.get('delivered') or 0)
+    return {'success': bool(accepted and delivered), 'accepted': accepted, 'delivered': delivered,
+            'detail': '' if accepted and delivered else "Open REVamp's player first"}
 
 @router.post('/studio/revamp/add')
 def add_to_playlist(body: AddTrack):
@@ -164,7 +224,7 @@ def add_to_playlist(body: AddTrack):
 
 @router.post('/studio/revamp/add-take')
 def add_take_to_playlist(body: AddStudioTake, request: Request):
-    """Put one finished studio take into the studio's own REVamp playlist."""
+    """Export one finished take into the selected REVamp playlist."""
     try:
         uuid.UUID(body.project_id); uuid.UUID(body.take_id)
         from music_studio import service
@@ -184,9 +244,6 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
     if not PLAYLIST_ID.fullmatch(playlist_id):
         raise HTTPException(502, 'REVamp returned an invalid playlist')
     path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
-    current = _call('GET', path)
-    if not isinstance(current, dict) or not isinstance(current.get('items'), list):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
     # REVamp plays a web address only through its station relay, which refuses this computer's own
     # addresses, so a link to the studio never plays there. Hand REVamp a file in its own library
     # instead, the way Radio does: it then plays even while the studio is closed.
@@ -195,18 +252,20 @@ def add_take_to_playlist(body: AddStudioTake, request: Request):
         written = service.export_take(body.project_id, body.take_id, title=title)
     except (ValueError, FileNotFoundError, KeyError) as exc:
         raise HTTPException(400, f'could not export the take for REVamp: {exc}') from None
-    _ensure_library_folder(written['folder'])
-    _call('POST', '/api/library/rescan', {})
-    track_id = _track_id(written['path'])
-    item = {'id': 'studio:' + body.project_id + ':' + body.take_id, 'source': 'studio',
-            'kind': 'track', 'track_id': track_id, 'url': '/api/media/' + track_id,
-            'title': written.get('title') or title, 'artist': 'Hermes Music Studio',
-            'playback': {'backend': 'webamp', 'url': '/api/media/' + track_id},
-            'capabilities': ['seek']}
+    indexing = _index_exports(written['folder'], [written])
+    item = _studio_item(body.project_id, body.take_id, written)
+    current = _call('GET', path)
+    if not isinstance(current, dict) or not isinstance(current.get('items'), list):
+        raise HTTPException(502, 'REVamp returned an invalid playlist')
     items = [row for row in current['items']
              if not (isinstance(row, dict) and row.get('id') == item['id'])]
     result = _call('PUT', path, {'items': [*items, item]})
-    return {'success': True, 'playlist': result, 'item': item, 'requires_studio_running': False}
+    stored_items = result.get('items') if isinstance(result, dict) else None
+    stored = next((row for row in stored_items or [] if isinstance(row, dict) and row.get('id') == item['id']), None)
+    if stored is None:
+        raise HTTPException(502, 'REVamp did not store the take.')
+    return {'success': True, 'playlist': result, 'item': stored, 'indexing': indexing,
+            'requires_studio_running': False}
 
 
 def _audio_base(request: Request) -> str:
@@ -224,12 +283,16 @@ def _audio_base(request: Request) -> str:
 @router.get('/studio/revamp/added')
 def added(request: Request):
     """Only the takes Music Studio handed over — never the rest of the REVamp library."""
-    playlist = studio_playlist()
-    playlist_id = str(playlist.get('id') or '')
-    if not PLAYLIST_ID.fullmatch(playlist_id):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
-    current = _call('GET', '/api/playlists/' + urllib.parse.quote(playlist_id, safe=''))
-    items = _studio_items(current)
+    items = []
+    for playlist in _rows(_call('GET', '/api/playlists')):
+        playlist_id = playlist['id']
+        if not PLAYLIST_ID.fullmatch(playlist_id):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
+        current = _call('GET', '/api/playlists/' + playlist_id)
+        if not isinstance(current, dict) or not isinstance(current.get('items'), list):
+            raise HTTPException(502, 'REVamp returned an invalid playlist')
+        items.extend(dict(item, playlist_id=playlist_id, playlist_name=playlist['name'])
+                     for item in _studio_items(current))
     from music_studio import service
     base = _audio_base(request)
     store = service.store()
@@ -250,7 +313,7 @@ def added(request: Request):
             match = media_sign.AUDIO_PATH.match(route)
             playback['url'] = (media_sign.audio_url(base, service.store().root, *match.groups())
                                if match else base + route)
-    return {'success': True, 'playlist': playlist_id, 'name': STUDIO_PLAYLIST, 'items': items}
+    return {'success': True, 'items': items}
 
 
 
@@ -259,7 +322,7 @@ def _track_id(path: str) -> str:
     return hashlib.sha1(os.path.abspath(path).encode('utf-8')).hexdigest()[:16]
 
 
-def _ensure_library_folder(folder: str) -> None:
+def _ensure_library_folder(folder: str) -> bool:
     """REVamp can only play what it has indexed, so the folder it writes into must be one
     of its library folders."""
     payload = _call('GET', '/api/library/folders')
@@ -273,10 +336,36 @@ def _ensure_library_folder(folder: str) -> None:
     # again would nest two roots and confuse the library.
     for path in paths:
         if wanted_key == path or wanted_key.startswith(path.rstrip(os.sep) + os.sep):
-            return
+            return False
     cleaned = [{'path': row['path'], 'kind': row.get('kind') or 'music'} for row in rows]
     cleaned.append({'path': wanted, 'kind': 'music'})
-    _call('POST', '/api/library/folders', {'folders': cleaned})
+    _call('PUT', '/api/library/folders', {'folders': cleaned})
+    return True
+
+
+def _studio_item(project_id, take_id, written):
+    url = '/api/media/' + _track_id(written['path'])
+    return {'id': f'studio:{project_id}:{take_id}', 'source': 'studio', 'kind': 'music',
+            'title': written.get('title') or Path(written['path']).stem, 'artist': 'Hermes Music Studio',
+            'playback': {'backend': 'webamp', 'url': url}, 'capabilities': ['seek']}
+
+
+def _index_exports(folder, files):
+    if not _ensure_library_folder(folder):
+        _call('POST', '/api/library/rescan', {})
+    deadline = time.monotonic() + INDEX_WAIT
+    for track_id in dict.fromkeys(_track_id(row['path']) for row in files):
+        while time.monotonic() < deadline:
+            try:
+                _call('GET', '/api/sources/local/item/' + track_id)
+                break
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+            time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+        else:
+            return True
+    return False
 
 
 @router.post('/studio/revamp/playlist')
@@ -296,9 +385,13 @@ def playlist_from_takes(body: PlaylistFromTakes):
     name = body.name.strip()
     if not name:
         raise HTTPException(400, 'a playlist needs a name')
+    match = _existing_playlist(name)
+    if match:
+        return match
     base = service.default_data_dir(service.PLUGIN_ID)
     folder = (body.folder or st.read(base).get('export_dir') or '').strip()
     files = []
+    items = []
     for row in body.takes:
         project_id = str(row.get('project_id') or '')
         take_id = str(row.get('take_id') or '')
@@ -311,29 +404,12 @@ def playlist_from_takes(body: PlaylistFromTakes):
         except (FileNotFoundError, KeyError):
             raise HTTPException(400, 'a song in this list was deleted in Music Studio; remove it and try again') from None
         files.append(written)
+        items.append(_studio_item(project_id, take_id, written))
     destination = files[0]['folder']
-    _ensure_library_folder(destination)
-    _call('POST', '/api/library/rescan', {})
-    items = []
-    for written in files:
-        tid = _track_id(written['path'])
-        # The song's name, not the file's: the file is "Song (4).wav" when a folder already
-        # holds copies, and a playlist should read like a playlist.
-        title = written.get('title') or os.path.splitext(os.path.basename(written['path']))[0]
-        items.append({'kind': 'track', 'track_id': tid, 'url': '/api/media/' + tid,
-                      'title': title, 'artist': 'Hermes Music Studio',
-                      'playback': {'backend': 'webamp', 'url': '/api/media/' + tid}})
-    existing = _call('GET', '/api/playlists')
-    rows = existing.get('playlists') if isinstance(existing, dict) else existing
-    match = next((row for row in rows or []
-                  if isinstance(row, dict) and str(row.get('name')) == name), None)
-    if match and PLAYLIST_ID.fullmatch(str(match.get('id') or '')):
-        result = _call('PUT', '/api/playlists/' + urllib.parse.quote(str(match['id']), safe=''),
-                       {'items': items})
-    else:
-        result = _call('POST', '/api/playlists', {'name': name, 'items': items})
-    return {'success': True, 'playlist': result, 'files': [row['path'] for row in files],
-            'folder': destination}
+    indexing = _index_exports(destination, files)
+    result = _create_or_select(name, items)
+    return {'success': True, **result, 'files': [row['path'] for row in files],
+            'folder': destination, 'indexing': indexing}
 
 
 def forget_deleted(project_id, take_id=None):
@@ -382,10 +458,9 @@ def _take_exists(store, project_id, take_id):
 @router.post('/studio/revamp/remove')
 def remove_from_playlist(body: RemoveStudioTake):
     """Take one item back out of the studio's REVamp playlist."""
-    playlist = studio_playlist()
-    playlist_id = str(playlist.get('id') or '')
+    playlist_id = body.playlist_id if body.playlist_id is not None else str((studio_playlist() or {}).get('id') or '')
     if not PLAYLIST_ID.fullmatch(playlist_id):
-        raise HTTPException(502, 'REVamp returned an invalid playlist')
+        raise HTTPException(400, 'REVamp returned an invalid playlist')
     path = '/api/playlists/' + urllib.parse.quote(playlist_id, safe='')
     current = _call('GET', path)
     # A reply without an items list must not be read as an empty playlist: saving that would wipe it.

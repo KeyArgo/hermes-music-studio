@@ -202,7 +202,7 @@ test('a polling refresh keeps an open inline Rename input and its text', async t
 
 test('the REVamp playlist picker reads the nested playlists payload', async t => {
   const booted = await boot({
-    '/api/studio/revamp/status': { available: true, player_connected: false },
+    '/api/studio/revamp/status': { installed: true, reachable: true, player_connected: false },
     '/api/studio/revamp/playlists': { success: true,
       playlists: { playlists: [{ id: 'pl09', name: 'Drive mix' }] } },
     '/api/studio/revamp/added': { success: true, items: [] },

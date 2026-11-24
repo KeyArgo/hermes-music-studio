@@ -100,7 +100,7 @@ const nav = doc => doc.getElementById('nav-listen');
 const buttons = doc => [...doc.querySelectorAll('#revamp-added button')];
 
 async function openRevamp(t, added) {
-  const booted = await boot({ projects: [song('a')], revamp: { installed: true, available: true }, added });
+  const booted = await boot({ projects: [song('a')], revamp: { installed: true, reachable: true }, added });
   t.after(() => booted.window.close());
   nav(booted.window.document).click();
   await pause(150);
@@ -139,16 +139,15 @@ test('an entry added the old way offers Fix for REVamp, which hands the take ove
   assert.equal(sent.body.project_id, 'a'); assert.equal(sent.body.take_id, 't1');
 });
 
-test('Create playlist leaves out songs that were deleted in Music Studio', async t => {
-  const { window, calls } = await openRevamp(t, [
-    { id: 'studio:a:t1', title: 'Gone', missing: true, playback: { url: '/api/media/0123456789abcdef' } },
-    { id: 'studio:b:t2', title: 'Here', playback: { url: '/api/media/fedcba9876543210' } }]);
+test('Create works before any takes have been handed over', async t => {
+  // Create only needs a name, even on the first visit.
+  const { window, calls } = await openRevamp(t, []);
   const doc = window.document;
   doc.getElementById('revamp-new-name').value = 'Drive';
   doc.getElementById('revamp-create').click();
   await pause(150);
-  const sent = calls.find(c => c.path === '/api/studio/revamp/playlist');
-  assert.deepEqual(JSON.parse(JSON.stringify(sent.body.takes)), [{ project_id: 'b', take_id: 't2' }]);
+  const sent = calls.find(c => c.path === '/api/studio/revamp/playlists' && c.method === 'POST');
+  assert.deepEqual(sent.body, {name: 'Drive'});
 });
 
 test('a server that passes the Setup test refreshes the engine list right away', async t => {

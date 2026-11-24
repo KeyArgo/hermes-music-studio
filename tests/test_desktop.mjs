@@ -149,12 +149,13 @@ test('an empty reply is an error, not a broken frame', async () => {
   assert.match(document.body.textContent, /returned no host url/);
 });
 
-function mountWithOs(rest) {
+function mountWithOs(rest, extra = {}) {
   const opened = [];
   const contributions = [];
   plugin.register({
     register: c => contributions.push(c),
     rest,
+    ...extra,
     os: { openExternal: async url => { opened.push(url); } }
   });
   render(contributions.find(c => c.area === 'routes').render());
@@ -314,3 +315,19 @@ async function rpcDraftMessage() {
   await waitFor(() => assert.ok(posted.length), { timeout: 5000 });
   return posted[0];
 }
+
+test('Open REVamp navigates only for the mounted studio frame', async () => {
+  const routes = [];
+  mountWithOs(async () => ({ url: 'http://127.0.0.1:8775', token: 'tok' }),
+    { navigate: route => routes.push(route) });
+  const frame = await waitFor(() => {
+    const iframe = document.querySelector('iframe');
+    assert.ok(iframe);
+    return iframe;
+  });
+  const data = { type: 'hermes-music-studio:open-revamp' };
+  window.dispatchEvent(new dom.window.MessageEvent('message', {data, source: window}));
+  assert.deepEqual(routes, []);
+  window.dispatchEvent(new dom.window.MessageEvent('message', {data, source: frame.contentWindow}));
+  assert.deepEqual(routes, ['/revamp']);
+});
