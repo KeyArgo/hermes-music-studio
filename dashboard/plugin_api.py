@@ -384,6 +384,11 @@ def batch(body: dict = Depends(json_body)):
                   body.get('seed_base'), engine_id=body.get('engine_id'))
 
 
+@router.post('/take/stop')
+def take_stop(body: dict = Depends(json_body)):
+    return invoke(service.stop_take, body.get('project_id'), body.get('take_id'))
+
+
 @router.post('/batch/cancel')
 def batch_cancel(body: dict = Depends(json_body)):
     return invoke(service.cancel_batch, body.get('project_id'))

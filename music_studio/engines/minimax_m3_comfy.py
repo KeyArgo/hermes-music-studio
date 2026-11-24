@@ -350,12 +350,14 @@ class MiniMaxM3ComfyEngine(Engine):
     # -- rendering -------------------------------------------------------
     def _render(self, request: RenderRequest,
                 on_progress: Callable[[int], None] | None = None,
-                on_process: Callable[[int], None] | None = None) -> RenderResult:
+                on_process: Callable[[int], None] | None = None,
+                on_remote=None) -> RenderResult:
         # ComfyUI renders server-side; there is no local child process to report.
-        return self._render_graph(self.build_workflow(request), request, on_progress)
+        return self._render_graph(self.build_workflow(request), request, on_progress, on_remote)
 
     def _render_graph(self, graph: dict, request: RenderRequest,
-                      on_progress: Callable[[int], None] | None = None) -> RenderResult:
+                      on_progress: Callable[[int], None] | None = None,
+                      on_remote=None) -> RenderResult:
         """Submit an API graph and turn its saved file into a WAV take.
 
         Shared by the built-in MiniMax graph and user-supplied workflows, so the
@@ -367,6 +369,8 @@ class MiniMaxM3ComfyEngine(Engine):
         if not prompt_id:
             raise EngineError(_clean(f'ComfyUI rejected the workflow: {created}'),
                               engine_id=self.id)
+        if on_remote is not None:
+            on_remote({'kind': 'comfyui', 'url': self.base_url, 'prompt_id': prompt_id})
         self._emit(on_progress, 5)
 
         deadline = time.monotonic() + request.timeout_seconds

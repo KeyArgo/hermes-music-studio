@@ -1425,3 +1425,7 @@ def fade_take(project_id, take_id, seconds=1.5):
     jobs.succeed(project_id, take['take_id'], faded, metadata=metadata)
     return {'success': True, 'take': next(t for t in s.get(project_id)['takes']
                                           if t['take_id'] == take['take_id'])}
+
+
+def stop_take(project_id, take_id):
+    return Jobs(store()).stop(project_id, take_id)

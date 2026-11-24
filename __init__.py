@@ -21,7 +21,7 @@ from music_studio import llm_bridge, service
 
 ACTIONS = ('status', 'create', 'update', 'change', 'keep', 'snippet', 'snippet_splice', 'check_take',
            'checkpoint', 'checkpoints', 'restore', 'doctor', 'approve', 'render', 'queue', 'takes',
-           'export', 'wait', 'compare', 'compare_status', 'set_cover', 'draft')
+           'export', 'wait', 'stop', 'compare', 'compare_status', 'set_cover', 'draft')
 
 SCHEMA = {
     'name': 'music_studio',
@@ -223,6 +223,8 @@ def _handler(args):
                 'note': 'approved for exactly the draft version the person reviewed'}
     if action == 'render':
         return _render(args)
+    if action == 'stop':
+        return service.stop_take(args.get('project_id'), args.get('take_id'))
     if action == 'queue':
         return _queue(args)
     if action == 'takes':
@@ -348,6 +350,9 @@ class _ChatClient:
 
     def keep(self, project_id, take_id):
         return _handler({'action': 'keep', 'project_id': project_id, 'take_id': take_id})
+
+    def stop(self, project_id, take_id):
+        return _handler({'action': 'stop', 'project_id': project_id, 'take_id': take_id})
 
     def queue(self, project_id):
         return _handler({'action': 'queue', 'project_id': project_id})

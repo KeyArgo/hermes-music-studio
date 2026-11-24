@@ -354,7 +354,8 @@ class Engine(ABC):
     # -- rendering -------------------------------------------------------
     def render(self, request: RenderRequest,
                on_progress: ProgressCallback | None = None,
-               on_process: ProcessCallback | None = None) -> RenderResult:
+               on_process: ProcessCallback | None = None,
+               on_remote=None) -> RenderResult:
         """Render one take or raise. Never returns placeholder audio."""
         request.validate_common()
         status = self.health()
@@ -382,7 +383,11 @@ class Engine(ABC):
                 f'{self.limits.max_seconds:g}s takes, not {request.duration_seconds:g}s',
                 engine_id=self.id)
         started = time.monotonic()
-        result = self._render(request, on_progress, on_process)
+        import inspect
+        if 'on_remote' in inspect.signature(self._render).parameters:
+            result = self._render(request, on_progress, on_process, on_remote=on_remote)
+        else:
+            result = self._render(request, on_progress, on_process)
         result.metadata.setdefault('engine_id', self.id)
         result.metadata.setdefault('engine_kind', self.kind)
         result.metadata.setdefault('seed', request.seed)
