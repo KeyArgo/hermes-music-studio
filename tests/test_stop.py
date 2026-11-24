@@ -292,15 +292,17 @@ def test_worker_continues_after_first_queued_stop(tmp_path):
     assert jobs._take(store.get(pid), second['take_id'])['state'] == 'succeeded'
 
 
-@pytest.mark.parametrize('alive,killed,expected', [(False, False, 'already exited'), (True, True, 'confirmed'),
-                                                   (True, False, 'unconfirmed')])
+@pytest.mark.parametrize('alive,killed,expected', [
+    (False, False, 'The render had already ended; it is marked stopped.'),
+    (True, True, 'Render stopped.'),
+    (True, False, 'Stop sent, but this computer could not confirm the render process ended.')])
 def test_local_stop_detail(job, alive, killed, expected):
     store, jobs, pid, tid = job
     with patch('music_studio.jobs._stat_start_time', return_value=123), \
             patch('music_studio.jobs.process_alive', return_value=alive), \
             patch('music_studio.procs.kill_tree', return_value=killed):
         jobs.start(pid, tid, 4100)
-        assert jobs.stop(pid, tid)['detail'].lower() == f'local stop {expected}.'
+        assert jobs.stop(pid, tid)['detail'] == expected
 
 
 def test_ace_remote_stop_detail(job):

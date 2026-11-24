@@ -658,7 +658,10 @@ class Jobs:
                 outcome = 'confirmed'
             else:
                 outcome = 'unconfirmed'
-            detail = f'Local stop {outcome}.'
+            detail = {'confirmed': 'Render stopped.',
+                      'already exited': 'The render had already ended; it is marked stopped.',
+                      'unconfirmed': 'Stop sent, but this computer could not confirm the render '
+                                     'process ended.'}[outcome]
             if saved.get('engine_id') == 'ace_remote':
                 detail += ' Tracking stopped here; the ACE server may finish the job.'
             problem = cancel_remote(saved.get('remote_job'))
