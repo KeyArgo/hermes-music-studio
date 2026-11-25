@@ -72,6 +72,49 @@ class LlmTrustError(RuntimeError):
         return {"error": str(self), "commands": list(self.commands)}
 
 
+DRAFT_TASK = "music_studio_draft"
+
+# Copyable as is: `hermes model` asks which model to use and saves it as the default.
+MODEL_COMMANDS = ("hermes model",)
+
+_MISSING_MODEL_MARKERS = (
+    "model_not_found", "model not found", "isn't included", "is not included", "does not exist",
+    "unknown model", "no such model", "invalid model", "not a valid model", "model is not available",
+    "isn't available", "not supported model", "unsupported model",
+)
+
+
+def _is_missing_model(exc: BaseException) -> bool:
+    """The provider answered, and its answer is that the model asked for is not one it serves."""
+    message = str(exc).lower()
+    if "model" not in message:
+        return False
+    if getattr(exc, "status_code", None) == 404 or type(exc).__name__ == "NotFoundError":
+        return True
+    return any(marker in message for marker in _MISSING_MODEL_MARKERS)
+
+
+class LlmModelMissing(RuntimeError):
+    """The provider does not serve the model Hermes asked it for.
+
+    This is a setting, not a passing fault, so trying again cannot fix it. A chat keeps working
+    because a chat can run on a model chosen for that chat, while a plugin uses the default saved in
+    Hermes' settings. The sentence says so, and ``commands`` is the line that changes the default.
+    """
+
+    def __init__(self, exc: BaseException) -> None:
+        self.commands = MODEL_COMMANDS
+        provider_said = " ".join(str(exc).split())[:300]
+        _LOG.warning("Hermes' model is not served by its provider: %s", provider_said)
+        super().__init__(
+            "Hermes' saved default model is not available from its provider, so drafting cannot "
+            "use it. Chats can still work, because a chat may run on a model picked for that chat. "
+            "Pick a working default with the command below, or set a model only for drafting under "
+            "'Music Studio drafting' in Hermes' model settings, then try again. "
+            f"The provider said: {provider_said}"
+        )
+
+
 class LlmFailed(RuntimeError):
     """The host's model was asked and did not deliver: a timeout, or the provider's own error.
 
@@ -152,17 +195,46 @@ def available() -> bool:
         return _llm is not None
 
 
+def _unsupported_keyword(exc: BaseException) -> str | None:
+    """The optional keyword an older ``complete()`` rejected (``timeout`` or ``task``), else None."""
+    if not isinstance(exc, TypeError):
+        return None
+    message = str(exc)
+    for keyword in ("task", "timeout"):
+        if f"'{keyword}'" in message or f"{keyword}=" in message or (
+                keyword == "timeout" and _accepts_no_timeout(exc)):
+            return keyword
+    return None
+
+
+def _is_task_refusal(exc: BaseException) -> bool:
+    """Hermes refused the drafting task key itself, not a provider or model.
+
+    The task is registered in the process that ran ``register(ctx)``. A dashboard route served by
+    another process does not know it and refuses it; that call then goes to the default model, which
+    is what drafting did before the task existed.
+    """
+    return _is_trust_refusal(exc) and "auxiliary task" in str(exc)
+
+
 def _ask(llm: Any, kwargs: dict[str, Any], overrides: dict[str, Any]) -> Any:
-    """One call to the host's facade, with a second chance only for a missing ``timeout`` parameter."""
-    try:
-        return llm.complete(**kwargs, **overrides)
-    except TypeError as exc:
-        if not _accepts_no_timeout(exc):
-            raise
-        # An older Hermes does not accept `timeout`. Drafting still works; it just keeps the host's
-        # own (shorter) deadline rather than failing the whole request over a keyword.
-        without = {key: value for key, value in kwargs.items() if key != "timeout"}
-        return llm.complete(**without, **overrides)
+    """One call to the host's facade, dropping an optional keyword an older Hermes does not take."""
+    sent = dict(kwargs)
+    while True:
+        try:
+            return llm.complete(**sent, **overrides)
+        except TypeError as exc:
+            keyword = _unsupported_keyword(exc)
+            if keyword is None or keyword not in sent:
+                raise
+            # An older Hermes takes neither `timeout` nor `task`. Drafting still works on the host's
+            # own deadline and default model rather than failing the request over a keyword.
+            sent.pop(keyword)
+        except Exception as exc:  # noqa: BLE001 - the host's trust error is not importable here
+            if "task" not in sent or not _is_task_refusal(exc):
+                raise
+            _LOG.warning("Hermes did not accept the drafting task here; using the default model")
+            sent.pop("task")
 
 
 def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: str | None,
@@ -179,6 +251,8 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
         "temperature": temperature,
         # Without this the host applies its 30 second default and a long draft dies as a bare 500.
         "timeout": TIMEOUT_SECONDS,
+        # Its own model slot in Hermes' settings. Left empty it is the default model, as before.
+        "task": DRAFT_TASK,
     }
     overrides = {key: text for key, value in (("provider", provider), ("model", model))
                  if (text := _override(value))}
@@ -190,6 +264,8 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
             raise LlmTrustError() from exc
         # Everything else — a timeout, a provider error, a refused connection — becomes one plain
         # sentence the page can show, instead of an exception class the route never catches.
+        if _is_missing_model(exc):
+            raise LlmModelMissing(exc) from exc
         raise _failure(exc) from exc
     text = getattr(result, "text", None)
     if text is None and isinstance(result, dict):

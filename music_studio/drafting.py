@@ -54,6 +54,9 @@ def draft_song(body, llm_complete):
         raise DraftError(503, str(exc)) from None
     except llm_bridge.LlmTrustError as exc:
         raise DraftError(403, str(exc), commands=list(exc.commands)) from None
+    except llm_bridge.LlmModelMissing as exc:
+        # A setting the owner changes, not a passing fault: the page shows the command to change it.
+        raise DraftError(502, str(exc), commands=list(exc.commands)) from None
     except llm_bridge.LlmFailed as exc:
         # The bridge wrote the sentence (a timeout, or the provider's own error), so it is the detail.
         raise DraftError(502, str(exc)) from None

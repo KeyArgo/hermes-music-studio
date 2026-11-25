@@ -402,6 +402,18 @@ def register(ctx):
         import logging
         logging.getLogger(__name__).warning('ctx.llm is unavailable; drafting will report that')
 
+    # Drafting's own entry in Hermes' model settings. With no model chosen it follows the default
+    # model; with one chosen, drafting keeps working even when the default stops being served.
+    if callable(getattr(ctx, 'register_auxiliary_task', None)):
+        try:
+            ctx.register_auxiliary_task(
+                llm_bridge.DRAFT_TASK, display_name='Music Studio drafting',
+                description='Writes song drafts and answers "Discuss idea" in Music Studio.')
+        except Exception:  # noqa: BLE001 - a reload re-registers; drafting then uses the default model
+            import logging
+            logging.getLogger(__name__).warning('Could not register the drafting model setting',
+                                                exc_info=True)
+
     if callable(getattr(ctx, 'register_rpc', None)):
         import contextvars
         import threading
