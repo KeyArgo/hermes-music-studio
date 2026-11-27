@@ -354,17 +354,78 @@ test('a missing REVamp is never asked for its added list', async t => {
   assert.ok(![...doc.querySelectorAll('button')].some(b => text(b) === 'Add to REVamp'));
 });
 
-test('Add to REVamp hands the take over without a playlist picker', async t => {
-  const { window, calls } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true } });
-  t.after(() => window.close());
-  const doc = window.document;
+// The owner created "test", pressed Add, and the song went to "Music Studio": the playlist was a menu on
+// another screen. The choice now happens on the song itself.
+async function openPicker(t) {
+  const booted = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true } });
+  t.after(() => booted.window.close());
+  const doc = booted.window.document;
   const add = [...doc.querySelectorAll('button')].find(b => /Add to REVamp/.test(text(b)));
   assert.ok(add, 'the library offers Add to REVamp');
   add.click();
   await new Promise(resolve => setTimeout(resolve, 40));
-  const posted = calls.filter(c => c.path === '/api/studio/revamp/add-take').pop();
-  assert.ok(posted, 'the take is handed to REVamp');
-  assert.deepEqual(Object.keys(posted.body).sort(), ['project_id', 'take_id']);
+  const picker = doc.querySelector('.revamp-picker');
+  assert.ok(picker, 'Add to REVamp asks which playlist, on the song');
+  return { ...booted, doc, picker, add };
+}
+const addButton = picker => [...picker.querySelectorAll('button')].find(b => text(b) === 'Add');
+const handovers = calls => calls.filter(c => c.path === '/api/studio/revamp/add-take');
+
+test('the picker sits on the row, not inside the More menu that closes on every click', async t => {
+  const { picker, add } = await openPicker(t);
+  assert.ok(add.closest('details.take-more'), 'Add to REVamp is in the More menu in this layout');
+  assert.equal(picker.closest('details'), null);
+});
+
+test('Add to REVamp sends nothing until a playlist is chosen', async t => {
+  const { calls, picker } = await openPicker(t);
+  assert.equal(handovers(calls).length, 0);
+  const names = [...picker.querySelectorAll('option')].map(o => text(o));
+  assert.deepEqual(names, ['Music Studio', 'Drive mix', 'New playlist…']);
+});
+
+test('the chosen playlist is the one the song goes to, and the message names it', async t => {
+  const { calls, picker, doc, window } = await openPicker(t);
+  picker.querySelector('select').value = 'pl02';
+  addButton(picker).click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  const posted = handovers(calls).pop();
+  assert.equal(posted.body.playlist_id, 'pl02');
+  assert.match(text(doc.body), /added to “Drive mix” in REVamp/);
+  assert.equal(doc.querySelector('.revamp-picker'), null, 'the picker closes once added');
+});
+
+test('a new playlist made from the picker is created, then the song goes into it', async t => {
+  const { calls, picker } = await openPicker(t);
+  const select = picker.querySelector('select');
+  select.value = '__new__';
+  select.dispatchEvent(new picker.ownerDocument.defaultView.Event('change'));
+  const name = picker.querySelector('input');
+  assert.equal(name.hidden, false);
+  name.value = 'test';
+  addButton(picker).click();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  const created = calls.find(c => c.path === '/api/studio/revamp/playlists' && c.method === 'POST');
+  assert.deepEqual(created.body, { name: 'test' });
+  assert.equal(handovers(calls).pop().body.playlist_id, 'pl02');
+});
+
+test('the next Add starts on the playlist used last', async t => {
+  const { picker, doc, add } = await openPicker(t);
+  picker.querySelector('select').value = 'pl02';
+  addButton(picker).click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  add.click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(doc.querySelector('.revamp-picker select').value, 'pl02');
+});
+
+test('Music Studio stays the default when nothing was chosen before', async t => {
+  const { calls, picker } = await openPicker(t);
+  assert.equal(picker.querySelector('select').value, '');
+  addButton(picker).click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(Object.keys(handovers(calls).pop().body).sort(), ['project_id', 'take_id']);
 });
 
 test('closing the studio tells the Hermes pane, so the frame goes away', async t => {

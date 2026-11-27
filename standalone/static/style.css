@@ -291,3 +291,7 @@ svg.brandmark{display:block;width:40px;height:40px;background:none;border-radius
 /* Copying the conversation: the pane is a sandboxed frame, so the page has to keep the text
    selectable itself (a right-click or drag selects it, and the menu above copies it). */
 .idea-messages,.idea-messages p{user-select:text;-webkit-user-select:text}
+
+/* Add to REVamp: the playlist is picked on the song itself. */
+.revamp-picker{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}
+.revamp-picker select,.revamp-picker input{max-width:14rem;padding:7px 10px}

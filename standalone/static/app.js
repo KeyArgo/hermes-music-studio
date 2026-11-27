@@ -1139,17 +1139,8 @@ function library() {
       row.append(exp);
       if (revampStatus?.reachable) {
         const add = el('button', 'Add to REVamp'); add.type = 'button';
-        add.onclick = async () => {
-          add.disabled = true;
-          try {
-            const chosen = $('revamp-playlist').value;
-            const result = await api('/studio/revamp/add-take', {project_id: p.project_id, take_id: t.take_id,
-              ...(chosen ? {playlist_id: chosen} : {})});
-            show('listen');
-            await loadRevamp(result.indexing ? indexingMessage : `${p.title || 'Untitled'} · take ${i+1} is ready in REVamp.`);
-          } catch (err) { libMessage(err.message, true); }
-          finally { add.disabled = false; }
-        };
+        // The playlist is chosen here, on the song, so it is never a menu on another screen.
+        add.onclick = () => openRevampPicker(row, add, p, t, i);
         row.append(add);
       } }
       tidyTakeRow(row); card.append(row); }); container.append(card);
@@ -2343,6 +2334,75 @@ async function idea(action) {
 $('idea-send').onclick=()=>idea('chat');$('idea-apply').onclick=()=>idea('draft');
 $('cover-save').onclick=async()=>{const file=$('cover-input').files[0];if(!current){$('cover-message').textContent='Save the song first.';return;}if(!file){$('cover-message').textContent='Choose an image first.';return;}if(file.size>2*1024*1024){$('cover-message').textContent='Image must be 2 MiB or smaller.';return;} const projectId=current.project_id;
   try {const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});await api('/studio/covers/'+encodeURIComponent(projectId),{mime:file.type,data:encoded});if(current?.project_id===projectId)showCover(projectId);$('cover-message').textContent='Cover saved.';}catch(e){$('cover-message').textContent=e.message;}};
+// The last playlist a song was added to, so the next Add starts there. The pane frame has no
+// storage (it throws), so the page also keeps it in memory.
+let lastRevampPlaylist = (() => { try { return localStorage.getItem('studio.revampPlaylist') || ''; } catch (e) { return ''; } })();
+function rememberRevampPlaylist(id) {
+  lastRevampPlaylist = id || '';
+  try { localStorage.setItem('studio.revampPlaylist', lastRevampPlaylist); } catch (e) {}
+}
+
+async function revampPlaylistRows() {
+  const data = await api('/studio/revamp/playlists');
+  const raw = data.playlists;
+  return Array.isArray(raw) ? raw : (raw && Array.isArray(raw.playlists) ? raw.playlists : []);
+}
+
+async function openRevampPicker(row, add, p, t, i) {
+  const open = row.querySelector('.revamp-picker');
+  if (open) { open.remove(); add.disabled = false; return; }
+  add.disabled = true;
+  const picker = el('span', '', 'revamp-picker');
+  const select = el('select'); select.setAttribute('aria-label', 'REVamp playlist');
+  const go = el('button', 'Add'); go.type = 'button';
+  const cancel = el('button', 'Cancel'); cancel.type = 'button';
+  const close = () => { picker.remove(); add.disabled = false; };
+  cancel.onclick = close;
+  let rows = [];
+  try { rows = await revampPlaylistRows(); } catch (err) { libMessage(err.message, true); add.disabled = false; return; }
+  const studio = el('option', 'Music Studio'); studio.value = ''; select.append(studio);
+  rows.forEach(r => {
+    const name = r && (r.name || r.id);
+    if (!name || !r.id) return;
+    if (name === 'Music Studio') { studio.value = r.id; return; }
+    const option = el('option', name); option.value = r.id; select.append(option);
+  });
+  const fresh = el('option', 'New playlist…'); fresh.value = '__new__'; select.append(fresh);
+  const nameBox = el('input'); nameBox.maxLength = 80; nameBox.placeholder = 'Playlist name'; nameBox.hidden = true;
+  nameBox.setAttribute('aria-label', 'New playlist name');
+  const preferred = lastRevampPlaylist || ($('revamp-playlist') || {}).value || '';
+  if ([...select.options].some(o => o.value === preferred)) select.value = preferred;
+  select.onchange = () => { nameBox.hidden = select.value !== '__new__'; if (!nameBox.hidden) nameBox.focus(); };
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      let playlistId = select.value;
+      let playlistName = select.selectedOptions[0] ? select.selectedOptions[0].textContent : 'Music Studio';
+      if (playlistId === '__new__') {
+        const name = (nameBox.value || '').trim();
+        if (!name) { libMessage('Give the new playlist a name first.', true); go.disabled = false; return; }
+        const created = await api('/studio/revamp/playlists', {name});
+        playlistId = (created.playlist || {}).id || '';
+        playlistName = (created.playlist || {}).name || name;
+        if (!playlistId) throw new Error('REVamp did not return the new playlist.');
+      }
+      const result = await api('/studio/revamp/add-take', {project_id: p.project_id, take_id: t.take_id,
+        ...(playlistId ? {playlist_id: playlistId} : {})});
+      const landed = (result.playlist && result.playlist.name) || playlistName;
+      rememberRevampPlaylist(playlistId);
+      close();
+      const done = `${p.title || 'Untitled'} · take ${i+1} added to “${landed}” in REVamp.`;
+      libMessage(result.indexing ? `${done} ${indexingMessage}` : done);
+      fillRevampPlaylists().then(() => { if ($('revamp-playlist')) $('revamp-playlist').value = playlistId; }).catch(() => {});
+    } catch (err) { libMessage(err.message, true); go.disabled = false; }
+  };
+  picker.append(select, nameBox, go, cancel);
+  // Add to REVamp usually sits in the take's "More" menu, which closes on any click. The picker goes
+  // after the menu, on the row itself, so it is still on screen once the menu has closed.
+  (add.closest('details.take-more') || add).after(picker);
+  select.focus();
+}
+
 async function fillRevampPlaylists() {
   const select = $('revamp-playlist');
   if (!select) return;
