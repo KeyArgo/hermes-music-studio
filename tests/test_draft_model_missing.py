@@ -174,3 +174,68 @@ def test_register_survives_a_hermes_that_refuses_the_setting():
                           register_skill=lambda *a, **kw: None, register_auxiliary_task=refuse)
     _load_plugin().register(ctx)
     assert llm_bridge.available()
+
+
+# Review of the fix above (each one failed before it was corrected).
+
+def test_a_chosen_provider_or_model_is_not_mixed_with_the_drafting_slot():
+    facade = Facade()
+    llm_bridge.bind(facade)
+    llm_bridge.complete(MESSAGES, provider="openai")
+    assert "task" not in facade.calls[0]
+
+
+def test_a_type_error_about_the_task_value_is_not_read_as_an_old_hermes():
+    facade = Facade(TypeError("argument 'task' must be a Task"))
+    llm_bridge.bind(facade)
+    with pytest.raises(llm_bridge.LlmFailed):
+        llm_bridge.complete(MESSAGES)
+    assert len(facade.calls) == 1
+
+
+def test_a_missing_chosen_model_blames_the_choice_not_the_default():
+    llm_bridge.bind(Facade(BadRequestError("The model `retired-1` does not exist")))
+    with pytest.raises(llm_bridge.LlmModelMissing) as caught:
+        llm_bridge.complete(MESSAGES, model="retired-1")
+    assert "chosen in Music Studio (retired-1)" in str(caught.value)
+    assert "saved default" not in str(caught.value)
+    assert caught.value.commands == ()
+
+
+@pytest.mark.parametrize("text", [
+    "The parameter 'temperature' isn't available for this model",
+    "Error code: 400 - max_tokens is not supported with this model",
+])
+def test_a_refused_parameter_is_not_a_missing_model(text):
+    llm_bridge.bind(Facade(BadRequestError(text)))
+    with pytest.raises(llm_bridge.LlmFailed) as caught:
+        llm_bridge.complete(MESSAGES)
+    assert not isinstance(caught.value, llm_bridge.LlmModelMissing)
+
+
+@pytest.mark.parametrize("text", [
+    "The model 'retired' is not supported by this provider",
+    "Model foo is not supported",
+    "The model 'foo' is not available",
+    "Error code: 400 - model_not_found",
+])
+def test_other_wordings_of_a_missing_model_are_recognised(text):
+    llm_bridge.bind(Facade(BadRequestError(text)))
+    with pytest.raises(llm_bridge.LlmModelMissing):
+        llm_bridge.complete(MESSAGES)
+
+
+def test_the_ideas_route_keeps_the_sentence_and_the_command():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from standalone import ideas
+
+    llm_bridge.bind(Facade(BadRequestError(OPENCODE_400)))
+    app = FastAPI()
+    app.include_router(ideas.router)
+    response = TestClient(app).post("/studio/ideas", json={
+        "messages": [{"role": "user", "content": "night drive"}], "action": "draft",
+        "tone": "warm", "style": 70})
+    assert response.status_code == 502
+    assert response.json()["commands"] == ["hermes model"]
+    assert "Music Studio drafting" in response.json()["error"]

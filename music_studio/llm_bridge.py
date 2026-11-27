@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from typing import Any, Callable, Sequence
 
@@ -77,11 +78,17 @@ DRAFT_TASK = "music_studio_draft"
 # Copyable as is: `hermes model` asks which model to use and saves it as the default.
 MODEL_COMMANDS = ("hermes model",)
 
+# Phrases that only ever describe the model itself. Ordered patterns below cover the many ways a
+# provider words "model X is not something we serve", with the model named BEFORE the refusal, so a
+# complaint about a parameter ("'temperature' isn't available for this model") is not read as one.
 _MISSING_MODEL_MARKERS = (
-    "model_not_found", "model not found", "isn't included", "is not included", "does not exist",
-    "unknown model", "no such model", "invalid model", "not a valid model", "model is not available",
-    "isn't available", "not supported model", "unsupported model",
+    "model_not_found", "unknown model", "no such model", "invalid model", "not a valid model",
+    "unsupported model",
 )
+_MISSING_MODEL_PATTERN = re.compile(
+    r"\bmodel\b[^.;\n]{0,80}?\b(?:not found|does not exist|doesn't exist|is not included|isn't included|"
+    r"not included|is not available|isn't available|not available|is not supported|isn't supported|"
+    r"not supported|is not served|isn't served)")
 
 
 def _is_missing_model(exc: BaseException) -> bool:
@@ -91,7 +98,8 @@ def _is_missing_model(exc: BaseException) -> bool:
         return False
     if getattr(exc, "status_code", None) == 404 or type(exc).__name__ == "NotFoundError":
         return True
-    return any(marker in message for marker in _MISSING_MODEL_MARKERS)
+    return any(marker in message for marker in _MISSING_MODEL_MARKERS) or bool(
+        _MISSING_MODEL_PATTERN.search(message))
 
 
 class LlmModelMissing(RuntimeError):
@@ -102,10 +110,18 @@ class LlmModelMissing(RuntimeError):
     Hermes' settings. The sentence says so, and ``commands`` is the line that changes the default.
     """
 
-    def __init__(self, exc: BaseException) -> None:
-        self.commands = MODEL_COMMANDS
+    def __init__(self, exc: BaseException, chosen: str | None = None) -> None:
         provider_said = " ".join(str(exc).split())[:300]
         _LOG.warning("Hermes' model is not served by its provider: %s", provider_said)
+        if chosen:
+            # The model picked in Music Studio is the one refused; the saved default is not involved.
+            self.commands = ()
+            super().__init__(
+                f"The model chosen in Music Studio ({chosen}) is not available from its provider. "
+                "Pick another model next to Discuss idea, or choose Your Hermes model, then try again. "
+                f"The provider said: {provider_said}")
+            return
+        self.commands = MODEL_COMMANDS
         super().__init__(
             "Hermes' saved default model is not available from its provider, so drafting cannot "
             "use it. Chats can still work, because a chat may run on a model picked for that chat. "
@@ -196,14 +212,19 @@ def available() -> bool:
 
 
 def _unsupported_keyword(exc: BaseException) -> str | None:
-    """The optional keyword an older ``complete()`` rejected (``timeout`` or ``task``), else None."""
+    """The optional keyword an older ``complete()`` does not take (``task`` or ``timeout``), else None.
+
+    Only Python's own "unexpected keyword argument" wording counts, so a TypeError raised inside a
+    newer Hermes about the value of ``task`` is not mistaken for a missing parameter.
+    """
     if not isinstance(exc, TypeError):
         return None
     message = str(exc)
     for keyword in ("task", "timeout"):
-        if f"'{keyword}'" in message or f"{keyword}=" in message or (
-                keyword == "timeout" and _accepts_no_timeout(exc)):
+        if f"unexpected keyword argument '{keyword}'" in message:
             return keyword
+    if _accepts_no_timeout(exc) and "unexpected keyword" in message:
+        return "timeout"
     return None
 
 
@@ -251,11 +272,14 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
         "temperature": temperature,
         # Without this the host applies its 30 second default and a long draft dies as a bare 500.
         "timeout": TIMEOUT_SECONDS,
-        # Its own model slot in Hermes' settings. Left empty it is the default model, as before.
-        "task": DRAFT_TASK,
     }
     overrides = {key: text for key, value in (("provider", provider), ("model", model))
                  if (text := _override(value))}
+    if not overrides:
+        # Its own model slot in Hermes' settings, left empty = the default model, as before. Only when
+        # nothing was chosen in the page: Hermes would otherwise mix a chosen provider with the slot's
+        # model, and a model from one provider sent to another fails.
+        kwargs["task"] = DRAFT_TASK
     try:
         result = _ask(llm, kwargs, overrides)
     except Exception as exc:  # noqa: BLE001 - the host's trust error is not importable here
@@ -265,7 +289,7 @@ def _call(messages: Sequence[dict[str, str]], *, provider: str | None, model: st
         # Everything else — a timeout, a provider error, a refused connection — becomes one plain
         # sentence the page can show, instead of an exception class the route never catches.
         if _is_missing_model(exc):
-            raise LlmModelMissing(exc) from exc
+            raise LlmModelMissing(exc, chosen=overrides.get("model") or overrides.get("provider")) from exc
         raise _failure(exc) from exc
     text = getattr(result, "text", None)
     if text is None and isinstance(result, dict):

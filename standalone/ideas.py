@@ -259,6 +259,9 @@ def _complete(body: dict[str, Any]) -> str:
         raise HTTPException(status_code=503, detail=str(exc)) from None
     except llm_bridge.LlmTrustError:
         raise
+    except llm_bridge.LlmModelMissing:
+        # The route answers with the sentence and the command, like a trust refusal.
+        raise
     except llm_bridge.LlmFailed as exc:
         # The bridge already wrote the sentence a person can act on (timeout, provider error), so it
         # is the 502 detail instead of the old catch-all "connection failed".
@@ -304,6 +307,8 @@ def studio_ideas(payload: IdeaRequest) -> JSONResponse:
         content = _complete(body)
     except llm_bridge.LlmTrustError as exc:
         return trust_error_response(exc)
+    except llm_bridge.LlmModelMissing as exc:
+        return JSONResponse(status_code=502, content={"error": str(exc), "commands": list(exc.commands)})
     if not content.strip():
         raise HTTPException(status_code=502, detail="Hermes returned no content")
     if len(content) > MAX_REPLY_CHARS:
