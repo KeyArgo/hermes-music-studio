@@ -9,13 +9,13 @@ import { createRequire } from 'node:module';
 // jsdom is a development dependency: a clone runs `npm install` and finds it locally. The
 // fallback exists only for machines where it is already installed elsewhere (a Hermes checkout).
 const require = createRequire(import.meta.url);
-let JSDOM;
+let JSDOM, VirtualConsole;
 try {
-  ({ JSDOM } = require('jsdom'));
+  ({ JSDOM, VirtualConsole } = require('jsdom'));
 } catch (error) {
   const elsewhere = process.env.JSDOM_PACKAGE
     || require('path').join(require('os').homedir(), '.hermes/hermes-agent/apps/desktop/package.json');
-  ({ JSDOM } = createRequire(elsewhere)('jsdom'));
+  ({ JSDOM, VirtualConsole } = createRequire(elsewhere)('jsdom'));
 }
 
 const html = await readFile(new URL('../standalone/static/index.html', import.meta.url), 'utf8');
@@ -46,8 +46,12 @@ const empty = { success: true };
 async function boot(overrides = {}, options = {}) {
   // A framed page arrives with ?token=…; a test can ask for that shape, which is what makes the
   // media-URL assertions below possible at all.
-  const pageUrl = 'http://127.0.0.1:8794/' + (options.token ? `?token=${encodeURIComponent(options.token)}` : '');
-  const dom = new JSDOM(html, { url: pageUrl, runScripts: 'outside-only' });
+  const pageUrl = options.url || 'http://127.0.0.1:8794/' + (options.token ? `?token=${encodeURIComponent(options.token)}` : '');
+  // jsdom cannot navigate; it reports each attempt, which is how a test sees the page reload itself.
+  const virtualConsole = new VirtualConsole();
+  const navigations = [];
+  virtualConsole.on('jsdomError', error => { if (/navigation/i.test(String(error && error.message))) navigations.push(error); });
+  const dom = new JSDOM(html, { url: pageUrl, runScripts: 'outside-only', virtualConsole });
   const { window } = dom;
   const calls = [];
   window.confirm = () => true;
@@ -149,9 +153,16 @@ async function boot(overrides = {}, options = {}) {
   if (window.crypto && !window.crypto.getRandomValues) {
     Object.defineProperty(window.crypto, 'getRandomValues', { value: array => array, configurable: true });
   }
+  // The page's inline script (which does not run here) records the stamp the page was served with.
+  if (options.ui) window.MUSIC_STUDIO = { api: '/api', assets: '/static', ui: options.ui };
+  // The Library re-reads the server every 10 s; a test can run that poll at once instead.
+  if (options.fastPoll) {
+    const realTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (fn, delay, ...rest) => realTimeout(fn, delay >= 2500 ? 30 : delay, ...rest);
+  }
   window.eval(appjs);
   await new Promise(resolve => setTimeout(resolve, 30));
-  return { dom, window, calls };
+  return { dom, window, calls, navigations };
 }
 
 const text = node => (node && node.textContent) || '';
@@ -1239,4 +1250,58 @@ test('Open REVamp asks the Desktop pane to navigate', async t => {
   assert.equal(doc.getElementById('open-revamp').hidden, false);
   doc.getElementById('open-revamp').click();
   assert.equal(sent[0].type, 'hermes-music-studio:open-revamp');
+});
+
+// A pane that opened while an older server was still answering keeps the old page in memory, and the
+// chip (re-read from the new server) hid it: songs went to the wrong playlist on code no longer
+// installed. The page now reloads when the server serves different page files.
+const aboutWithUi = ui => ({ '/api/about': { success: true, version: '1.0.0', ui,
+  build: { version: '1.0.0', line: 'v1.0.0-dev.184 · 22223333 · 2026-11-27' } } });
+
+test('a page older than the server it talks to reloads itself', async t => {
+  const { window, navigations } = await boot(aboutWithUi('newstamp0001'), { ui: 'oldstamp0001' });
+  t.after(() => window.close());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(navigations.length, 1, 'the stale page reloads once');
+});
+
+test('a page that matches its server does not reload', async t => {
+  const { window, navigations } = await boot(aboutWithUi('samestamp001'), { ui: 'samestamp001' });
+  t.after(() => window.close());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(navigations.length, 0);
+  assert.equal(text(window.document.getElementById('app-version')), 'v1.0.0-dev.184 · 22223333 · 2026-11-27');
+});
+
+test('a reload that still does not match stops instead of looping', async t => {
+  const { window, navigations } = await boot(aboutWithUi('newstamp0001'),
+    { ui: 'oldstamp0001', url: 'http://127.0.0.1:8794/?ui=newstamp0001' });
+  t.after(() => window.close());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(navigations.length, 0, 'one reload per server stamp, never a loop');
+});
+
+test('a page opened as a plain file (no stamp filled in) never reloads', async t => {
+  const { window, navigations } = await boot(aboutWithUi('newstamp0001'), { ui: '__STUDIO_STAMP__' });
+  t.after(() => window.close());
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(navigations.length, 0);
+});
+
+test('a Library refresh does not close an open playlist picker', async t => {
+  // Add to REVamp sits in the More menu, which closes on the click, so focus is not in the Library
+  // and the 10 s refresh used to redraw the row and drop the picker before a playlist was chosen.
+  const { window } = await boot({ '/api/studio/revamp/status': { installed: true, reachable: true },
+    '/api/studio/revamp/playlists': { playlists: [{ id: 'test', name: 'test' }] } }, { fastPoll: true });
+  t.after(() => window.close());
+  const doc = window.document;
+  const add = [...doc.querySelectorAll('button')].find(b => /Add to REVamp/.test(text(b)));
+  assert.ok(add, 'the library offers Add to REVamp');
+  add.click();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok(doc.querySelector('.revamp-picker'), 'picker open');
+  if (doc.activeElement && doc.activeElement.blur) doc.activeElement.blur();
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(doc.querySelector('.revamp-picker'), 'the refresh waits while the picker is open');
+  assert.ok([...doc.querySelectorAll('.revamp-picker option')].some(o => o.value === 'test'));
 });

@@ -78,3 +78,9 @@ def test_the_token_ignores_the_loaded_music_studio_stamp(monkeypatch, tmp_path):
     monkeypatch.setattr('music_studio.version_stamp.as_dict', lambda: {
         'version': '0.9.0', 'commit': 'foreign1234', 'built_at': '', 'channel': 'dev'})
     assert ui_stamp.build_token(tmp_path) == before
+
+
+def test_about_names_the_page_files_it_serves():
+    # An open page compares this with the stamp it was loaded with, and reloads when they differ.
+    from music_studio import about, ui_stamp
+    assert about.about()['ui'] == ui_stamp.build_token(ROOT / 'standalone' / 'static')

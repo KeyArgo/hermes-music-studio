@@ -13,6 +13,7 @@
   window.MUSIC_STUDIO = base === null
     ? { api: '/api', assets: '/static' }
     : { api: base, assets: base + '/studio/assets' };
+  window.MUSIC_STUDIO.ui = '__STUDIO_STAMP__';
   var css = document.createElement('link');
   css.rel = 'stylesheet';
   // ?v= is the install's stamp: a webview caches these two files by URL, and after an update the

@@ -634,17 +634,30 @@ function wirePlayer() {
   playerVolume(Number($('player-volume').value || 1));
   playerState();
 }
+// The page's files are stamped when it loads. If the server now serves different files, this page is
+// running old code (the version chip alone would already read the new server), so it reloads. The
+// stamp goes in the address, so a server that keeps answering differently cannot cause a reload loop.
+function reloadForNewPage(serverStamp) {
+  const mine = (window.MUSIC_STUDIO || {}).ui;
+  if (!serverStamp || !mine || mine.startsWith('__') || serverStamp === mine) return false;
+  const url = new URL(location.href);
+  if (url.searchParams.get('ui') === serverStamp) return false;
+  url.searchParams.set('ui', serverStamp);
+  location.replace(url.toString());
+  return true;
+}
 async function showVersion(){
   // One source: the server's own stamp (BUILD_INFO.json when installed, live git in a checkout).
   // The server builds the line with version_stamp.chip_line, the same text every suite plugin shows
   // (VERSION-CHIP.md): "v1.0.0-dev.342 · 1a2b3c4d · 2026-11-13".
   const chip = $('app-version');
   if (!chip) return;
-  let build;
+  let build, data;
   try {
-    const data = await api('/about');
+    data = await api('/about');
     build = data.build || { version: data.version };
   } catch (err) { return; }            // no guess beats a wrong number
+  if (reloadForNewPage(data && data.ui)) return;
   let line = build.line;
   if (!line) {
     const parts = ['v' + (build.version || 'unknown')];
@@ -677,6 +690,7 @@ async function showVersion(){
 }
 // Re-read every minute so an update or reload shows without restarting the app.
 setInterval(() => { if (!document.hidden) showVersion(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) showVersion(); });
 
 if ($('player-play')) wirePlayer();
 showVersion();
@@ -819,7 +833,7 @@ function libraryHasOpenEditor() {
   const container = $('library');
   if (!container) return false;
   if (container.contains(document.activeElement)) return true;
-  if (container.querySelector('.rename-input, .snippet-form, .extend-form, details.take-more[open]')) return true;
+  if (container.querySelector('.rename-input, .snippet-form, .extend-form, .revamp-picker, details.take-more[open]')) return true;
   return [...container.querySelectorAll('.project-change')].some(node => !node.hidden);
 }
 function renderLibrary() {

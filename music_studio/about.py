@@ -95,7 +95,21 @@ def about() -> dict:
         stamp['line'] = 'v' + str(stamp['version'] or 'unknown')
     return {'success': True, 'version': stamp.get('version') or _version(), 'repo': REPO,
             'visibility': REPO_VISIBILITY, 'paths': dict(PATHS),
-            'revamp': revamp_status(), 'build': stamp}
+            'revamp': revamp_status(), 'build': stamp, 'ui': _ui_stamp()}
+
+
+def _ui_stamp() -> str:
+    """The stamp of the page files this server would serve now.
+
+    An open page compares it with the stamp it was loaded with: a page loaded from an older server
+    (an update, or a host replaced while the pane was opening) keeps its old code in memory while the
+    version chip already reads the new server, and reloads instead of acting on old code.
+    """
+    try:
+        from .ui_stamp import build_token
+        return build_token(Path(__file__).resolve().parents[1] / 'standalone' / 'static')
+    except Exception:  # pragma: no cover - no stamp means no reload, never a broken panel
+        return ''
 
 
 
